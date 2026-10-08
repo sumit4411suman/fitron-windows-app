@@ -1,0 +1,26 @@
+# HTTPS certificates are issued and renewed automatically for DOMAIN.
+{$DOMAIN} {
+	encode zstd gzip
+	# Every request gets an id, passed on to the app (it is written next to any error in the app's log) and sent back
+	# in the X-Request-Id response header, so "what happened at 14:02?" can be answered from one id.
+	request_header X-Request-Id {http.request.uuid}
+	header X-Request-Id {http.request.uuid}
+	reverse_proxy app:3000
+}
+
+# www.fitron.in (or www. in front of whatever DOMAIN is) sends visitors to the main address.
+# If no www record points here, Caddy just logs that it couldn't get that certificate.
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}
+
+# Door devices (ZKTeco / eSSL) often can't do HTTPS, so /iclock also answers on plain HTTP.
+# Everything else on HTTP is sent to HTTPS.
+http://{$DOMAIN} {
+	handle /iclock/* {
+		reverse_proxy app:3000
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}

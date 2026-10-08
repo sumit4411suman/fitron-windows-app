@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: fitron-whatsapp
+    runtime: docker
+    plan: starter
+    envVars:
+      - key: FITRON_KEY
+        generateValue: true
+    disk:
+      name: session
+      mountPath: /app/session
+      sizeGB: 1

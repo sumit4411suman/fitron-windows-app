@@ -1,0 +1,89 @@
+# Fitron on one server: app + Postgres + HTTPS (Caddy) + daily jobs and nightly backups.
+# Run from this folder:  docker compose up -d --build
+# Settings come from deploy/.env (created by install.sh; see .env.example at the repo root).
+name: fitron
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fitron
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+      POSTGRES_DB: fitron
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitron -d fitron"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    shm_size: 256mb
+
+  app:
+    build: ..
+    restart: unless-stopped
+    env_file: .env
+    # Lets WA_CONNECTOR_URL=http://host.docker.internal:3131 reach a WhatsApp connector running on this server itself.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # The Postgres in this file, unless EXTERNAL_DATABASE_URL is set in deploy/.env (a hosted database such as Supabase: README step 11).
+      DATABASE_URL: ${EXTERNAL_DATABASE_URL:-postgresql://fitron:${POSTGRES_PASSWORD}@db:5432/fitron}
+      STORAGE_DIR: /data/storage
+      # Links in emails (verify, reset password) point here.
+      APP_URL: https://${DOMAIN}
+    volumes:
+      - storage:/data/storage
+      # The hosted database's certificate authority, if it has its own (Supabase does): README step 11.
+      - ./certs:/certs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+  # Calls the daily jobs each morning and takes a nightly database + files backup into deploy/backups.
+  scheduler:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    entrypoint: ["sh", "/scheduler.sh"]
+    environment:
+      CRON_SECRET: ${CRON_SECRET:?set CRON_SECRET in deploy/.env}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      # Which database to back up, and whether member files live in a bucket instead of on this server's disk.
+      EXTERNAL_DATABASE_URL: ${EXTERNAL_DATABASE_URL:-}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+    volumes:
+      - ./scheduler.sh:/scheduler.sh:ro
+      - ./backups:/backups
+      - storage:/data/storage:ro
+      - ./certs:/certs:ro
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  storage:
+  caddy_data:
+  caddy_config:

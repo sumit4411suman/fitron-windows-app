@@ -1,0 +1,339 @@
+/*
+ * The public pages of fitron.in (everything in this route group) use the same type as the home page: Oswald for the big
+ * headings, Plus Jakarta Sans for text. Both are self-hosted in public/site/fonts, the same files the home page loads, so
+ * a visitor who has seen one page already has the fonts for the next. The console keeps its own serif look.
+ */
+@font-face {
+  font-family: "Oswald";
+  font-style: normal;
+  font-weight: 200 700;
+  font-display: swap;
+  src: url("/site/fonts/741e4923-ad86-4b13-ba55-ee2d98168e36.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Oswald";
+  font-style: normal;
+  font-weight: 200 700;
+  font-display: swap;
+  src: url("/site/fonts/b6fcac0c-a35e-4fc6-acbf-0ae1df9e3d45.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("/site/fonts/4632733b-b063-4bbf-a396-0e31b80c17fa.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("/site/fonts/94fe6a0f-92d6-4207-b31a-5f1996480dd1.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+.site-ui {
+  --font-head: "Oswald", "Arial Narrow", sans-serif;
+  --font-body: "Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --gold-grad: linear-gradient(180deg, #f8e6ae 0%, #e2bf66 42%, #b8892e 100%);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.65;
+}
+.site-ui h1,
+.site-ui h2 {
+  font-family: var(--font-head);
+  letter-spacing: 0.01em;
+}
+.site-ui h1 {
+  text-transform: uppercase;
+  line-height: 1.02;
+}
+.site-ui h2 {
+  line-height: 1.1;
+}
+.site-ui h3 {
+  line-height: 1.25;
+}
+/* Rounder than the console: the public pages share the home page's soft corners. Unlayered, so they beat the utilities. */
+.site-ui .rounded-md,
+.site-ui .rounded-lg,
+.site-ui input,
+.site-ui select,
+.site-ui textarea {
+  border-radius: 12px;
+}
+.site-ui .rounded-xl {
+  border-radius: 20px;
+}
+.site-ui .rounded-2xl {
+  border-radius: 24px;
+}
+.site-ui input,
+.site-ui select,
+.site-ui textarea {
+  font-size: 16px;
+  min-height: 46px;
+}
+.site-ui textarea {
+  min-height: 0;
+}
+
+/* Buttons and cards used by the public pages */
+.s-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 24px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.2s;
+}
+.s-btn-primary {
+  background: var(--gold-grad);
+  color: #17140d;
+  box-shadow: 0 1px 0 #8f6a1c, 0 2px 0 #634812, 0 12px 24px -10px rgba(217, 180, 90, 0.45);
+}
+.s-btn-primary:hover {
+  transform: translateY(-1px);
+}
+.s-btn-ghost {
+  border-color: var(--line);
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+.s-btn-ghost:hover {
+  border-color: var(--accent);
+}
+.s-btn-sm {
+  min-height: 42px;
+  padding: 0 18px;
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+@media (max-width: 479px) {
+  .s-btn-sm {
+    padding: 0 14px;
+    font-size: 0.8rem;
+  }
+}
+.s-card {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--text) 3.5%, transparent);
+}
+.s-card.s-solid {
+  background: var(--surface);
+}
+.s-eyebrow {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+/* Header */
+.s-nav-link {
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.s-nav-link:hover {
+  color: var(--accent);
+}
+.s-menu {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 88px 24px 32px;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.s-menu a.s-menu-link {
+  display: block;
+  padding: 8px 0;
+  font-family: var(--font-head);
+  font-size: clamp(1.7rem, 8vw, 2.4rem);
+  font-weight: 600;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--text);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .s-menu {
+    animation: sMenuIn 0.25s ease-out;
+  }
+  @keyframes sMenuIn {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
+/* Legal pages: sticky table of contents */
+.s-toc a {
+  display: block;
+  padding: 6px 12px;
+  border-left: 2px solid var(--line);
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-decoration: none;
+}
+.s-toc a:hover,
+.s-toc a[aria-current="true"] {
+  border-left-color: var(--accent);
+  color: var(--text);
+}
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+/*
+ * A laptop and a phone drawn in CSS, as on the home page (scripts/site/redesign.css): the sign-in page shows the Gym
+ * Accounting dashboard in the laptop and the AI Trainer home in the phone, phone on the right in front, as on the home page. The phone is sized
+ * by its own width (cqw), so its frame, bezel and buttons stay in proportion at any size.
+ */
+.s-dev {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  margin-inline: auto;
+  padding-bottom: 34px;
+}
+.s-dev-lid {
+  padding: 2.2% 2.2% 2.4%;
+  border-radius: 14px 14px 4px 4px;
+  background: linear-gradient(160deg, #3a352a, #17150f 40%, #26221a);
+  border: 1px solid rgba(217, 180, 90, 0.28);
+  border-bottom: 0;
+  box-shadow: 0 24px 50px -16px rgba(0, 0, 0, 0.7);
+}
+.s-dev-screen {
+  position: relative;
+  overflow: hidden;
+  border-radius: 5px;
+  background: #0e0d0a;
+  aspect-ratio: 16 / 10;
+}
+.s-dev-screen img,
+.s-dev-pscreen img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.s-dev-base {
+  position: relative;
+  height: 11px;
+  margin: 0 -4.5%;
+  border-radius: 0 0 14px 14px;
+  background: linear-gradient(#4a4435, #1c1912);
+  border: 1px solid rgba(217, 180, 90, 0.28);
+  border-top: 0;
+  box-shadow: 0 18px 30px -12px rgba(0, 0, 0, 0.7);
+}
+.s-dev-base::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  translate: -50% 0;
+  width: 16%;
+  height: 5px;
+  border-radius: 0 0 8px 8px;
+  background: #0e0d0a;
+}
+.s-dev-laptop {
+  width: 86%;
+}
+.s-dev-phone {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 28%;
+  container-type: inline-size;
+}
+.s-dev-body {
+  position: relative;
+  padding: 3.2cqw;
+  border-radius: 15cqw;
+  background: linear-gradient(145deg, #6d6652 0%, #2b271d 22%, #15130d 55%, #3a3527 100%);
+  box-shadow:
+    0 26px 46px -12px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(0, 0, 0, 0.65),
+    inset 0 0 0 0.5cqw rgba(255, 255, 255, 0.1);
+}
+.s-dev-body::before {
+  content: "";
+  position: absolute;
+  right: -1cqw;
+  top: 24%;
+  width: 1cqw;
+  height: 13%;
+  border-radius: 0 1cqw 1cqw 0;
+  background: linear-gradient(90deg, #2b271d, #6d6652);
+}
+.s-dev-body::after {
+  content: "";
+  position: absolute;
+  left: -1cqw;
+  top: 19%;
+  width: 1cqw;
+  height: 7%;
+  border-radius: 1cqw 0 0 1cqw;
+  background: linear-gradient(270deg, #2b271d, #6d6652);
+  box-shadow:
+    0 12cqw 0 0 #4a4435,
+    0 21cqw 0 0 #4a4435;
+}
+.s-dev-pscreen {
+  position: relative;
+  overflow: hidden;
+  border-radius: 11.6cqw;
+  background: #050504;
+  aspect-ratio: 488 / 987;
+  box-shadow: 0 0 0 1.8cqw #050504;
+}
+.s-dev-pscreen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(118deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 32%);
+}
+.s-dev-cam {
+  position: absolute;
+  z-index: 3;
+  top: 6.4cqw;
+  left: 50%;
+  translate: -50% 0;
+  width: 4.4cqw;
+  height: 4.4cqw;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #25222b 0, #050504 62%);
+  box-shadow: 0 0 0 0.5cqw #050504;
+}

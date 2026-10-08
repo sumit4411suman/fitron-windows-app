@@ -1,0 +1,223 @@
+@import "tailwindcss";
+
+/* light: styles that apply only in the light theme */
+@custom-variant light (&:where([data-theme="light"], [data-theme="light"] *));
+
+/*
+ * Fitron tokens, copied from the prototype (prototype/Fitron Gym.dc.html).
+ * Dark is the default; the header's sun/moon button switches to light (html[data-theme="light"]).
+ */
+:root {
+  --bg: #0e0d0a;
+  --surface: #181611;
+  --surface-2: #1f1c16;
+  --line: color-mix(in srgb, #f3ede0 14%, transparent);
+  --line-soft: color-mix(in srgb, #f3ede0 6%, transparent);
+  --text: #f3ede0;
+  --muted: #a99f8c;
+  --faint: #8a8172;
+  --accent: #cfa94f;
+  --accent-hover: #e0bb5f;
+  --accent-ink: #0e0d0a;
+  --accent-soft: #2a2314;
+  --accent-strong: #f2dfae;
+  --alert: #ff6fa3;
+  --alert-soft: #3a1322;
+  --alert-strong: #ffc6da;
+  --ok: #7cc89a;
+  --ok-soft: #14291d;
+  --scroll: #3a3328;
+  /* Tag outlines and text (prototype accent-500/700 and accent-2-300/400/700). */
+  --accent-500: #b8892a;
+  --accent-700: #e9cc82;
+  --alert-300: #8a2a52;
+  --alert-400: #c2437a;
+  --alert-700: #ff9dc0;
+  --neutral-200: #28241d;
+  --neutral-800: #cfc6b4;
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.65);
+  --accent-200: #3d321a;
+  --accent-300: #5c4a22;
+  --accent-400: #8a6612;
+  --alert-200: #561a31;
+  --neutral-100: #1f1c16;
+  --neutral-300: #352f26;
+  --neutral-400: #4a4338;
+  --neutral-500: #6b6355;
+  --neutral-600: #8a8172;
+  --neutral-700: #a99f8c;
+  --neutral-900: #e8e1d2;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 3px 10px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #f5f2ea;
+  --surface: #ffffff;
+  --surface-2: #f0ece2;
+  --line: color-mix(in srgb, #1f1b14 12%, transparent);
+  --line-soft: color-mix(in srgb, #1f1b14 6%, transparent);
+  --text: #1f1b14;
+  --muted: #5d5444;
+  --faint: #766c59;
+  --accent: #8a6612;
+  --accent-hover: #76560c;
+  --accent-ink: #ffffff;
+  --accent-soft: #f7eed6;
+  --accent-strong: #4a3608;
+  --alert: #c2185b;
+  --alert-soft: #fde7ef;
+  --alert-strong: #650a2f;
+  --ok: #1d7a45;
+  --ok-soft: #e3f4e9;
+  --scroll: #d6cebd;
+  --accent-500: #a88228;
+  --accent-700: #624809;
+  --alert-300: #f294b5;
+  --alert-400: #e0608f;
+  --alert-700: #850c3d;
+  --neutral-200: #e6e0d3;
+  --neutral-800: #3f382c;
+  --shadow-lg: 0 12px 32px rgba(40, 30, 10, 0.14);
+  --accent-200: #eedcaa;
+  --accent-300: #e0c47a;
+  --accent-400: #c9a24a;
+  --alert-200: #f9c6d8;
+  --neutral-100: #f0ece2;
+  --neutral-300: #d6cebd;
+  --neutral-400: #b9af9b;
+  --neutral-500: #978c77;
+  --neutral-600: #766c59;
+  --neutral-700: #5d5444;
+  --neutral-900: #27221a;
+  --shadow-sm: 0 1px 2px rgba(40, 30, 10, 0.08);
+  --shadow-md: 0 3px 10px rgba(40, 30, 10, 0.1);
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-fg: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-strong: var(--accent-strong);
+  --color-alert: var(--alert);
+  --color-alert-soft: var(--alert-soft);
+  --color-alert-strong: var(--alert-strong);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-accent-500: var(--accent-500);
+  --color-accent-700: var(--accent-700);
+  --color-alert-300: var(--alert-300);
+  --color-alert-400: var(--alert-400);
+  --color-alert-700: var(--alert-700);
+  --color-neutral-200: var(--neutral-200);
+  --color-neutral-800: var(--neutral-800);
+  --color-accent-200: var(--accent-200);
+  --color-accent-300: var(--accent-300);
+  --color-accent-400: var(--accent-400);
+  --color-alert-200: var(--alert-200);
+  --color-neutral-100: var(--neutral-100);
+  --color-neutral-300: var(--neutral-300);
+  --color-neutral-400: var(--neutral-400);
+  --color-neutral-500: var(--neutral-500);
+  --color-neutral-600: var(--neutral-600);
+  --color-neutral-700: var(--neutral-700);
+  --color-neutral-900: var(--neutral-900);
+  --font-serif: var(--font-source-serif);
+  /* The prototype sets font sizes only and inherits the 1.55 body line-height. */
+  --text-xs--line-height: 1.55;
+  --text-sm--line-height: 1.55;
+  --text-base--line-height: 1.55;
+  /* The prototype's corners are nearly square: 1px, 2px, 4px. */
+  --radius-sm: 1px;
+  --radius-md: 2px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 6px;
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+}
+
+html,
+body {
+  overflow-x: clip;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-source-serif), system-ui, sans-serif;
+}
+
+/* The prototype's base type scale (Broadsheet styles.css): 15px / 1.55 body, tight 600-weight headings. */
+@layer base {
+  body {
+    font-size: 15px;
+    line-height: 1.55;
+    font-weight: 400;
+  }
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-weight: 600;
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+  }
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--accent) 30%, transparent);
+  }
+}
+
+@keyframes fitronTourBar {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+
+input,
+select,
+textarea {
+  font-size: 14px;
+}
+
+select option {
+  background: var(--surface);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll) transparent;
+}
+
+@media (max-width: 899px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* no zoom on iOS */
+  }
+}

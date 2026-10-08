@@ -1,0 +1,17 @@
+node_modules
+.next
+.env
+.env.*
+!.env.example
+.git
+storage
+prototype
+coverage
+*.tsbuildinfo
+src/generated
+deploy/.env
+deploy/backups
+e2e
+playwright.config.ts
+test-results
+playwright-report

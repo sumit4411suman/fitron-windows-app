@@ -1,0 +1,27 @@
+// What the chat says while Fitron AI works, by the tool it is running (shown in the chat as "Reading payments…").
+
+export const TOOL_LABEL: Record<string, string> = {
+  get_overview: "Looking at today's numbers",
+  list_members: "Listing members",
+  find_member: "Finding the member",
+  revenue_breakdown: "Reading the accounts",
+  class_and_attendance: "Checking attendance and classes",
+  propose_action: "Drafting a message",
+  list_invoices: "Looking through invoices",
+  get_invoice: "Opening the invoice",
+  list_payments: "Reading payments",
+  receivables: "Checking who owes money",
+  list_expenses: "Reading expenses",
+  gst_summary: "Working out GST",
+  payables: "Checking supplier bills",
+  cash_position: "Checking cash and bank",
+  month_overview: "Comparing months",
+  catalog: "Looking up prices",
+  run_report: "Running the report",
+  draft_invoice: "Preparing the invoice",
+  draft_membership_sale: "Preparing the membership sale",
+  draft_payment: "Preparing the payment",
+  draft_expense: "Preparing the expense",
+  draft_cancel_invoice: "Preparing the cancellation",
+  draft_reverse_payment: "Preparing the reversal",
+};

@@ -1,0 +1,1665 @@
+// Fitron core schema, from prototype/HANDOFF.md.
+// Money is integer paise. Dates are @db.Date, timestamps are timestamptz.
+// Financial rows (Invoice, Payment, Expense) are never deleted: cancel, reverse or void with a reason.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ── Tenancy ────────────────────────────────────────────────────────────────
+
+model Organization {
+  id                String             @id @default(cuid())
+  name              String
+  branches          Branch[]
+  users             User[]
+  members           Member[]
+  plans             MembershipPlan[]
+  invoices          Invoice[]
+  payments          Payment[]
+  expenses          Expense[]
+  salaryPayments    SalaryPayment[]
+  settings          Setting[]
+  sequences         Sequence[]
+  auditLogs         AuditLog[]
+  supportTickets    SupportTicket[]
+  leads             Lead[]
+  classSlots        ClassSlot[]
+  products          Product[]
+  workoutPlans      WorkoutPlan[]
+  dietPlans         DietPlan[]
+  notifications     Notification[]
+  createdAt         DateTime           @default(now()) @db.Timestamptz
+  whatsAppTemplates WhatsAppTemplate[]
+  whatsAppMessages  WhatsAppMessage[]
+  autopayMandates   AutopayMandate[]
+  assets            Asset[]
+  purchases         Purchase[]
+  /// Created from the demo seed; the Go live checklist's "Clear demo data" removes its records and sets this false
+  demo              Boolean            @default(false)
+  /// FITRON plan key from src/lib/domain/pricing.ts (starter, professional, enterprise)
+  plan              String             @default("professional")
+  /// MONTHLY | YEARLY
+  planCycle         String             @default("MONTHLY")
+  /// Free trial end for gyms that signed up on fitron.in; null for gyms set up by hand
+  trialEndsAt       DateTime?          @db.Timestamptz
+  offers            Offer[]
+  /// Short code members type into the AI Trainer to link to this gym (Gym Partnership); made on demand
+  trainerCode       String?            @unique
+  trainerMembers    TrainerMember[]
+  backups           Backup[]
+}
+
+model Branch {
+  id             String          @id @default(cuid())
+  orgId          String
+  org            Organization    @relation(fields: [orgId], references: [id])
+  name           String
+  address        String
+  phone          String
+  gstin          String?
+  /// Short name for the switcher and dialog titles
+  short          String?
+  /// Opening hours, free text
+  hours          String?
+  manager        String?
+  /// Per-branch invoice prefix; the invoice sequence stays org-wide
+  invoicePrefix  String?
+  /// false = closed: hidden from the switcher and from new records, data kept
+  active         Boolean         @default(true)
+  deactivatedAt  DateTime?       @db.Timestamptz
+  users          UserBranch[]
+  members        Member[]
+  memberships    Membership[]
+  invoices       Invoice[]
+  payments       Payment[]
+  expenses       Expense[]
+  salaryPayments SalaryPayment[]
+  monthLocks     MonthLock[]
+  attendance     Attendance[]
+  leads          Lead[]
+  classSlots     ClassSlot[]
+  products       Product[]
+  assets         Asset[]
+  purchases      Purchase[]
+  createdAt      DateTime        @default(now()) @db.Timestamptz
+
+  @@index([orgId])
+  @@index([orgId, active])
+}
+
+// ── Staff and roles ────────────────────────────────────────────────────────
+
+model User {
+  id              String          @id @default(cuid())
+  orgId           String
+  org             Organization    @relation(fields: [orgId], references: [id])
+  name            String
+  email           String          @unique
+  phone           String
+  passwordHash    String
+  roleId          String
+  role            Role            @relation(fields: [roleId], references: [id])
+  branches        UserBranch[]
+  sessions        Session[]
+  ptRate          Int             @default(0)
+  shift           String?
+  /// Profile photo in private storage; set by the user on My profile
+  photoKey        String?
+  active          Boolean         @default(true)
+  lastLoginAt     DateTime?       @db.Timestamptz
+  /// Null until the user clicks the link in the verification email
+  emailVerifiedAt DateTime?       @db.Timestamptz
+  authTokens      AuthToken[]
+  authCodes       AuthCode[]
+  /// Two-step sign-in (authenticator app): the secret, sealed with AES-GCM (src/lib/services/two-step.ts). Set while a
+  /// person is setting it up, but only enforced once totpEnabledAt is set.
+  totpSecret      Bytes?
+  totpEnabledAt   DateTime?       @db.Timestamptz
+  /// The latest 30-second step a code was accepted for, so one code cannot be used twice
+  totpLastStep    Int?
+  recoveryCodes   RecoveryCode[]
+  /// Monthly salary in paise; 0 = not set
+  salary          Int             @default(0)
+  joinedOn        DateTime?       @db.Date
+  /// Bank account / UPI for salary
+  payAccount      String?
+  salaryPayments  SalaryPayment[] @relation("SalaryStaff")
+  salaryPaid      SalaryPayment[] @relation("SalaryPaidBy")
+  createdAt       DateTime        @default(now()) @db.Timestamptz
+  updatedAt       DateTime        @updatedAt @db.Timestamptz
+  deletedAt       DateTime?       @db.Timestamptz
+}
+
+/// One-use codes for signing in without the authenticator app. Only the SHA-256 of a code is kept.
+model RecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String
+  usedAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+
+  @@unique([userId, codeHash])
+}
+
+/// One-time links sent by email. `id` is the SHA-256 of the token in the link.
+model AuthToken {
+  id        String    @id
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// VERIFY_EMAIL | RESET_PASSWORD | LOGIN
+  purpose   String
+  expiresAt DateTime  @db.Timestamptz
+  usedAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+
+  @@index([userId, purpose])
+}
+
+/// Six-digit codes sent by email, the typed-in twin of an AuthToken link (the same email carries both). Only a hash of the
+/// code is kept, and a code stops working after a few wrong tries.
+model AuthCode {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// VERIFY_EMAIL | RESET_PASSWORD | LOGIN
+  purpose   String
+  codeHash  String
+  attempts  Int       @default(0)
+  expiresAt DateTime  @db.Timestamptz
+  usedAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+
+  @@index([userId, purpose])
+}
+
+/// Server-side session. `id` is the SHA-256 of the cookie token, so a leaked
+/// database row can't be replayed as a cookie.
+model Session {
+  id         String   @id
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime @db.Timestamptz
+  lastSeenAt DateTime @default(now()) @db.Timestamptz
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  @@index([userId])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  permissions RolePermission[]
+  users       User[]
+}
+
+/// e.g. members.create, payments.reverse, months.unlock
+model Permission {
+  id    String           @id @default(cuid())
+  key   String           @unique
+  roles RolePermission[]
+}
+
+model RolePermission {
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id])
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+}
+
+model UserBranch {
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+
+  @@id([userId, branchId])
+}
+
+// ── Members, plans, memberships ────────────────────────────────────────────
+
+model Member {
+  id                 String            @id @default(cuid())
+  /// PHG-1001, unique per org
+  code               String
+  oldId              String?
+  orgId              String
+  org                Organization      @relation(fields: [orgId], references: [id])
+  branchId           String
+  branch             Branch            @relation(fields: [branchId], references: [id])
+  name               String
+  gender             String
+  dob                DateTime?         @db.Date
+  phone              String
+  whatsapp           String?
+  email              String?
+  occupation         String?
+  house              String?
+  area               String?
+  city               String?
+  state              String?
+  pin                String?
+  emergencyName      String?
+  emergencyRelation  String?
+  emergencyPhone     String?
+  source             String
+  notes              String?
+  staffNotes         String?
+  tags               String[]
+  photoKey           String?
+  trainerId          String?
+  workoutPlanId      String?
+  workoutPlan        WorkoutPlan?      @relation(fields: [workoutPlanId], references: [id])
+  dietPlanId         String?
+  dietPlan           DietPlan?         @relation(fields: [dietPlanId], references: [id])
+  suspended          Boolean           @default(false)
+  /// The per-branch "Walk-in customer" used for counter sales. Hidden from member lists.
+  walkIn             Boolean           @default(false)
+  /// Churn risk 0–100, recomputed each night.
+  riskScore          Int?
+  riskReasons        String[]          @default([])
+  /// User PIN on biometric devices, given at enrolment.
+  devicePin          String?
+  /// RFID card number pushed to door devices as USERINFO Card=
+  cardNo             String?
+  biometricConsentAt DateTime?         @db.Timestamptz
+  memberships        Membership[]
+  attendance         Attendance[]
+  bookings           Booking[]
+  progress           ProgressLog[]
+  records            PersonalRecord[]
+  lead               Lead?
+  waMessages         WhatsAppMessage[]
+  mandates           AutopayMandate[]
+  invoices           Invoice[]
+  payments           Payment[]
+  trainerMember      TrainerMember?
+  createdById        String
+  createdAt          DateTime          @default(now()) @db.Timestamptz
+  updatedAt          DateTime          @updatedAt @db.Timestamptz
+  deletedAt          DateTime?         @db.Timestamptz
+  deletedById        String?
+  deleteReason       String?
+  /// Personal data stripped (DPDP erasure); set with deletedAt. Restore is refused.
+  erasedAt           DateTime?         @db.Timestamptz
+
+  // Phone is unique among non-deleted members (rule 9). Enforced by a partial
+  // unique index in a migration: WHERE "deletedAt" IS NULL AND NOT "walkIn".
+  @@unique([orgId, code])
+  @@unique([orgId, devicePin])
+  @@unique([orgId, cardNo])
+  @@index([orgId, phone])
+  @@index([branchId])
+  @@index([name])
+}
+
+model MembershipPlan {
+  id            String       @id @default(cuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  name          String
+  months        Int
+  price         Int
+  regFee        Int
+  discount      Int          @default(0)
+  gstApplicable Boolean      @default(true)
+  kind          String
+  description   String?
+  features      String[]
+  /// ACTIVE | INACTIVE. Plans in use are deactivated, never deleted.
+  status        String       @default("ACTIVE")
+  prices        PlanPrice[]
+  memberships   Membership[]
+  createdAt     DateTime     @default(now()) @db.Timestamptz
+  updatedAt     DateTime     @updatedAt @db.Timestamptz
+}
+
+/// Category prices: Female, Student, Couple…
+model PlanPrice {
+  planId   String
+  plan     MembershipPlan @relation(fields: [planId], references: [id])
+  category String
+  price    Int
+
+  @@id([planId, category])
+}
+
+model Membership {
+  id              String         @id @default(cuid())
+  /// MS-…
+  code            String
+  memberId        String
+  member          Member         @relation(fields: [memberId], references: [id])
+  planId          String
+  plan            MembershipPlan @relation(fields: [planId], references: [id])
+  branchId        String
+  branch          Branch         @relation(fields: [branchId], references: [id])
+  /// NEW | RENEWAL | AUTOPAY | IMPORT
+  type            String
+  startDate       DateTime       @db.Date
+  endDate         DateTime       @db.Date
+  price           Int
+  discount        Int
+  pricingCategory String
+  offerCode       String?
+  invoiceId       String         @unique
+  invoice         Invoice        @relation(fields: [invoiceId], references: [id])
+  /// VALID | CANCELLED
+  status          String         @default("VALID")
+  createdAt       DateTime       @default(now()) @db.Timestamptz
+
+  @@index([memberId])
+  @@index([endDate])
+}
+
+// ── Billing ────────────────────────────────────────────────────────────────
+
+model Invoice {
+  id            String        @id @default(cuid())
+  /// INV-1024
+  number        String
+  orgId         String
+  org           Organization  @relation(fields: [orgId], references: [id])
+  branchId      String
+  branch        Branch        @relation(fields: [branchId], references: [id])
+  memberId      String
+  member        Member        @relation(fields: [memberId], references: [id])
+  date          DateTime      @db.Date
+  dueDate       DateTime      @db.Date
+  /// Denormalised, written once at issue.
+  subtotal      Int
+  discount      Int
+  tax           Int
+  total         Int
+  gstType       String?
+  gstRate       Decimal?      @db.Decimal(5, 2)
+  /// ISSUED | CANCELLED. Paid state is computed from payments, never stored.
+  status        String
+  cancelReason  String?
+  cancelledById String?
+  cancelledAt   DateTime?     @db.Timestamptz
+  pdfKey        String?
+  createdById   String
+  createdAt     DateTime      @default(now()) @db.Timestamptz
+  items         InvoiceItem[]
+  payments      Payment[]
+  membership    Membership?
+
+  @@unique([orgId, number])
+  @@index([memberId])
+  @@index([date])
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id])
+  description String
+  qty         Int
+  rate        Int
+  discount    Int
+  taxRate     Decimal @db.Decimal(5, 2)
+  taxAmount   Int
+  amount      Int
+  category    String
+  planId      String?
+  productId   String?
+  trainerId   String?
+}
+
+model Payment {
+  id            String       @id @default(cuid())
+  /// PAY-5001
+  code          String
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  branchId      String
+  branch        Branch       @relation(fields: [branchId], references: [id])
+  invoiceId     String
+  invoice       Invoice      @relation(fields: [invoiceId], references: [id])
+  memberId      String
+  member        Member       @relation(fields: [memberId], references: [id])
+  date          DateTime     @db.Date
+  amount        Int
+  method        String
+  txnRef        String?
+  notes         String?
+  /// SUCCESS | REVERSED
+  status        String       @default("SUCCESS")
+  receivedById  String
+  reversedById  String?
+  reversedAt    DateTime?    @db.Timestamptz
+  reverseReason String?
+  createdAt     DateTime     @default(now()) @db.Timestamptz
+
+  @@unique([orgId, code])
+  @@index([invoiceId])
+  @@index([date])
+  @@index([txnRef])
+}
+
+model Expense {
+  id            String          @id @default(cuid())
+  code          String
+  orgId         String
+  org           Organization    @relation(fields: [orgId], references: [id])
+  branchId      String
+  branch        Branch          @relation(fields: [branchId], references: [id])
+  date          DateTime        @db.Date
+  categoryId    String
+  category      ExpenseCategory @relation(fields: [categoryId], references: [id])
+  description   String
+  vendor        String?
+  amount        Int
+  method        String
+  billNo        String?
+  attachmentKey String?
+  notes         String?
+  createdById   String
+  /// ACTIVE | VOID
+  status        String          @default("ACTIVE")
+  voidReason    String?
+  /// Capital spend (an asset purchase): in the cash book, not in P&L.
+  capital       Boolean         @default(false)
+  assetId       String?
+  purchaseId    String?
+  purchase      Purchase?       @relation(fields: [purchaseId], references: [id])
+  salaryPayment SalaryPayment?
+  createdAt     DateTime        @default(now()) @db.Timestamptz
+
+  @@index([branchId, date])
+  @@index([purchaseId])
+}
+
+/// One row per salary paid or advance given; immutable.
+model SalaryPayment {
+  id           String       @id @default(cuid())
+  /// PR-1, PR-2…
+  code         String
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id])
+  branchId     String
+  branch       Branch       @relation(fields: [branchId], references: [id])
+  userId       String
+  user         User         @relation("SalaryStaff", fields: [userId], references: [id])
+  /// SALARY | ADVANCE
+  kind         String
+  /// YYYY-MM, SALARY only
+  month        String?
+  date         DateTime     @db.Date
+  base         Int          @default(0)
+  days         Int          @default(0)
+  commission   Int          @default(0)
+  bonus        Int          @default(0)
+  deductions   Int          @default(0)
+  /// Advance recovered in this salary
+  advance      Int          @default(0)
+  /// SALARY: net pay; ADVANCE: amount given
+  net          Int
+  /// ADVANCE only: how much later salaries have taken back
+  recovered    Int          @default(0)
+  /// ADVANCE only: the salary month that fully recovered it
+  settledMonth String?
+  method       String
+  reference    String?
+  note         String?
+  expenseId    String?      @unique
+  expense      Expense?     @relation(fields: [expenseId], references: [id])
+  paidById     String
+  paidBy       User         @relation("SalaryPaidBy", fields: [paidById], references: [id])
+  createdAt    DateTime     @default(now()) @db.Timestamptz
+
+  @@unique([userId, kind, month])
+  @@index([orgId, kind, month])
+  @@index([userId, kind, settledMonth])
+}
+
+/// Rent, Utilities, Salaries…
+model ExpenseCategory {
+  id       String    @id @default(cuid())
+  name     String
+  group    String
+  expenses Expense[]
+}
+
+// ── Controls ───────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        BigInt       @id @default(autoincrement())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  userId    String?
+  actorType String
+  action    String
+  entity    String
+  entityId  String
+  before    Json?
+  after     Json?
+  ip        String?
+  userAgent String?
+  /// null = org-wide ("All branches")
+  branchId  String?
+  /// sha256 of this entry chained onto prevHash; null on entries written before hashing was enabled
+  hash      String?      @db.VarChar(64)
+  /// hash of the previous hashed entry of this organisation, or "0000"
+  prevHash  String?      @db.VarChar(64)
+  createdAt DateTime     @default(now()) @db.Timestamptz
+
+  @@index([orgId, createdAt])
+  @@index([orgId, id])
+  @@index([entity, entityId])
+}
+
+model MonthLock {
+  branchId   String
+  branch     Branch   @relation(fields: [branchId], references: [id])
+  /// YYYY-MM
+  month      String
+  lockedById String
+  lockedAt   DateTime @db.Timestamptz
+
+  @@id([branchId, month])
+}
+
+model Setting {
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id])
+  key   String
+  value Json
+
+  @@id([orgId, key])
+}
+
+/// Gap-free numbering: member, invoice, payment, expense…
+model Sequence {
+  orgId String
+  org   Organization @relation(fields: [orgId], references: [id])
+  name  String
+  next  Int
+
+  @@id([orgId, name])
+}
+
+// ── Front desk: attendance, leads, classes ─────────────────────────────────
+
+model Attendance {
+  id          String    @id @default(cuid())
+  branchId    String
+  branch      Branch    @relation(fields: [branchId], references: [id])
+  memberId    String?
+  member      Member?   @relation(fields: [memberId], references: [id])
+  guestName   String?
+  guestPhone  String?
+  /// MEMBER | GUEST
+  type        String
+  date        DateTime  @db.Date
+  checkIn     DateTime  @db.Timestamptz
+  checkOut    DateTime? @db.Timestamptz
+  /// Manual | QR | Face | Fingerprint | Card
+  method      String
+  deviceId    String?
+  /// Why staff let someone in despite a block (expired, dues…).
+  override    String?
+  autoOut     Boolean   @default(false)
+  createdById String?
+
+  @@index([branchId, date])
+  @@index([memberId, date])
+}
+
+model Lead {
+  id         String       @id @default(cuid())
+  orgId      String
+  org        Organization @relation(fields: [orgId], references: [id])
+  branchId   String
+  branch     Branch       @relation(fields: [branchId], references: [id])
+  name       String
+  phone      String
+  source     String
+  /// What they asked about, usually a plan name.
+  interest   String
+  /// New | Contacted | Trial booked | Trial done | Won | Lost
+  stage      String       @default("New")
+  /// When the lead entered its current stage ("In stage" on the leads board)
+  stageAt    DateTime     @default(now()) @db.Timestamptz
+  followUpOn DateTime?    @db.Date
+  trialOn    DateTime?    @db.Date
+  ownerId    String
+  notes      String?
+  lostReason String?
+  memberId   String?      @unique
+  member     Member?      @relation(fields: [memberId], references: [id])
+  createdAt  DateTime     @default(now()) @db.Timestamptz
+  updatedAt  DateTime     @updatedAt @db.Timestamptz
+
+  @@index([branchId, stage])
+  @@index([followUpOn])
+}
+
+model ClassSlot {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  branchId    String
+  branch      Branch       @relation(fields: [branchId], references: [id])
+  name        String
+  trainerId   String
+  /// 0 = Monday … 6 = Sunday
+  weekday     Int
+  /// HH:MM, 24-hour
+  startTime   String
+  durationMin Int
+  capacity    Int
+  room        String?
+  active      Boolean      @default(true)
+  bookings    Booking[]
+  createdAt   DateTime     @default(now()) @db.Timestamptz
+
+  @@index([branchId, weekday])
+}
+
+model Booking {
+  id          String    @id @default(cuid())
+  classSlotId String
+  classSlot   ClassSlot @relation(fields: [classSlotId], references: [id])
+  date        DateTime  @db.Date
+  memberId    String
+  member      Member    @relation(fields: [memberId], references: [id])
+  /// Booked | Waitlist | Attended | No-show | Cancelled
+  status      String
+  createdAt   DateTime  @default(now()) @db.Timestamptz
+  updatedAt   DateTime  @updatedAt @db.Timestamptz
+
+  @@unique([classSlotId, date, memberId])
+  @@index([classSlotId, date])
+}
+
+// ── Counter sales ──────────────────────────────────────────────────────────
+
+model Product {
+  id            String          @id @default(cuid())
+  orgId         String
+  org           Organization    @relation(fields: [orgId], references: [id])
+  branchId      String
+  branch        Branch          @relation(fields: [branchId], references: [id])
+  sku           String
+  name          String
+  category      String
+  /// Selling price before GST, paise.
+  price         Int
+  /// Average cost, paise.
+  cost          Int
+  /// null for services (day pass) that don't track stock.
+  stock         Int?
+  reorderLevel  Int?
+  gstApplicable Boolean         @default(true)
+  active        Boolean         @default(true)
+  movements     StockMovement[]
+  createdAt     DateTime        @default(now()) @db.Timestamptz
+
+  @@unique([branchId, sku])
+}
+
+model StockMovement {
+  id            String   @id @default(cuid())
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  /// + received, − sold or written off
+  qty           Int
+  /// SALE | RESTOCK | ADJUST | RETURN
+  reason        String
+  note          String?
+  unitCost      Int?
+  invoiceItemId String?
+  expenseId     String?
+  createdById   String
+  createdAt     DateTime @default(now()) @db.Timestamptz
+
+  @@index([productId, createdAt])
+}
+
+// ── Programs ───────────────────────────────────────────────────────────────
+
+model WorkoutPlan {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  name      String
+  goal      String
+  level     String
+  weeks     Int
+  /// [{ name: "Day A", exercises: [{ name: "Goblet squat", sets: "3 × 12" }] }]
+  days      Json
+  active    Boolean      @default(true)
+  members   Member[]
+  createdAt DateTime     @default(now()) @db.Timestamptz
+}
+
+model DietPlan {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  name      String
+  kcal      Int
+  protein   Int
+  /// [{ name: "Breakfast", food: "Besan chilla (2)…" }]
+  meals     Json
+  active    Boolean      @default(true)
+  members   Member[]
+  createdAt DateTime     @default(now()) @db.Timestamptz
+}
+
+model ProgressLog {
+  id          String   @id @default(cuid())
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id])
+  date        DateTime @db.Date
+  weightKg    Decimal? @db.Decimal(5, 1)
+  bodyFat     Decimal? @db.Decimal(4, 1)
+  waistCm     Decimal? @db.Decimal(5, 1)
+  notes       String?
+  createdById String
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  @@index([memberId, date])
+}
+
+// ── Notifications ──────────────────────────────────────────────────────────
+
+/// In-app alerts for staff: low stock, waitlist moves, overridden check-ins…
+/// A membership put on hold (member profile → Freeze). The membership's end date moves out by `days`;
+/// unfreezing early gives the unused days back. Check-in is refused while a freeze covers today.
+model MembershipFreeze {
+  id           String    @id @default(cuid())
+  orgId        String
+  memberId     String
+  membershipId String
+  fromDate     DateTime  @db.Date
+  days         Int
+  reason       String
+  /// Set when unfrozen early; the membership end moved back by the unused days
+  endedOn      DateTime? @db.Date
+  createdById  String
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+
+  @@index([memberId])
+}
+
+model Notification {
+  id        String       @id @default(cuid())
+  orgId     String
+  org       Organization @relation(fields: [orgId], references: [id])
+  branchId  String?
+  /// null = everyone in the branch who can see this type
+  userId    String?
+  type      String
+  text      String
+  link      String?
+  readAt    DateTime?    @db.Timestamptz
+  createdAt DateTime     @default(now()) @db.Timestamptz
+
+  @@index([orgId, createdAt])
+}
+
+// ── WhatsApp ───────────────────────────────────────────────────────────────
+
+model WhatsAppTemplate {
+  id                 String       @id @default(cuid())
+  orgId              String
+  org                Organization @relation(fields: [orgId], references: [id])
+  /// welcome, payment, invoice, due, exp7, exp3, exp1, expired, renewal, autopay, mandate, class, birthday, campaign
+  key                String
+  name               String
+  trigger            String
+  body               String
+  /// Approved template name in Meta Business Manager (Cloud API). Without it, Cloud API can only reply inside 24 h.
+  metaTemplateName   String?
+  language           String       @default("en")
+  /// Sent automatically when its trigger happens.
+  autoSend           Boolean      @default(true)
+  /// Automation rule: event | before_expiry | after_expiry | dues_age | no_visit | birthday | before_debit | manual
+  ruleWhen           String       @default("manual")
+  ruleDays           Int          @default(0)
+  /// "HH:MM" Indian time the daily run sends it.
+  ruleTime           String       @default("07:00")
+  rulePlanId         String?
+  ruleGender         String?
+  /// Paise; 0 = any balance.
+  ruleMinDue         Int          @default(0)
+  ruleMaxPerWeek     Int          @default(3)
+  ruleExcludeAutopay Boolean      @default(false)
+  updatedAt          DateTime     @updatedAt @db.Timestamptz
+
+  @@unique([orgId, key])
+}
+
+model WhatsAppMessage {
+  id                String       @id @default(cuid())
+  orgId             String
+  org               Organization @relation(fields: [orgId], references: [id])
+  memberId          String?
+  member            Member?      @relation(fields: [memberId], references: [id])
+  templateKey       String
+  toNumber          String
+  body              String
+  /// e.g. invoice:<id> when a PDF was attached
+  attachment        String?
+  /// demo | cloud | connector
+  provider          String
+  providerMessageId String?
+  /// Scheduled (held by quiet hours or the rule's send time) | Logged (demo, not sent) | Queued | Sent | Delivered | Read | Failed
+  status            String
+  error             String?
+  sentById          String?
+  sentAt            DateTime     @default(now()) @db.Timestamptz
+  /// When a Scheduled message may go out.
+  scheduledFor      DateTime?    @db.Timestamptz
+  deliveredAt       DateTime?    @db.Timestamptz
+  readAt            DateTime?    @db.Timestamptz
+
+  @@index([memberId, templateKey, sentAt])
+  @@index([orgId, sentAt])
+  @@index([orgId, status, scheduledFor])
+  @@index([providerMessageId])
+}
+
+// ── UPI Autopay ────────────────────────────────────────────────────────────
+
+model AutopayMandate {
+  id             String         @id @default(cuid())
+  /// MD-1001
+  code           String
+  orgId          String
+  org            Organization   @relation(fields: [orgId], references: [id])
+  branchId       String
+  memberId       String
+  member         Member         @relation(fields: [memberId], references: [id])
+  planId         String
+  /// Debited each cycle, paise (plan price incl. GST).
+  amount         Int
+  months         Int
+  /// demo | live
+  mode           String
+  subscriptionId String?        @unique
+  shortUrl       String?
+  /// Pending | Active | Paused | Failed | Halted | Cancelled
+  status         String         @default("Pending")
+  nextDebitOn    DateTime?      @db.Date
+  /// Demo mode: the scheduled retry after a failed simulated debit.
+  nextRetryOn    DateTime?      @db.Date
+  retries        Int            @default(0)
+  lastResult     String?
+  createdById    String
+  createdAt      DateTime       @default(now()) @db.Timestamptz
+  updatedAt      DateTime       @updatedAt @db.Timestamptz
+  events         AutopayEvent[]
+  /// The member's UPI ID the mandate debits, e.g. riya@okicici (shown on the Autopay screen).
+  vpa            String?
+
+  @@unique([orgId, code])
+  @@index([status, nextDebitOn])
+}
+
+/// Every webhook we accept, once. The provider event id makes replays harmless.
+model AutopayEvent {
+  id        String          @id @default(cuid())
+  eventId   String          @unique
+  mandateId String?
+  mandate   AutopayMandate? @relation(fields: [mandateId], references: [id])
+  type      String
+  payload   Json
+  result    String?
+  createdAt DateTime        @default(now()) @db.Timestamptz
+}
+
+// ── Scheduled jobs ─────────────────────────────────────────────────────────
+
+/// One row per job per org per day, so a job that is triggered twice runs once.
+model JobRun {
+  id         String    @id @default(cuid())
+  orgId      String
+  name       String
+  /// YYYY-MM-DD, Indian date
+  day        String
+  startedAt  DateTime  @default(now()) @db.Timestamptz
+  finishedAt DateTime? @db.Timestamptz
+  result     Json?
+  error      String?
+
+  @@unique([orgId, name, day])
+}
+
+// ── Fixed assets and purchases ─────────────────────────────────────────────
+
+/// Rule 12. Depreciation is computed from these rows, never stored.
+model Asset {
+  id            String       @id @default(cuid())
+  orgId         String
+  org           Organization @relation(fields: [orgId], references: [id])
+  branchId      String
+  branch        Branch       @relation(fields: [branchId], references: [id])
+  code          String
+  name          String
+  category      String
+  qty           Int          @default(1)
+  vendor        String?
+  purchaseDate  DateTime     @db.Date
+  /// paise
+  cost          Int
+  salvage       Int          @default(0)
+  /// WDV | SLM
+  method        String
+  /// WDV rate, % a year
+  rate          Decimal?     @db.Decimal(5, 2)
+  /// SLM life, years
+  life          Int?
+  serial        String?
+  billNo        String?
+  /// How it was paid when a cash-book expense was written; null when not paid from the gym's books.
+  payMethod     String?
+  expenseId     String?
+  purchaseId    String?
+  /// Imported assets: depreciation charged before Fitron, and the month to continue from (YYYY-MM).
+  accDepCarried Int          @default(0)
+  depFrom       String?
+  /// IN_USE | SOLD | SCRAPPED
+  status        String       @default("IN_USE")
+  disposedOn    DateTime?    @db.Date
+  disposedFor   Int?
+  disposeMethod String?
+  disposeNote   String?
+  notes         String?
+  createdById   String
+  createdAt     DateTime     @default(now()) @db.Timestamptz
+  deletedAt     DateTime?    @db.Timestamptz
+
+  @@unique([orgId, code])
+  @@index([branchId])
+}
+
+/// Rule 13. A supplier bill; lines post to stock, the asset register or expenses.
+model Purchase {
+  id           String          @id @default(cuid())
+  orgId        String
+  org          Organization    @relation(fields: [orgId], references: [id])
+  branchId     String
+  branch       Branch          @relation(fields: [branchId], references: [id])
+  code         String
+  date         DateTime        @db.Date
+  vendor       String
+  billNo       String?
+  notes        String?
+  /// GST-inclusive, paise
+  total        Int
+  /// ACTIVE | CANCELLED
+  status       String          @default("ACTIVE")
+  cancelReason String?
+  lines        PurchaseLine[]
+  payments     VendorPayment[]
+  expenses     Expense[]
+  createdById  String
+  createdAt    DateTime        @default(now()) @db.Timestamptz
+
+  @@unique([orgId, code])
+  @@index([branchId, date])
+}
+
+model PurchaseLine {
+  id          String   @id @default(cuid())
+  purchaseId  String
+  purchase    Purchase @relation(fields: [purchaseId], references: [id])
+  /// STOCK | ASSET | EXPENSE
+  type        String
+  description String
+  /// Expense category id, or asset category name
+  category    String?
+  productId   String?
+  assetId     String?
+  expenseId   String?
+  qty         Int
+  /// ex-GST, paise
+  rate        Int
+  gstPct      Decimal  @db.Decimal(5, 2)
+  /// GST-inclusive, paise (the cost booked)
+  amount      Int
+}
+
+model VendorPayment {
+  id          String   @id @default(cuid())
+  purchaseId  String
+  purchase    Purchase @relation(fields: [purchaseId], references: [id])
+  code        String
+  date        DateTime @db.Date
+  amount      Int
+  method      String
+  reference   String?
+  createdById String
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  @@index([purchaseId])
+}
+
+// ── Fitron AI ──────────────────────────────────────────────────────────────
+
+/// An action the assistant suggested. Nothing happens until a staff member confirms it.
+model AiProposal {
+  id        String    @id @default(cuid())
+  orgId     String
+  userId    String
+  /// WHATSAPP | INVOICE | PAYMENT | EXPENSE | MEMBERSHIP_SALE | CANCEL_INVOICE
+  kind      String
+  memberIds String[]
+  /// The WhatsApp text; for the accounting kinds, the plain-language preview shown to the user.
+  body      String
+  summary   String
+  /// What to run when the user confirms an accounting action (validated again at that moment).
+  payload   Json?
+  /// PENDING | DONE | DISMISSED
+  status    String    @default("PENDING")
+  result    String?
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  doneAt    DateTime? @db.Timestamptz
+
+  @@index([orgId, userId, createdAt])
+}
+
+// ── Biometric devices (ZKTeco / eSSL ADMS push) ────────────────────────────
+
+model Device {
+  id           String          @id @default(cuid())
+  /// null until someone approves it; unknown serials that call in are held for approval
+  orgId        String?
+  branchId     String?
+  serial       String          @unique
+  model        String?
+  name         String?
+  ip           String?
+  approved     Boolean         @default(false)
+  /// Seconds the door relay stays open
+  relaySeconds Int             @default(5)
+  lastSeenAt   DateTime?       @db.Timestamptz
+  createdAt    DateTime        @default(now()) @db.Timestamptz
+  commands     DeviceCommand[]
+  users        DeviceUser[]
+}
+
+model DeviceCommand {
+  id         String    @id @default(cuid())
+  deviceId   String
+  device     Device    @relation(fields: [deviceId], references: [id])
+  /// The number the device echoes back when it reports the result
+  cmdNo      Int
+  command    String
+  /// PENDING | SENT | DONE | FAILED
+  status     String    @default("PENDING")
+  returnCode String?
+  createdAt  DateTime  @default(now()) @db.Timestamptz
+  sentAt     DateTime? @db.Timestamptz
+  ackAt      DateTime? @db.Timestamptz
+
+  @@unique([deviceId, cmdNo])
+  @@index([deviceId, status])
+}
+
+/// Whether a member is currently loaded on a device (allowed in) or removed from it (blocked).
+model DeviceUser {
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id])
+  memberId  String
+  allowed   Boolean
+  updatedAt DateTime @updatedAt @db.Timestamptz
+
+  @@id([deviceId, memberId])
+}
+
+/// Sensitive personal data (DPDP): encrypted at rest, never shown or exported, deleted when the member leaves.
+model BiometricTemplate {
+  id        String   @id @default(cuid())
+  memberId  String
+  /// FP | FACE
+  type      String
+  /// Finger index or face slot
+  slot      Int
+  deviceId  String?
+  /// AES-256-GCM of the device's template record
+  data      Bytes
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@unique([memberId, type, slot])
+}
+
+model AccessLog {
+  id       String   @id @default(cuid())
+  deviceId String
+  branchId String?
+  memberId String?
+  pin      String
+  /// Fingerprint | Face | Card | Password
+  method   String
+  /// ALLOWED | DENIED | UNKNOWN
+  result   String
+  reason   String?
+  at       DateTime @db.Timestamptz
+
+  @@index([deviceId, at])
+  @@index([memberId, at])
+}
+
+/// Fitron's own billing: an extra branch beyond the 3 the plan includes, paid to Fitron.
+/// A payment from a gym to FITRON: a period of its Gym Accounting plan, or of one extra branch.
+model BranchSubscription {
+  id                     String    @id @default(cuid())
+  orgId                  String
+  /// PLAN | BRANCH | SERVICE (a one-time add-on such as onboarding or branding)
+  kind                   String    @default("BRANCH")
+  /// PLAN: the plan key paid for (starter, professional, enterprise, partner-*). SERVICE: the add-on key (onboarding, branding…)
+  plan                   String?
+  /// BRANCH only; null = paid for but not yet given to a branch
+  branchId               String?
+  /// MONTHLY | YEARLY | ONCE (SERVICE)
+  cycle                  String
+  base                   Int
+  gst                    Int
+  total                  Int
+  periodStart            DateTime? @db.Date
+  periodEnd              DateTime? @db.Date
+  /// PENDING | PAID | FAILED. (SUBMITTED and REJECTED belong to the UPI QR + UTR way of paying, which is gone: old rows keep them.)
+  status                 String    @default("PENDING")
+  /// LIVE (Razorpay Checkout, one payment) | SUBSCRIPTION (Razorpay, renews itself) | COUPON (a 100% coupon: nothing to pay) | DEMO (no keys, test server only). Old rows may say UPI.
+  mode                   String
+  /// Legacy, UPI QR + UTR payments only (no longer made): the 12-digit UTR the gym typed after paying
+  utr                    String?   @unique
+  submittedAt            DateTime? @db.Timestamptz
+  /// Legacy, UPI QR + UTR payments only: the FITRON team member who confirmed or rejected the UTR
+  reviewedBy             String?
+  reviewedAt             DateTime? @db.Timestamptz
+  rejectReason           String?
+  razorpayOrderId        String?   @unique
+  razorpayPaymentId      String?   @unique
+  /// SUBSCRIPTION: the Razorpay subscription this charge belongs to (RazorpaySubscription.id). Every renewal is its own row.
+  razorpaySubscriptionId String?
+  /// Fitron's tax invoice number, set when paid
+  invoiceNo              String?   @unique
+  /// The coupon (Coupon.code) this payment used, and how much it took off the listed price (paise, GST included). `total` is what was charged.
+  couponCode             String?
+  discount               Int       @default(0)
+  createdById            String
+  createdAt              DateTime  @default(now()) @db.Timestamptz
+  paidAt                 DateTime? @db.Timestamptz
+
+  @@index([orgId, status])
+  @@index([status])
+  @@index([branchId])
+  @@index([razorpaySubscriptionId])
+}
+
+/// A plan that renews itself through Razorpay Subscriptions (UPI AutoPay, card or e-mandate), made by FITRON for a gym
+/// (its plan, or one extra branch) or an AI Trainer member. Razorpay says on every charge; each charge becomes a
+/// BranchSubscription (gym) or TrainerPayment (member) row, and this row tracks the subscription itself.
+/// Plain ids, no relations: a subscription outlives edits to the gym or member it belongs to and must stay stoppable.
+model RazorpaySubscription {
+  /// Razorpay's own id (sub_…)
+  id           String    @id
+  /// GYM_PLAN | BRANCH | TRAINER
+  kind         String
+  orgId        String?
+  memberId     String?
+  /// What renews: starter, professional, enterprise, partner-* (GYM_PLAN), ai-pro, ai-premium (TRAINER); null for BRANCH
+  plan         String?
+  /// BRANCH: the branch it pays for; null until the paid slot is given to a branch
+  branchId     String?
+  /// MONTHLY | YEARLY
+  cycle        String
+  /// Razorpay's status: created | authenticated | active | pending | halted | cancelled | completed | paused | expired
+  status       String    @default("created")
+  paidCount    Int       @default(0)
+  nextChargeAt DateTime? @db.Timestamptz
+  /// When FITRON stopped it (the gym or member cancelled, or moved to another plan)
+  cancelledAt  DateTime? @db.Timestamptz
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+  updatedAt    DateTime  @updatedAt @db.Timestamptz
+
+  @@index([orgId, kind, status])
+  @@index([memberId, status])
+}
+
+/// A file kept against a member (ID proof, medical form, waiver…). Replacing or deleting keeps the old row.
+model MemberDocument {
+  id           String    @id @default(cuid())
+  orgId        String
+  memberId     String
+  /// ID proof | Address proof | Medical | Waiver | Photo | Other
+  kind         String
+  title        String
+  fileName     String
+  mime         String
+  size         Int
+  storageKey   String    @unique
+  /// ACTIVE | REPLACED | DELETED
+  status       String    @default("ACTIVE")
+  /// The newer file that replaced this one
+  replacedById String?
+  uploadedById String
+  createdAt    DateTime  @default(now()) @db.Timestamptz
+  deletedAt    DateTime? @db.Timestamptz
+  deletedById  String?
+  deleteReason String?
+
+  @@index([memberId, status])
+}
+
+// ── Backups (Settings › Backup) ────────────────────────────────────────────
+
+/// A complete copy of one gym's data as a JSON file in private storage (src/lib/services/backup.ts).
+model Backup {
+  id           String       @id @default(cuid())
+  orgId        String
+  org          Organization @relation(fields: [orgId], references: [id])
+  /// MANUAL (Back up now) | AUTO (daily job) | PRE_RESTORE (safety copy taken before a restore)
+  kind         String
+  /// Private storage key: <orgId>/backups/<id>.json
+  storageKey   String       @unique
+  fileName     String
+  size         Int
+  sha256       String
+  /// File format version (src/lib/domain/backup.ts BACKUP_FORMAT)
+  format       Int          @default(1)
+  /// {members, invoices, payments, expenses, ...} as written in the file
+  counts       Json
+  tables       Int
+  rows         Int
+  createdById  String?
+  createdAt    DateTime     @default(now()) @db.Timestamptz
+  downloadedAt DateTime?    @db.Timestamptz
+  restoredAt   DateTime?    @db.Timestamptz
+  restoredById String?
+
+  @@index([orgId, createdAt])
+}
+
+// ── fitron.in website ───────────────────────────────────────────────────────
+
+/// Trial requests and contact messages from the public website. Not tied to a gym.
+model Enquiry {
+  id        String    @id @default(cuid())
+  /// TRIAL | CONTACT | SALES | PARTNER
+  kind      String
+  /// Plan key from the pricing page (e.g. professional, ai-pro), if one was picked
+  plan      String?
+  /// MONTHLY | YEARLY
+  cycle     String?
+  name      String
+  email     String
+  phone     String?
+  business  String?
+  city      String?
+  message   String?
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  /// When the team followed up
+  handledAt DateTime? @db.Timestamptz
+
+  @@index([createdAt])
+}
+
+/// Promo codes for registration or renewal (Plans & offers).
+model Offer {
+  id          String       @id @default(cuid())
+  orgId       String
+  org         Organization @relation(fields: [orgId], references: [id])
+  /// Upper-case, unique per gym
+  code        String
+  description String       @default("")
+  /// PERCENT (value is a percentage) | FLAT (value is paise)
+  type        String
+  value       Int
+  validTill   DateTime     @db.Date
+  /// Most uses allowed; null for no limit
+  usageLimit  Int?
+  uses        Int          @default(0)
+  /// ACTIVE | PAUSED (an offer past validTill reads Expired)
+  status      String       @default("ACTIVE")
+  createdById String
+  createdAt   DateTime     @default(now()) @db.Timestamptz
+  updatedAt   DateTime     @updatedAt @db.Timestamptz
+
+  @@unique([orgId, code])
+}
+
+/// A discount code the FITRON team makes (/fitron-admin/coupons) for payments to FITRON: Gym Accounting and Gym Partnership
+/// plans, extra branches and add-ons, and AI Trainer plans. Not the same as Offer, which is a gym's own code for its members.
+model Coupon {
+  id          String             @id @default(cuid())
+  /// Upper-case, no spaces, unique
+  code        String             @unique
+  description String             @default("")
+  /// 1 to 100: the share of the listed price taken off. 100 makes the payment free.
+  percentOff  Int
+  /// Paise. When set, the payer is charged exactly this (never more than the listed price, never below ₹1) and percentOff is only a label.
+  payPaise    Int?
+  /// ALL | GYM (Gym Accounting, Gym Partnership, extra branches, add-ons) | TRAINER (AI Trainer plans)
+  appliesTo   String             @default("ALL")
+  /// Last day it works; null for no end date
+  validTill   DateTime?          @db.Date
+  /// Most payments it may be used on in all; null for no limit
+  usageLimit  Int?
+  /// ACTIVE | PAUSED (past validTill or used up reads Expired or Used up)
+  status      String             @default("ACTIVE")
+  createdBy   String
+  createdAt   DateTime           @default(now()) @db.Timestamptz
+  updatedAt   DateTime           @updatedAt @db.Timestamptz
+  redemptions CouponRedemption[]
+}
+
+/// One use of a coupon on one payment. A gym (orgId) or an AI Trainer member (memberId) may use a coupon once.
+model CouponRedemption {
+  id        String    @id @default(cuid())
+  couponId  String
+  /// Restrict: a coupon that was used can't be deleted, only paused
+  coupon    Coupon    @relation(fields: [couponId], references: [id], onDelete: Restrict)
+  /// Who used it: the gym or the AI Trainer member
+  orgId     String?
+  memberId  String?
+  /// The payment it was used on: BranchSubscription.id (gym) or TrainerPayment.id (member)
+  paymentId String    @unique
+  /// PENDING (payment started; holds a place for a while) | USED (payment made) | RELEASED (payment not made, or started again)
+  status    String    @default("PENDING")
+  /// The listed price, what the coupon took off, and what was charged (paise, GST included)
+  listTotal Int
+  discount  Int
+  paid      Int
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  usedAt    DateTime? @db.Timestamptz
+
+  @@index([couponId, status])
+  @@index([orgId])
+  @@index([memberId])
+}
+
+// ── AI Trainer (member app at /trainer) ────────────────────────────────────
+// Consumers who pay FITRON directly. Not tied to a gym, and separate from staff users and sessions.
+
+/// One AI Trainer member. Signs in with an email link or Google; no password.
+model TrainerMember {
+  id               String        @id @default(cuid())
+  email            String        @unique
+  name             String        @default("")
+  /// Tier the member is on or picked: ai-pro | ai-premium
+  plan             String        @default("ai-pro")
+  /// MONTHLY | YEARLY
+  cycle            String        @default("MONTHLY")
+  /// Set once, when the member starts the free trial
+  trialEndsAt      DateTime?     @db.Timestamptz
+  /// Last day of the latest confirmed payment's period
+  paidUntil        DateTime?     @db.Date
+  /// The member asked not to renew
+  planCancelled    Boolean       @default(false)
+  /// What the app keeps for the member: onboarding answers, weekly split, day schedule, settings, look
+  profile          Json          @default("{}")
+  onboardedAt      DateTime?     @db.Timestamptz
+  consentedAt      DateTime?     @db.Timestamptz
+  emailVerifiedAt  DateTime?     @db.Timestamptz
+  /// EMAIL | GOOGLE: how the account was first created
+  signupVia        String        @default("EMAIL")
+  createdAt        DateTime      @default(now()) @db.Timestamptz
+  updatedAt        DateTime      @updatedAt @db.Timestamptz
+  lastSeenAt       DateTime?     @db.Timestamptz
+  /// After the account is deleted: sha256 of its old email, so the same email can't get a second free trial
+  deletedEmailHash String?
+  /// Gym Partnership: the gym this member linked to with its trainer code, and their record there when one matched
+  orgId            String?
+  org              Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  gymMemberId      String?       @unique
+  gymMember        Member?       @relation(fields: [gymMemberId], references: [id], onDelete: SetNull)
+  gymLinkedAt      DateTime?     @db.Timestamptz
+
+  sessions TrainerSession[]
+  pushes   TrainerPush[]
+  days     TrainerDay[]
+  chats    TrainerChat[]
+  payments TrainerPayment[]
+  reviews  TrainerReview[]
+
+  @@index([deletedEmailHash])
+  @@index([orgId])
+}
+
+/// Sign-in links sent by email. `id` is the SHA-256 of the token in the link.
+model TrainerLoginToken {
+  id        String    @id
+  email     String
+  expiresAt DateTime  @db.Timestamptz
+  usedAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+
+  @@index([email, createdAt])
+}
+
+/// A signed-in trainer member (cookie fitron_trainer). `id` is the SHA-256 of the cookie token.
+model TrainerSession {
+  id         String        @id
+  memberId   String
+  member     TrainerMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime      @db.Timestamptz
+  lastSeenAt DateTime      @default(now()) @db.Timestamptz
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime      @default(now()) @db.Timestamptz
+
+  @@index([memberId])
+}
+
+/// One day of a member's log: water, habits ticked, whether the workout was done, body weight.
+model TrainerDay {
+  id          String        @id @default(cuid())
+  memberId    String
+  member      TrainerMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  date        DateTime      @db.Date
+  /// Litres
+  water       Float         @default(0)
+  /// { workout, water, steps, protein, meals, sleep }: true when ticked
+  habits      Json          @default("{}")
+  workoutDone Boolean       @default(false)
+  /// The day's training focus from the plan (Chest, Legs, Rest…)
+  focus       String?
+  weightKg    Float?
+  /// Sets logged that day, in order: [{ ex, kg, reps }]
+  sets        Json          @default("[]")
+  updatedAt   DateTime      @updatedAt @db.Timestamptz
+
+  @@unique([memberId, date])
+}
+
+/// One AI Coach conversation, as the app shows it.
+model TrainerChat {
+  id        String        @id @default(cuid())
+  memberId  String
+  member    TrainerMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  /// The id the app gave the chat
+  clientId  String
+  title     String
+  /// [{ role: user|coach, text, exs?, media? }]
+  messages  Json          @default("[]")
+  createdAt DateTime      @default(now()) @db.Timestamptz
+  updatedAt DateTime      @updatedAt @db.Timestamptz
+
+  @@unique([memberId, clientId])
+  @@index([memberId, updatedAt])
+}
+
+/// A member's weekly review, kept as it stood for that week.
+model TrainerReview {
+  id          String        @id @default(cuid())
+  memberId    String
+  member      TrainerMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  /// Monday of the week (India time)
+  weekStart   DateTime      @db.Date
+  workouts    Int
+  planned     Int
+  /// Percent of planned sessions done
+  consistency Int
+  /// Percent of meal/protein habits ticked
+  nutrition   Int
+  /// Average litres a day over logged days
+  avgWater    Float
+  insight     String
+  focus       Json          @default("[]")
+  updatedAt   DateTime      @updatedAt @db.Timestamptz
+
+  @@unique([memberId, weekStart])
+}
+
+/// What an AI Trainer member paid FITRON: a Razorpay subscription charge, the first one and each renewal. The utr, submittedAt, reviewedBy,
+/// reviewedAt and rejectReason columns are legacy from the UPI QR way of paying, which is gone; no new row uses them.
+model TrainerPayment {
+  id                     String        @id @default(cuid())
+  memberId               String
+  /// Restrict: payment records are kept for tax, so a member row with payments can't be deleted outright
+  member                 TrainerMember @relation(fields: [memberId], references: [id], onDelete: Restrict)
+  /// ai-pro | ai-premium
+  plan                   String
+  /// MONTHLY | YEARLY
+  cycle                  String
+  /// purchase | upgrade | renew | month: which button the member pressed
+  kind                   String
+  base                   Int
+  gst                    Int
+  total                  Int
+  /// SUBSCRIPTION (Razorpay, renews itself) | LIVE (one Razorpay payment, used with a coupon) | COUPON (a 100% coupon: nothing to pay). Old rows may say UPI or DEMO.
+  mode                   String
+  /// PENDING | PAID. Old rows may also be SUBMITTED or REJECTED.
+  status                 String        @default("PENDING")
+  utr                    String?       @unique
+  submittedAt            DateTime?     @db.Timestamptz
+  reviewedBy             String?
+  reviewedAt             DateTime?     @db.Timestamptz
+  rejectReason           String?
+  periodStart            DateTime?     @db.Date
+  periodEnd              DateTime?     @db.Date
+  createdAt              DateTime      @default(now()) @db.Timestamptz
+  paidAt                 DateTime?     @db.Timestamptz
+  /// SUBSCRIPTION: the Razorpay subscription (RazorpaySubscription.id) and the payment of this charge
+  razorpaySubscriptionId String?
+  razorpayPaymentId      String?       @unique
+  /// LIVE: the Razorpay order this payment is for
+  razorpayOrderId        String?       @unique
+  /// The coupon (Coupon.code) this payment used, and how much it took off the listed price (paise, GST included). `total` is what was charged.
+  couponCode             String?
+  discount               Int           @default(0)
+  /// true: the listed price was paid with the GST inside it (`total` is the listed price, `base` what is left after GST).
+  /// false (older rows): GST was added on top of the listed price, which is then `base`.
+  gstIncluded            Boolean       @default(false)
+
+  @@index([status, submittedAt])
+  @@index([memberId, createdAt])
+  @@index([razorpaySubscriptionId])
+}
+
+/// AI Coach messages a member sent on a day (India time), for the plan's daily limit.
+/// A device subscribed to push reminders (Web Push)
+model TrainerPush {
+  id         String        @id @default(cuid())
+  memberId   String
+  member     TrainerMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  endpoint   String        @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  /// Reminder key → the Indian date it was last sent, so each goes once a day
+  sent       Json          @default("{}")
+  failures   Int           @default(0)
+  createdAt  DateTime      @default(now()) @db.Timestamptz
+  lastUsedAt DateTime      @default(now()) @db.Timestamptz
+
+  @@index([memberId])
+}
+
+/// Exercise form videos for the AI Trainer, one link per exercise in the app's library
+model TrainerContent {
+  /// The exercise's name as the app shows it
+  ex        String   @id
+  videoUrl  String
+  note      String?
+  updatedBy String?
+  updatedAt DateTime @updatedAt @db.Timestamptz
+}
+
+model TrainerCoachUsage {
+  memberId String
+  date     DateTime @db.Date
+  count    Int      @default(0)
+
+  @@id([memberId, date])
+}
+
+// ── Help & support ─────────────────────────────────────────────────────────
+model SupportTicket {
+  id           String               @id @default(cuid())
+  orgId        String
+  org          Organization         @relation(fields: [orgId], references: [id])
+  /// TKT-1001, gap-free per gym from Sequence "ticket"
+  number       String
+  /// Who raised it
+  userId       String
+  branchId     String?
+  /// One of src/lib/domain/support.ts TOPICS
+  topic        String
+  /// Normal | Urgent
+  priority     String
+  subject      String
+  message      String
+  /// Open | Resolved
+  status       String               @default("Open")
+  appVersion   String
+  /// Browser summary from the user agent, e.g. "Chrome · Desktop"
+  browser      String
+  ip           String?
+  /// Set when the ticket was emailed to support (SMTP configured and the send succeeded)
+  emailedAt    DateTime?            @db.Timestamptz
+  resolvedAt   DateTime?            @db.Timestamptz
+  resolvedById String?
+  createdAt    DateTime             @default(now()) @db.Timestamptz
+  replies      SupportTicketReply[]
+
+  @@unique([orgId, number])
+  @@index([orgId, createdAt])
+}
+
+model SupportTicketReply {
+  id        String        @id @default(cuid())
+  ticketId  String
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  /// "Fitron Support" or the staff member's name
+  by        String
+  /// AUTO | SUPPORT | GYM
+  kind      String
+  text      String
+  createdAt DateTime      @default(now()) @db.Timestamptz
+
+  @@index([ticketId, createdAt])
+}
+
+model PersonalRecord {
+  id          String   @id @default(cuid())
+  orgId       String
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id])
+  /// e.g. Bench press
+  lift        String
+  weightKg    Decimal  @db.Decimal(5, 1)
+  reps        Int      @default(1)
+  date        DateTime @db.Date
+  createdById String
+  createdAt   DateTime @default(now()) @db.Timestamptz
+
+  @@index([memberId, lift])
+}

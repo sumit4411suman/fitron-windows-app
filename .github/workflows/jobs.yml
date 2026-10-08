@@ -1,0 +1,60 @@
+name: Scheduled jobs
+
+# FITRON on Vercel has no server of its own to run timers, so GitHub calls the job addresses, at the same times as
+# deploy/scheduler.sh does on a Docker server (all times UTC; India time is 5½ hours ahead):
+#   01:00         daily jobs (reminders, autopay, risk scores…) = 06:30 India time
+#   every 15 min  WhatsApp messages held by quiet hours go out once their time has come
+#   every hour    AI Trainer push reminders
+#   Sat 21:00     restore test of every gym's latest backup = Sunday 02:30 India time
+# GitHub starts a scheduled run a few minutes late at busy times. Every job is safe to run twice.
+#
+# Set up once, in the repository's Settings > Secrets and variables > Actions (deploy/VERCEL.md, step 3):
+#   secret    CRON_SECRET  the same value as CRON_SECRET in Vercel. Without it this does nothing.
+#   variable  SITE_URL     optional; the site's address if it is not https://fitron.in
+#
+# This repository is public, so the log is public too: only the HTTP status is printed, never the answer, which lists gyms.
+on:
+  schedule:
+    - cron: "0 1 * * *"
+    - cron: "*/15 * * * *"
+    - cron: "0 * * * *"
+    - cron: "0 21 * * 6"
+  workflow_dispatch:
+    inputs:
+      job:
+        description: Which job to run now
+        type: choice
+        options: [daily, dispatch, trainer, weekly]
+        default: dispatch
+
+permissions: {}
+
+jobs:
+  call:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency:
+      group: job-${{ github.event.schedule || inputs.job }}
+      cancel-in-progress: false
+    steps:
+      - name: Call the job
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          SITE_URL: ${{ vars.SITE_URL || 'https://fitron.in' }}
+          SCHEDULE: ${{ github.event.schedule }}
+          CHOSEN: ${{ inputs.job }}
+        run: |
+          case "${CHOSEN:-$SCHEDULE}" in
+            daily|"0 1 * * *") job=daily ;;
+            dispatch|"*/15 * * * *") job=dispatch ;;
+            trainer|"0 * * * *") job=trainer ;;
+            weekly|"0 21 * * 6") job=weekly ;;
+            *) echo "::error::Unknown job or schedule: ${CHOSEN:-$SCHEDULE}"; exit 1 ;;
+          esac
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::notice::CRON_SECRET is not set in this repository's secrets, so the $job job was not called."
+            exit 0
+          fi
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 290 -H "Authorization: Bearer $CRON_SECRET" "${SITE_URL%/}/api/jobs/$job") || code=000
+          echo "$job -> HTTP $code"
+          [ "$code" = 200 ] || { echo "::error::The $job job did not answer 200."; exit 1; }
