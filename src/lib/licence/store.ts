@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { readLocalSecrets } from "@/lib/runtime/local-secrets";
 import { FITRON_LICENCE_KEYS } from "./keys";
 import { licenceStatus, verifyLicence, type Licence, type LicenceStatus, type TrustedKey } from "./licence";
 
@@ -30,7 +31,7 @@ export type Installation = { installationId: string; installedOn: string };
 
 /** This computer's installation id and installation day; before secrets.json exists, a stand-in from today. */
 export function installation(root: string, today: string): Installation {
-  const s = readJson<{ installationId: string; createdAt: string }>(path.join(root, "secrets.json"));
+  const s = readLocalSecrets(root);
   return { installationId: s.installationId ?? "", installedOn: typeof s.createdAt === "string" ? s.createdAt.slice(0, 10) : today };
 }
 

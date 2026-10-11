@@ -102,7 +102,7 @@ fn server_log(data_root: &Path) -> io::Result<File> {
     OpenOptions::new().create(true).append(true).open(file)
 }
 
-pub fn spawn(l: &Launch, port: u16, instance: &str, token: &str) -> io::Result<Server> {
+pub fn spawn(l: &Launch, port: u16, instance: &str, token: &str, extra: &[(&str, OsString)]) -> io::Result<Server> {
     let log = server_log(&l.data_root)?;
     let mut cmd = Command::new(&l.node);
     cmd.arg(l.server_dir.join("server.js"))
@@ -116,6 +116,10 @@ pub fn spawn(l: &Launch, port: u16, instance: &str, token: &str) -> io::Result<S
         }
     }
     for (name, value) in server_variables(l, port, instance, token) {
+        cmd.env(name, value);
+    }
+    // The installation's secrets (src/secrets.rs): the server gets them the way a hosted FITRON does.
+    for (name, value) in extra {
         cmd.env(name, value);
     }
     #[cfg(windows)]

@@ -136,6 +136,8 @@ async function main() {
   const h = await health(first.port);
   if (h?.ok !== true || h.edition !== "local") throw new Error(`health: ${JSON.stringify(h)}`);
   ok(`FITRON starts: ${JSON.stringify({ ok: h.ok, edition: h.edition, version: h.version })}, data folder ${data}`);
+  if (!existsSync(path.join(data, "secrets.dpapi")) || existsSync(path.join(data, "secrets.json"))) throw new Error("the installation's secrets are not sealed (secrets.dpapi) or a plain secrets.json exists");
+  ok("the installation's secrets are sealed with DPAPI for this Windows user");
   await close(first);
   // A record only this test made, to follow through the update and the uninstall.
   const conn = new Database(db);

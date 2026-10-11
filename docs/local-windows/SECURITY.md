@@ -1,27 +1,94 @@
-# FITRON Local Windows Edition: security
+# FITRON Local Windows Edition: security (Phase 19)
 
-Grows phase by phase. This version covers local authentication (Phase 8). Shell, IPC, updater and signing are added
-in Phases 14, 18, 19 and 25.
+FITRON for Windows keeps a gym's books on one computer, under one Windows account, with no server of FITRON's in
+the loop. What that means in practice, piece by piece, and what checks it.
 
-## Local authentication (Phase 8)
+## Least privilege: the desktop program
 
-| Concern | Local Edition behaviour | Where |
+| Concern | How FITRON for Windows behaves | Where, checked by |
 | --- | --- | --- |
-| Password storage | Argon2id (`@node-rs/argon2`, 19 MiB, 2 passes), the same as the Cloud Edition. No plaintext anywhere; form errors never echo a password back. | `src/lib/auth/password.ts`, `src/app/setup/actions.ts` |
-| First account | Created on the computer by first-run setup (`/setup`), only while no user exists; checked again inside the transaction so two windows cannot create two gyms. The page is closed afterwards and answers 404 on the Cloud Edition. | `src/lib/services/local-setup.ts` |
-| Sessions | Server-side sessions: the cookie holds a random 256-bit token, the database only its SHA-256. httpOnly, SameSite=Lax, Secure (Chromium treats 127.0.0.1 as a secure origin). 30-minute idle sign-out (configurable), rotation on every sign-in. | `src/lib/auth/session.ts` |
-| Roles | Owner = Super Admin, Admin, Accountant, Receptionist, Trainer, and custom roles (Settings › Roles & access). Every page and server action checks the permission on the server. | `src/lib/auth/permissions.ts`, `src/lib/auth/current.ts` |
-| Guessing passwords | Per account: 5 wrong passwords in 15 minutes lock that account for the rest of the window, also for unknown emails (no account enumeration). Per address: 30 a minute in Local (one shared computer), 5 a minute in Cloud. | `src/lib/auth/lockout.ts`, `src/app/login/actions.ts` |
-| Forgotten owner password | Recovery key shown once at setup: 20 characters from a 32-letter alphabet (100 bits), held only in server memory until shown (never in a cookie, log or the database), stored as an Argon2id hash. Using it sets a new password, signs the owner out everywhere, ends a lockout, is audited, and replaces the key. Same refusal for a wrong key and an unknown email. Rate-limited. | `src/lib/services/local-setup.ts`, `src/app/recover` |
-| Forgotten staff password | A Super Admin resets it from Staff (unchanged). | `src/lib/services/staff.ts` |
-| Two-step sign-in | Works offline (TOTP). Its secrets are sealed with BIOMETRIC_KEY. | `src/lib/services/two-step.ts` |
-| Server keys | BIOMETRIC_KEY, AUTH_SECRET, CRON_SECRET are generated per installation (256-bit random) into `<data>\secrets.json`, written atomically. Phase 19 seals the file with Windows DPAPI. The backup must carry BIOMETRIC_KEY, or two-step secrets are unreadable on a replacement laptop (Phase 10). | `src/lib/runtime/local-secrets.ts` |
-| Online sign-in | Google, emailed sign-in links and codes, email password reset and the fitron.in sign-up are not offered and their routes redirect to sign-in. The sign-up service refuses on a Local server. | `src/proxy.ts`, `src/lib/public-paths.ts`, `src/lib/services/accounts.ts` |
-| Test-only switch | `FITRON_LOCAL_ALLOW_SIGNUP=1` opens the website sign-up on a Local server so the end-to-end suite can make a gym per test. The desktop shell never sets it (Phase 14 passes an explicit environment). | `src/lib/runtime/edition.ts`, `e2e/env.ts` |
+| What a page may ask the program for | Nothing. The window carries no Tauri capabilities and no global Tauri object, so no page can reach files, programs, settings or the shell's own functions. There are no Tauri commands. | `src-tauri/tauri.conf.json` (`capabilities: []`, `withGlobalTauri: false`); `cargo test hardening` fails if either changes or a `capabilities/` folder appears |
+| Shell access, process execution | The program starts exactly one child, the bundled Node.js with the bundled server, with a fixed, cleaned environment (no `NODE_OPTIONS`, no `DATABASE_URL`, no `FITRON_*` from the computer). Nothing else is ever executed. | `src-tauri/src/server.rs` (`removed_variable`, tests) |
+| Filesystem access | The program writes only in the data folder (`%LOCALAPPDATA%\FITRON`) and never in its own folder; it runs from a read-only Program Files-style folder. Pages have no file access at all. | `desktop:smoke`, `desktop:installer-test` |
+| Where the window may go | FITRON's own pages (127.0.0.1 on this start's port, and the start-up page). `https`, `mailto` and `tel` links open in the computer's own browser or mail program. Everything else (`file:`, `javascript:`, other `http` addresses, other local ports) is refused. New windows follow the same rules. | `src-tauri/src/nav.rs` and its tests |
+| The start-up page | Static, no scripts beyond its own, and a policy that allows it no connections at all. | `tauri.conf.json` `app.security.csp`; `cargo test hardening` |
+| Second copies | One FITRON per Windows user and per data folder (lock file), so two servers never open one database. | `src-tauri/src/main.rs` |
+| Ending | Closing stops the server cleanly; a crash still ends it (job object), so no orphaned server keeps the port. | DESKTOP.md |
 
-Known limits:
+## Localhost-only server, secure IPC
 
-- Lockout counts live in memory, so restarting FITRON clears them. Restarting needs someone at the computer, and the
-  recovery key and the Argon2id cost still apply.
-- Anyone with the Windows account's files can copy `fitron.db`. Encrypting the database at rest (SQLCipher with a
-  DPAPI-held key) is the optional item from the owner's diagram, planned with Phase 19.
+| Concern | Behaviour | Where, checked by |
+| --- | --- | --- |
+| Listening | `127.0.0.1` only, on a port chosen at each start. Never a network address. | `server_variables`; `desktop:smoke` tries every network address |
+| Requests from elsewhere on the computer | Any program on the computer could reach 127.0.0.1, so every page and action needs a signed-in FITRON session, as on the website. | `src/proxy.ts`, `requirePermission` |
+| A website pointed at 127.0.0.1 (DNS rebinding) | Refused: the Local Edition answers only requests whose Host is `127.0.0.1` or `localhost` (421 otherwise). | `src/lib/runtime/loopback.ts`, `proxy.test.ts`, `desktop:bundle` |
+| Shell ↔ server | The shell's own requests (a safety backup before an update) carry a 256-bit secret made for that start and handed to the server in its environment; the server compares it in constant time; no page sees it. The health check carries an instance id, so the shell never mistakes another program for its server. | `src/app/api/local/shell/backup/route.ts`, `src-tauri/src/server.rs` |
+| Content-Security-Policy | The console's policy, enforced, with a nonce per request; on FITRON for Windows the browser may not reach Razorpay or any other site from the console. | `src/lib/csp.ts`, `csp.test.ts` |
+
+## Authentication and authorization
+
+| Concern | Behaviour | Where |
+| --- | --- | --- |
+| Passwords | Argon2id (19 MiB, 2 passes); never echoed, never logged. | `src/lib/auth/password.ts` |
+| Sessions | Server-side: the cookie holds a random 256-bit token, the database its SHA-256; httpOnly, SameSite=Lax, Secure (127.0.0.1 counts as secure); rotated on every sign-in; idle sign-out (30 minutes by default, Settings › Go live). | `src/lib/auth/session.ts` |
+| Guessing | Per account: 5 wrong passwords in 15 minutes lock the account, unknown emails included. Per address: 30 a minute on one shared computer. | `src/lib/auth/lockout.ts` |
+| Forgotten owner password | The recovery key shown once at setup (100 bits, stored as an Argon2id hash); using it signs the owner out everywhere, ends a lockout, is audited and replaces the key. | `src/lib/services/local-setup.ts` |
+| Two-step sign-in | TOTP, offline; secrets sealed with BIOMETRIC_KEY. | `src/lib/services/two-step.ts` |
+| Authorization | Every page and every server action calls `requirePermission(...)` for the signed-in user's role; branch scope is applied in the services. | `src/lib/auth/permissions.ts`, `src/lib/auth/current.ts` |
+| Input validation | Every form and action input is parsed with a zod schema before any service runs; amounts are whole paise; the database refuses deletes of financial rows. | `src/lib/validation/*`, the services' tests |
+| Online sign-in | Google, emailed links and codes, and fitron.in sign-up are not offered and their routes redirect. | `src/proxy.ts` |
+
+## Secure storage
+
+| What | Where it lives | How it is protected |
+| --- | --- | --- |
+| The gym's database, documents, backups, logs | `%LOCALAPPDATA%\FITRON` | The Windows user's own profile permissions: other standard users on the computer cannot read it. Never in the program folder. |
+| The installation's secrets (installation id, BIOMETRIC_KEY, AUTH_SECRET, CRON_SECRET) | `secrets.dpapi` | **Sealed with Windows DPAPI for this Windows user** (`CryptProtectData`, user scope, with a FITRON-specific purpose). The file is useless copied to another computer or read by another account. The desktop program unseals it when FITRON opens and hands the values to the server in its environment, the way a hosted FITRON gets them; the server never writes them. An older installation's plain `secrets.json`, or the plain file a restore writes with the backup's key, is sealed at the next start and the plain file removed. (Linux and macOS, development only: the plain file, readable by this user only.) `src-tauri/src/secrets.rs`, `src/lib/runtime/local-secrets.ts`. |
+| The shell's secret for the server | the server's environment only | New at every start, never on disk. |
+| The licence | `licence.fitronlicence` | Signed by FITRON; the clock guard in `licence-state.json` (LICENSING.md). |
+| Backups | `backups\` | Optional password (AES-256-GCM, BACKUP-RESTORE.md); a backup carries BIOMETRIC_KEY so a replacement laptop can read two-step secrets. |
+| The window's cache and cookie | WebView2's folder for FITRON | Per user, removed by the uninstaller's optional box only. |
+
+Not encrypted at rest: `fitron.db` itself. Anyone who can read the Windows user's files can read it (and would equally
+read a backup). Encrypting the database (SQLCipher with a DPAPI-held key) is possible later; it is not in 1.0.
+
+## Audit logging
+
+Every financial and administrative action writes an entry in the audit log inside the same transaction, hash-chained
+per gym (`src/lib/services/audit.ts`, `src/lib/domain/audit-chain.ts`): a changed or removed entry breaks the chain,
+which Settings › Audit verifies. Sign-ins, sign-outs, idle sign-outs, lockouts, the recovery key, restores and licence
+imports are audited. The desktop program keeps its own `shell.log` (start, port, ready, stop, updates, secrets
+handling), with nothing about the gym in it.
+
+## Code signing and signed updates
+
+- Updates are signed with FITRON's update key and verified before anything is installed; a signature must name the
+  version it was made for (UPDATES.md).
+- The program and the installer are built ready for Authenticode signing: `src-tauri/tauri.sign.conf.json` adds the
+  signing settings (a certificate thumbprint, or a `signCommand` for a hardware or cloud key, and a timestamp
+  server) to a release build. Until FITRON has its certificate, builds are unsigned and SmartScreen warns on first
+  run; FITRON never asks a customer to turn SmartScreen or any Windows protection off. Phase 25 finishes this.
+
+## What leaves the computer
+
+Nothing, unless a user turns a feature on (ONLINE-SERVICES.md): WhatsApp, email, Fitron AI's model, Razorpay autopay.
+The update check sends the request for a small file and nothing about the gym (UPDATES.md). The licence is checked on
+the computer (LICENSING.md). `src/lib/integrations/egress.test.ts` fails if any other code opens a connection.
+
+## Known limits
+
+- Lockout counts live in memory: restarting FITRON clears them (a restart needs someone at the computer).
+- The database is not encrypted at rest (above).
+- The desktop program honours `FITRON_DATA_DIR` from its environment (for tests); a person who can set a Windows
+  user's environment already has that user's files.
+- Two-step codes depend on the computer's clock (OFFLINE.md).
+
+## Tests
+
+| Test | What it proves |
+| --- | --- |
+| `cargo test` (`hardening`, `nav`, `secrets`, `server`) | no capabilities, no global Tauri, the start-up page's policy; where links may go; secrets sealed and unsealed for this user (Windows), kept and filled; the server's cleaned environment; the health check is ours only |
+| `src/lib/runtime/loopback.test.ts`, `src/proxy.test.ts` | only this computer's names are answered; the shell's backup route needs no session but the shell's secret |
+| `src/lib/auth/*.test.ts` | lockout, two-step, permissions |
+| `src/lib/integrations/egress.test.ts` | no connection outside the integrations |
+| `desktop:smoke`, `desktop:installer-test` | 127.0.0.1 only, nothing written in the program folder, normal-user rights, `secrets.dpapi` present and no plain `secrets.json` on Windows |
