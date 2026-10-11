@@ -19,7 +19,12 @@ export async function numberFloor(tx: Prisma.TransactionClient): Promise<number>
  * a rolled-back write doesn't burn a number and two writers can't get the same one.
  */
 export async function nextNumber(tx: Prisma.TransactionClient, orgId: string, name: string, start = 1001): Promise<number> {
-  start += await numberFloor(tx);
+  const floor = await numberFloor(tx);
+  if (floor) {
+    // A counter from before this computer was linked moves into its range the first time it is used.
+    await tx.$executeRaw`UPDATE "Sequence" SET "next" = "next" + ${floor} WHERE "orgId" = ${orgId} AND "name" = ${name} AND "next" <= ${floor}`;
+    start += floor;
+  }
   const rows = await tx.$queryRaw<{ next: number }[]>`
     INSERT INTO "Sequence" ("orgId", "name", "next") VALUES (${orgId}, ${name}, ${start + 1})
     ON CONFLICT ("orgId", "name") DO UPDATE SET "next" = "Sequence"."next" + 1

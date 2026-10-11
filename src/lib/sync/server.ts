@@ -27,7 +27,11 @@ type Tx = Prisma.TransactionClient;
 export type DeviceAuth = { id: string; orgId: string; name: string; deviceNo: number; linkedById: string; pulledSeq: bigint; resyncAt: Date | null };
 
 export class SyncRejection extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    /** Written to the gym's audit log after the refused change's transaction has rolled back. */
+    readonly auditEntry?: Parameters<typeof audit>[1],
+  ) {
     super(message);
     this.name = "SyncRejection";
   }
@@ -279,10 +283,7 @@ async function applyOne(tx: Tx, dev: DeviceAuth, item: PushItem): Promise<{ resu
   const current = await readRecord(tx, item.entity, item.entityId);
   // The gym: of the record as it is here, and as it would be. A computer only ever touches its own gym's records.
   const foreign = (current && (await orgOfRow(tx, spec, current)) !== dev.orgId) || (incoming && (await orgOfRow(tx, spec, incoming)) !== dev.orgId);
-  if (foreign) {
-    await audit(tx, { orgId: dev.orgId, userId: dev.linkedById, action: "sync.refused_foreign", entity: item.entity, entityId: item.entityId, after: { device: dev.name } });
-    throw new SyncRejection("This record does not belong to this gym.");
-  }
+  if (foreign) throw new SyncRejection("This record does not belong to this gym.", { orgId: dev.orgId, userId: dev.linkedById, action: "sync.refused_foreign", entity: item.entity, entityId: item.entityId, after: { device: dev.name } });
 
   const where = { orgId: dev.orgId, entity: item.entity, entityId: item.entityId };
   const base = Math.max(0, Math.floor(item.baseVersion || 0));
@@ -338,6 +339,7 @@ export async function pushOne(dev: DeviceAuth, item: PushItem): Promise<PushResu
     const result: PushResult = { changeId: item.changeId, status: "rejected", reason };
     // Remembered, so a retry of the same change gets the same answer; the owner's Retry sends it as a new change.
     await db.syncApplied.create({ data: { changeId: item.changeId, orgId: dev.orgId, deviceId: dev.id, result: result as unknown as Prisma.InputJsonValue } }).catch(() => {});
+    if (e instanceof SyncRejection && e.auditEntry) await db.$transaction((tx) => audit(tx, e.auditEntry!));
     return result;
   }
 }
