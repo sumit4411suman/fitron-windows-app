@@ -64,6 +64,8 @@ export function isOnlineOnlyAuthPath(pathname: string): boolean {
 export const NOT_IN_LOCAL = [
   "site", "contact", "about", "privacy", "terms", "refund", "guides", "tools", "trainer", "c", "plan-ended", "partnership",
   "fitron-admin", "settings/billing", "api/trainer", "api/coach", "api/gym-demo", "api/assistant", "api/webhooks", "api/analytics-config", "iclock",
+  // The server scheduler's job addresses: FITRON for Windows runs its own jobs in-process (src/lib/runtime/local-scheduler.ts).
+  "api/jobs",
   ...GYM_PAGES.map((p) => p.path.slice(1)), TRAINER_PAGE.path.slice(1), "robots.txt", "sitemap.xml",
 ] as const;
 

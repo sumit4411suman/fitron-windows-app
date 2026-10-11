@@ -1,6 +1,6 @@
 import * as z from "zod";
 import "@/lib/zod-config";
-import { aiReady } from "@/lib/integrations/anthropic";
+import { aiReady } from "@/lib/integrations/ai";
 import { rateLimit } from "@/lib/rate-limit";
 import { refundCoachMessage, takeCoachMessage } from "@/lib/services/trainer";
 import { coachAnswer } from "@/lib/services/trainer-coach";

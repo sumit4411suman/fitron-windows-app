@@ -18,7 +18,7 @@ vi.stubGlobal(
 );
 // Whether this computer is online, for FITRON for Windows (npm run test:local); the test machine may have no internet.
 const net = vi.hoisted(() => ({ up: true }));
-vi.mock("./online", async (importOriginal) => ({ ...(await importOriginal<typeof import("./online")>()), probablyOnline: vi.fn(async () => net.up) }));
+vi.mock("../online", async (importOriginal) => ({ ...(await importOriginal<typeof import("../online")>()), probablyOnline: vi.fn(async () => net.up) }));
 
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -28,7 +28,7 @@ afterEach(() => {
   respond = () => ({ json: {} });
 });
 
-const load = async () => ({ wa: await import("./whatsapp"), cloud: await import("./whatsapp-cloud") });
+const load = async () => ({ wa: await import("."), cloud: await import("./cloud") });
 const gymA = { phoneNumberId: "111111", wabaId: "900001", token: "TOKEN-A" };
 const gymB = { phoneNumberId: "222222", wabaId: "900002", token: "TOKEN-B" };
 

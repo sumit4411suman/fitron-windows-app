@@ -13,7 +13,7 @@ import { monthPeriod, profitAndLoss } from "./accounting";
 import { gymNameOf } from "./support";
 import { gymPlan } from "./saas";
 import { getSetting } from "./settings";
-import { isLocal } from "@/lib/runtime/edition";
+import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
 import { OfflineError, offlineMessage } from "@/lib/integrations/online";
 import { NotNow } from "./errors";
 
@@ -22,8 +22,14 @@ import { NotNow } from "./errors";
 
 export type ReportSettings = { monthlyPl?: boolean };
 
-/** On unless the gym switched it off in Settings › Reminders. */
-export const monthlyPlOn = async (orgId: string) => (await getSetting<ReportSettings>(orgId, "reports"))?.monthlyPl !== false;
+/**
+ * Whether the gym wants it. On the Cloud Edition it is on unless switched off in Settings › Reminders. FITRON for Windows
+ * sends the gym's figures out by email only once a gym user ticks it there: off until then.
+ */
+export async function monthlyPlOn(orgId: string) {
+  const v = (await getSetting<ReportSettings>(orgId, "reports"))?.monthlyPl;
+  return typeof v === "boolean" ? v : !gymAccountingOnly();
+}
 
 type Result = Record<string, number | string>;
 

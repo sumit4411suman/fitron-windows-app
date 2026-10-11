@@ -44,7 +44,7 @@ afterEach(() => {
   orgs.clear();
 });
 
-const load = () => import("./whatsapp");
+const load = () => import(".");
 
 describe("linked-phone connector", () => {
   it("is ready without any environment settings: the app looks on this computer with the built-in key", async () => {

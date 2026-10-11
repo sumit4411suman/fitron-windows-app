@@ -1,6 +1,6 @@
 import * as z from "zod";
 import "@/lib/zod-config";
-import { aiReady, claude, type Block, type Msg } from "@/lib/integrations/anthropic";
+import { aiReady, claude, type Block, type Msg } from "@/lib/integrations/ai";
 import { log } from "@/lib/log";
 import { rateLimit } from "@/lib/rate-limit";
 import { readCapped } from "../../trainer/_lib/http";

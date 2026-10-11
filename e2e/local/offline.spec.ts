@@ -174,7 +174,9 @@ test("online-only features say they need the internet or WhatsApp, and never pre
   await page.goto("/settings/jobs");
   await page.getByRole("button", { name: /Run (today's jobs now|anything left for today)/ }).click();
   await expect(page.getByText("Waiting, and tried again within the hour:")).toBeVisible();
-  await expect(page.getByText(/^Expiry reminders on WhatsApp: Nothing is answering at/)).toBeVisible();
+  await expect(page.getByText(/^Send messages held by quiet hours: Nothing is answering at/)).toBeVisible();
+  // Linking WhatsApp sends nothing on its own: the reminders wait for "Send automatic messages" (Phase 12).
+  await expect(page.getByText(/note automatic messages are off: nothing sent/).first()).toBeVisible();
   await expect(page.getByText("Churn risk for every member")).toBeVisible();
 
   // Not linked (demo): the reminder is saved, and called "not sent".
@@ -187,6 +189,11 @@ test("online-only features say they need the internet or WhatsApp, and never pre
   await page.goto("/settings?tab=help");
   await expect(page.getByText(/sends tickets by email, which is not set up on this computer/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Send to support" })).toHaveCount(0);
+
+  // Settings › Integrations & AI: every online service, each sending nothing on a fresh installation.
+  await page.goto("/settings?tab=int");
+  await expect(page.getByText("Online services on this computer")).toBeVisible();
+  for (const key of ["whatsapp", "email", "ai", "autopay", "licence", "updates"]) await expect(page.getByTestId(`online-${key}`), key).toContainText("Sends: Nothing.");
 
   // Fitron AI answers from the books on this computer.
   const ai = await page.evaluate(async () => {

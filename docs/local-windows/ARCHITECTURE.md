@@ -169,10 +169,9 @@ src/lib/runtime/edition.ts      isLocal(), edition()
 src/lib/runtime/paths.ts        the FITRON app-data folder (data/, backups/, documents/, logs/)
 src/lib/db.ts                   picks the adapter: PrismaPg or PrismaBetterSqlite3
 src/lib/db-dialect.ts           the few SQL differences (locks, case-insensitive search)
-src/lib/integrations/*          every online service behind an `available()` check that is
-                                false offline or in Local, with a clear UI message
-src/lib/integrations/license    Local-only licence (Phase 13)
-src/lib/integrations/updates    Local-only updater hooks (Phase 18)
+src/lib/integrations/<service>/ every online service in its own folder (email, whatsapp, razorpay, ai, license,
+                                updates), off until a gym user turns it on, offline answered in words (Phase 12,
+                                ONLINE-SERVICES.md); nothing else in the app opens a connection
 ```
 
 Two Prisma schemas, one generated client each:
@@ -274,7 +273,7 @@ is the target. Each of its boxes, and where it lives here:
 | Local Application Layer: business logic, data access (Prisma), local file and backup management | the same Next.js server run by the shell on 127.0.0.1; `src/lib/runtime`, `src/lib/db.ts`, `src/lib/integrations/storage.ts` | Data access and files done; backup Phase 10 |
 | Local Database: SQLite on the PC | `prisma/schema.local.prisma`, `prisma/local-migrations`, `%LOCALAPPDATA%\FITRON\data\fitron.db` | Done |
 | Database Schemas, separate but compatible | `prisma/schema.prisma` and the generated `prisma/schema.local.prisma` | Done |
-| Local Integrations (optional): WhatsApp, email, printer, export files | `src/lib/integrations/*` behind an availability check; printing and PDF/Excel exports work offline | Exports done; printer Phase 17; online services Phase 12 |
+| Local Integrations (optional): WhatsApp, email, printer, export files | `src/lib/integrations/<service>/`, each off until turned on; printing and PDF/Excel exports work offline | Exports and online services done (Phase 12); printer Phase 17 |
 | Optional Cloud Sync (two-way, user controlled, can be disabled) | not in the source today; designed after the Local Edition ships (section 7) | Planned, off by default |
 | Encrypted database (optional) | SQLCipher build of SQLite, key in Windows DPAPI | Planned with Phase 19 |
 | Local Backup & Restore: `.fitronbackup`, encrypted file, manual or scheduled | Phase 10 | Planned |

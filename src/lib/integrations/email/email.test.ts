@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const smtp = vi.hoisted(() => ({ sendMail: vi.fn(async () => ({})), options: [] as unknown[] }));
 vi.mock("nodemailer", () => ({ default: { createTransport: (o: unknown) => (smtp.options.push(o), { sendMail: smtp.sendMail }) } }));
 const net = vi.hoisted(() => ({ up: true }));
-vi.mock("./online", async (importOriginal) => ({ ...(await importOriginal<typeof import("./online")>()), probablyOnline: vi.fn(async () => net.up) }));
+vi.mock("../online", async (importOriginal) => ({ ...(await importOriginal<typeof import("../online")>()), probablyOnline: vi.fn(async () => net.up) }));
 
-import { sendEmail } from "./email";
+import { sendEmail } from ".";
 
 const mail = { to: "owner@example.com", subject: "Hello", text: "Hi" };
 

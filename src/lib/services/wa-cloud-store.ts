@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import type { CloudCreds } from "@/lib/integrations/whatsapp-cloud";
+import type { CloudCreds } from "@/lib/integrations/whatsapp/cloud";
 import { seal, unseal } from "./biometric";
 
 // Where a gym's WhatsApp Business connection is kept: Setting "whatsapp_cloud". The business token and the number's PIN are

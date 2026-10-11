@@ -1,7 +1,9 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/lib/auth/current";
-import { aiOn } from "@/lib/services/ai-settings";
+import { aiOn, getAiSettings } from "@/lib/services/ai-settings";
+import { aiReady } from "@/lib/integrations/ai";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 import { aiBrief } from "@/lib/services/ai-local";
 import { todayIso } from "@/lib/services/time";
 import { log } from "@/lib/log";
@@ -16,6 +18,8 @@ export default async function AiPage() {
   if (!(await aiOn(u.orgId))) redirect("/dashboard?ai=off");
   // The brief is a summary above the chat: if it can't be worked out, the page and the chat still open.
   const brief = await aiBrief(u).catch((e) => (log.error("ai_brief.failed", e), []));
+  // FITRON for Windows says where answers come from: the books on this computer, or Claude over the internet.
+  const where = gymAccountingOnly() ? (aiReady() && (await getAiSettings(u.orgId)).useClaude ? "Answers by Claude over the internet" : "Answers from this computer · nothing is sent") : null;
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -30,7 +34,7 @@ export default async function AiPage() {
         </div>
         <span className="flex items-center gap-2 rounded-full bg-surface px-3 py-2 text-[13px] text-muted">
           <span className="h-2 w-2 rounded-full bg-[#4ade80] shadow-[0_0_6px_#4ade80]" />
-          Reads your live books · saves only after you confirm
+          {where ?? "Reads your live books"} · saves only after you confirm
         </span>
       </div>
       <AiWorkspace brief={brief} today={longDate(todayIso())} />

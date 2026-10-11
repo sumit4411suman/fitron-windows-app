@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useActionState, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
-import { ArrowRightIcon, ArrowsClockwiseIcon, CameraIcon, CameraSlashIcon, CheckCircleIcon, FingerprintIcon, HandCoinsIcon, PrinterIcon, SignInIcon, SignOutIcon, SnowflakeIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, ArrowsClockwiseIcon, CameraIcon, CameraSlashIcon, CheckCircleIcon, FingerprintIcon, HandCoinsIcon, PrinterIcon, SignInIcon, SignOutIcon, SnowflakeIcon, WhatsappLogoIcon, XIcon } from "@phosphor-icons/react";
+import { offlineMessage } from "@/lib/domain/offline";
 import type { DeskHit } from "@/lib/services/attendance";
 import { Button, Field, Input, Notice, Select, cx } from "@/components/ui";
 import { checkOutAction, deskCheckInAction, guestAction, searchAction, type DeskResult } from "./actions";
@@ -353,6 +354,23 @@ function QrScanner({ onCode, box }: { onCode: (code: string) => void; box: React
       {err && <div className="text-[13px] text-alert-700">{err}</div>}
       {box}
     </div>
+  );
+}
+
+/** "Nudge" a member who stopped coming: opens a WhatsApp chat with the message ready. WhatsApp is on the internet, so with no network it says so instead of opening an empty window. */
+export function NudgeButton({ phone, text }: { phone: string; text: string }) {
+  return (
+    <button
+      type="button"
+      className={`${ghost} text-[13px]`}
+      onClick={() => {
+        if (!navigator.onLine) return window.alert(offlineMessage("Opening WhatsApp", "Call the member instead, or try again when the computer is online."));
+        window.open(`https://wa.me/91${phone.replace(/\D/g, "").slice(-10)}?text=${encodeURIComponent(text)}`, "_blank", "noopener,noreferrer");
+      }}
+    >
+      <WhatsappLogoIcon weight="duotone" />
+      Nudge
+    </button>
   );
 }
 

@@ -1,5 +1,6 @@
 import { cronAuthorised } from "@/lib/services/cron-auth";
 import { runAllGymsWeekly } from "@/lib/services/jobs";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 // Weekly jobs for every gym: the restore test of the latest backup. Call it once a week in the quiet hours (the scheduler
 // does, on Sunday at 02:30 India time) with "Authorization: Bearer $CRON_SECRET". The test restores the backup inside a
@@ -8,6 +9,8 @@ import { runAllGymsWeekly } from "@/lib/services/jobs";
 export const maxDuration = 300;
 
 async function handle(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   if (!cronAuthorised(req)) return Response.json({ error: "Unauthorised" }, { status: 401 });
   const day = new URL(req.url).searchParams.get("day") ?? undefined;
   if (day && !/^\d{4}-\d{2}-\d{2}$/.test(day)) return Response.json({ error: "day must be YYYY-MM-DD" }, { status: 400 });

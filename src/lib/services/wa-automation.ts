@@ -13,6 +13,7 @@ import { summarize } from "./members";
 import { getSetting } from "./settings";
 import { istClock, todayIso, toIso } from "./time";
 import { deliverMessage, getWaSettings, listTemplates, memberVars, queueTemplate, templateRule, type WaSettings } from "./whatsapp";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 
 /**
  * The WhatsApp rule engine (prototype A.autoMatch / A.autoRun): which members each scheduled
@@ -55,7 +56,8 @@ async function loadFacts(orgId: string, branchIds: string[] | null, today: strin
   const [sums, current, mandates, invoices, visits, recent] = await Promise.all([
     summarize(ids, today),
     db.membership.findMany({ where: { memberId: { in: ids }, status: "VALID" }, orderBy: { endDate: "desc" }, distinct: ["memberId"], select: { memberId: true, planId: true } }),
-    db.autopayMandate.findMany({ where: { memberId: { in: ids }, status: "Active" }, select: { memberId: true, nextDebitOn: true, amount: true, planId: true } }),
+    // On FITRON for Windows a demo mandate is a simulation: nobody is told a debit is coming (src/lib/services/autopay.ts).
+    db.autopayMandate.findMany({ where: { memberId: { in: ids }, status: "Active", ...(gymAccountingOnly() ? { mode: "live" } : {}) }, select: { memberId: true, nextDebitOn: true, amount: true, planId: true } }),
     db.invoice.findMany({ where: { memberId: { in: ids }, status: "ISSUED" }, orderBy: { dueDate: "asc" }, select: { memberId: true, number: true, total: true, dueDate: true, payments: { select: { amount: true, status: true } } } }),
     db.attendance.findMany({ where: { memberId: { in: ids } }, orderBy: { date: "desc" }, distinct: ["memberId"], select: { memberId: true, date: true } }),
     db.whatsAppMessage.findMany({

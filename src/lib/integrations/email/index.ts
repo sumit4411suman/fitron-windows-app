@@ -2,7 +2,7 @@ import "server-only";
 import nodemailer from "nodemailer";
 import { log } from "@/lib/log";
 import { isLocal } from "@/lib/runtime/edition";
-import { OfflineError, offlineMessage, online, probablyOnline } from "./online";
+import { OfflineError, offlineMessage, online, probablyOnline } from "../online";
 
 // Outgoing email over SMTP (any provider: Amazon SES, Zoho, Brevo, Gmail Workspace…).
 // Without SMTP_HOST, mail is logged instead of sent, like the other integrations' demo mode. On FITRON for Windows a

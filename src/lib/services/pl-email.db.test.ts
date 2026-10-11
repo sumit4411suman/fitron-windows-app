@@ -27,7 +27,7 @@ import { createMember } from "./members";
 import { createInvoice } from "./billing";
 import { createExpense } from "./expenses";
 import { runDailyJobs } from "./jobs";
-import { sendMonthlyPl } from "./pl-email";
+import { monthlyPlOn, sendMonthlyPl } from "./pl-email";
 import { putSetting } from "./settings";
 
 const FIRST = "2026-10-01";
@@ -184,4 +184,19 @@ describe.skipIf(!hasDb)("monthly profit and loss email (database)", () => {
     net.up = true;
     expect(job(await runDailyJobs(gym.org.id, FIRST, NOW))).toMatchObject({ status: "ran", result: { sent: 1, month: "2026-09" } });
   });
+
+  it.skipIf(!isLocal())("FITRON for Windows sends the gym's figures by email only once a gym user ticked it", async () => {
+    vi.stubEnv("FITRON_LOCAL_ALLOW_SIGNUP", "");
+    try {
+      const { gym, owner } = await septemberGym();
+      expect(await monthlyPlOn(gym.org.id)).toBe(false);
+      expect(job(await runDailyJobs(gym.org.id, FIRST, NOW))).toMatchObject({ status: "ran", result: { sent: 0 } });
+      expect(mail.sent).toEqual([]);
+      await putSetting(owner, "reports", { monthlyPl: true });
+      expect(await monthlyPlOn(gym.org.id)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
+

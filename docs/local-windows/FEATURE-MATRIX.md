@@ -120,18 +120,8 @@ Website pages (`src/app/(site)` except the shared layout pieces), `/api/assistan
 RazorpaySubscription, TrainerPayment and the other `Trainer*` tables. They stay in the
 Cloud schema; the Local schema does not carry them.
 
-## Online services in Local (Phase 12)
+## Online services in Local (done, Phase 12)
 
-```
-src/lib/integrations/
-  whatsapp/   Meta Cloud API + connector      opt-in, per gym
-  razorpay/   member UPI Autopay (live mode)  opt-in, per gym
-  email/      SMTP                            opt-in, per gym
-  ai/         Anthropic                       opt-in, per gym
-  license/    FITRON licence server           Local only; sends licence id, installation id, edition, version. Never gym data.
-  updates/    signed update feed              Local only; downloads the installer, verifies the signature, backs up, installs.
-```
-
-Each exposes `available(): { ok: true } | { ok: false; reason: "offline" | "not-configured" | "cloud-only" }` and the UI
-renders the reason instead of calling it. Nothing in this list is called unless the gym
-enabled the feature, so no accounting data leaves the laptop silently.
+Each online service has its own folder under `src/lib/integrations/` (email, whatsapp, razorpay, ai, license, updates),
+and nothing else in the app opens a connection. Every one is off on a fresh installation; Settings › Integrations & AI
+lists them with what each sends. Details, consent rules and tests: ONLINE-SERVICES.md.

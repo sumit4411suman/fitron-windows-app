@@ -1,13 +1,13 @@
 import * as z from "zod";
 import "@/lib/zod-config";
 import { getCurrentUser, PLAN_ENDED } from "@/lib/auth/current";
-import { aiReady } from "@/lib/integrations/anthropic";
+import { aiReady } from "@/lib/integrations/ai";
 import { chat, type ChatEvent } from "@/lib/services/ai";
 import { localChat } from "@/lib/services/ai-local";
 import { rateLimit } from "@/lib/rate-limit";
-import { AI_OFF_MESSAGE, aiOn } from "@/lib/services/ai-settings";
+import { AI_OFF_MESSAGE, aiOn, getAiSettings } from "@/lib/services/ai-settings";
 import { log } from "@/lib/log";
-import { isLocal } from "@/lib/runtime/edition";
+import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
 import { isNetworkError, probablyOnline, SERVICE } from "@/lib/integrations/online";
 
 // Fitron AI chat. Streams newline-delimited JSON events: tool progress, text, proposals, done.
@@ -34,6 +34,9 @@ export async function POST(req: Request) {
   const parsed = body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Bad request." }, { status: 400 });
 
+  // FITRON for Windows sends a question and the figures it needs to Claude only once a gym user turned that on in
+  // Settings › Integrations & AI; until then Fitron AI answers from the books on the computer, as without a key.
+  const model = aiReady() && (!gymAccountingOnly() || (await getAiSettings(u.orgId)).useClaude);
   const enc = new TextEncoder();
   const stream = new ReadableStream({
     async start(ctrl) {
@@ -47,7 +50,7 @@ export async function POST(req: Request) {
       };
       let answered = false;
       try {
-        if (!aiReady()) {
+        if (!model) {
           // Without a model key, answer from live data the way the prototype does offline.
           for await (const e of localChat(u, question)) send(e);
         } else if (isLocal() && !(await probablyOnline(SERVICE.anthropic))) {

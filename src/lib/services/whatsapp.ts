@@ -21,6 +21,7 @@ import { getTax } from "./tax";
 import { todayIso } from "./time";
 import { log } from "@/lib/log";
 import { ci } from "@/lib/db-dialect";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 
 export type { ReminderSettings };
 export { DEFAULT_REMINDERS };
@@ -38,15 +39,21 @@ export type WaLinked = { number: string; device: string; at: string };
 /**
  * Setting "whatsapp": how messages go out, the linked device and quiet hours. Reminder days and
  * birthday wishes are the templates' own rules; the repeat windows come from Settings › Reminders.
+ * `automatic`: on FITRON for Windows, whether WhatsApp messages go out without a staff member pressing send (welcome,
+ * payment receipts, renewal invoices, reminders, birthday wishes). Off until a gym user turns it on in Settings ›
+ * WhatsApp: linking WhatsApp alone sends nothing on its own. The Cloud Edition goes by each template's Auto-send only.
  */
-export type WaSettings = { mode: WaMode; quietFrom: string; quietTo: string; linked: WaLinked | null } & Pick<ReminderSettings, "dedupDays" | "dueEveryDays">;
-export const DEFAULT_WA: WaSettings = { mode: "demo", quietFrom: "21:00", quietTo: "08:00", linked: null, dedupDays: DEFAULT_REMINDERS.dedupDays, dueEveryDays: DEFAULT_REMINDERS.dueEveryDays };
+export type WaSettings = { mode: WaMode; quietFrom: string; quietTo: string; linked: WaLinked | null; automatic: boolean } & Pick<ReminderSettings, "dedupDays" | "dueEveryDays">;
+export const DEFAULT_WA: WaSettings = { mode: "demo", quietFrom: "21:00", quietTo: "08:00", linked: null, automatic: false, dedupDays: DEFAULT_REMINDERS.dedupDays, dueEveryDays: DEFAULT_REMINDERS.dueEveryDays };
 const clock = (v: unknown, fallback: string) => (typeof v === "string" && /^\d{2}:\d{2}$/.test(v) ? v : fallback);
 export async function getWaSettings(orgId: string): Promise<WaSettings> {
   const [row, reminders] = await Promise.all([getSetting<Partial<WaSettings>>(orgId, "whatsapp"), getReminderSettings(orgId)]);
   const linked = row?.linked && typeof row.linked === "object" && typeof row.linked.number === "string" ? { number: row.linked.number, device: String(row.linked.device ?? ""), at: String(row.linked.at ?? "") } : null;
-  return { mode: row?.mode ?? "demo", quietFrom: clock(row?.quietFrom, DEFAULT_WA.quietFrom), quietTo: clock(row?.quietTo, DEFAULT_WA.quietTo), linked, dedupDays: reminders.dedupDays, dueEveryDays: reminders.dueEveryDays };
+  return { mode: row?.mode ?? "demo", quietFrom: clock(row?.quietFrom, DEFAULT_WA.quietFrom), quietTo: clock(row?.quietTo, DEFAULT_WA.quietTo), linked, automatic: row?.automatic === true, dedupDays: reminders.dedupDays, dueEveryDays: reminders.dueEveryDays };
 }
+
+/** Whether a message nobody pressed send for may go out: always on the Cloud Edition, on FITRON for Windows once switched on. */
+export const automaticAllowed = (s: Pick<WaSettings, "automatic">) => !gymAccountingOnly() || s.automatic;
 
 /** Links (or unlinks) the gym's WhatsApp and switches the sending mode with it. */
 export async function setLinked(u: CurrentUser, linked: WaLinked | null, mode: WaMode) {
@@ -171,6 +178,7 @@ export async function prepareMessage(o: SendOpts & { holdUntil?: Date | null }) 
   const tpl = (await listTemplates(o.orgId)).find((t) => t.key === o.key);
   if (!tpl) throw new UserError("Template not found.");
   if (o.auto && !tpl.autoSend) return null;
+  if (o.auto && !automaticAllowed(settings)) return null;
   const member = await db.member.findUniqueOrThrow({ where: { id: o.memberId } });
   // Nothing is ever rendered for the walk-in counter or a member whose personal data was erased (DPDP).
   if (member.walkIn || member.erasedAt) return null;
@@ -206,6 +214,8 @@ export async function prepareMessage(o: SendOpts & { holdUntil?: Date | null }) 
 export async function deliverMessage(id: string) {
   const msg = await db.whatsAppMessage.findUniqueOrThrow({ where: { id }, include: { member: true } });
   const settings = await getWaSettings(msg.orgId);
+  // On FITRON for Windows a message saved while WhatsApp was not linked stays saved: linking later never sends it.
+  if (gymAccountingOnly() && msg.provider === "demo" && settings.mode !== "demo") return db.whatsAppMessage.update({ where: { id: msg.id }, data: { status: "Logged" } });
   const tpl = (await listTemplates(msg.orgId)).find((t) => t.key === msg.templateKey);
   const to = waNumber(msg.toNumber);
   const cloud = settings.mode === "cloud" ? await getCloudCreds(msg.orgId) : null;
