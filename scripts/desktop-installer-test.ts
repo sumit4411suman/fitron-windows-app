@@ -160,7 +160,9 @@ async function main() {
 
   // The program folder made read-only, as Program Files is for a normal user: FITRON still runs, and writes nothing there.
   const before = snapshot(inst);
-  execFileSync("icacls", [inst, "/deny", `${EVERYONE}:(OI)(CI)(W,D,DC)`], { stdio: "ignore" });
+  // Write data, append, write attributes and extended attributes, delete, delete children: what a normal user lacks in
+  // Program Files. Not the generic "W", which also takes away the rights Windows needs to start a program.
+  execFileSync("icacls", [inst, "/deny", `${EVERYONE}:(OI)(CI)(WD,AD,WEA,WA,D,DC)`], { stdio: "ignore" });
   try {
     const fourth = await open(4);
     if ((await health(fourth.port))?.ok !== true) throw new Error("FITRON did not start from a read-only program folder");
@@ -172,8 +174,10 @@ async function main() {
   if (wrote.length) throw new Error(`FITRON wrote into its program folder: ${wrote.slice(0, 10).join(", ")}`);
   ok("FITRON runs from a read-only program folder and writes nothing there");
 
-  // Uninstall. Run in place (_?=) so the test waits for it.
-  if (run(path.join(inst, "uninstall.exe"), ["/S", `_?=${inst}`]) !== 0) throw new Error("the uninstaller failed");
+  // Uninstall, as Apps & features does. The uninstaller copies itself to a temporary folder and returns at once (its
+  // "_?=" option, which would keep it in place, cannot be passed through a path with spaces), so wait for it to finish.
+  if (run(path.join(inst, "uninstall.exe"), ["/S"]) !== 0) throw new Error("the uninstaller failed");
+  await until("the uninstaller to finish", 120_000, () => !existsSync(path.join(inst, "uninstall.exe")) && !registry());
   for (const f of [path.join(inst, "fitron.exe"), path.join(inst, `${TITLE}.exe`), path.join(inst, "fitron-node.exe"), path.join(inst, "server", "server.js")]) if (existsSync(f)) throw new Error(`still there after uninstall: ${f}`);
   if (startMenu() || existsSync(desktopLink())) throw new Error("a shortcut is left after uninstall");
   if (registry()) throw new Error("the Apps & features entry is left after uninstall");
