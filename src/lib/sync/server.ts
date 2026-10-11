@@ -299,6 +299,7 @@ async function applyOne(tx: Tx, dev: DeviceAuth, item: PushItem): Promise<{ resu
   }
   const d = decide({ entity: item.entity, base: baseRow, baseKnown, current, incoming, contested });
   const version = async () => Number((await tx.syncChange.aggregate({ where, _max: { seq: true } }))._max.seq ?? 0);
+  if (d.action === "keep" && !d.conflict) return { result: { changeId: item.changeId, status: "applied", version: await version(), current } };
   if (d.action === "keep") return { result: { changeId: item.changeId, status: "conflict", version: await version(), current, conflict: d.conflict }, conflict: d.conflict };
   if (!d.data) {
     if (current && !spec.deletable) throw new SyncRejection(`A ${spec.name} is never deleted; cancel, reverse or void it instead.`);

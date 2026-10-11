@@ -22,6 +22,27 @@ describe("conflict rules", () => {
     expect(d.conflict).toMatchObject({ kind: "merged", fields: ["phone"], theirs: member({ phone: "9800000002" }) });
   });
 
+  it("never counts the record's own updatedAt as a disagreement, and keeps the later one", () => {
+    const d = decide({
+      entity: "Member",
+      base: member({ updatedAt: "2026-10-11T10:00:00.000Z" }),
+      baseKnown: true,
+      current: member({ name: "Website", updatedAt: "2026-10-11T12:00:00.000Z" }),
+      incoming: member({ name: "Computer", updatedAt: "2026-10-11T11:00:00.000Z" }),
+      contested: true,
+    });
+    expect(d.conflict).toMatchObject({ kind: "merged", fields: ["name"] });
+    expect(d.action === "apply" && d.data).toMatchObject({ name: "Computer", updatedAt: "2026-10-11T12:00:00.000Z" });
+    const quiet = decide({ entity: "Member", base: member({ updatedAt: "2026-10-11T10:00:00.000Z" }), baseKnown: true, current: member({ updatedAt: "2026-10-11T12:00:00.000Z" }), incoming: member({ phone: "9800000009", updatedAt: "2026-10-11T11:00:00.000Z" }), contested: true });
+    expect(quiet.conflict).toBeUndefined();
+  });
+
+  it("sets nothing aside when a money record differs only in its timestamp", () => {
+    const inv = { id: "i1", orgId: "o1", number: "INV-1", status: "ISSUED", total: 150000 };
+    const d = decide({ entity: "Invoice", base: { ...inv, updatedAt: "2026-10-11T10:00:00.000Z" }, baseKnown: true, current: { ...inv, updatedAt: "2026-10-11T12:00:00.000Z" }, incoming: { ...inv, updatedAt: "2026-10-11T11:00:00.000Z" }, contested: true });
+    expect(d).toEqual({ action: "keep" });
+  });
+
   it("keeps the website's money record and sets the computer's change aside", () => {
     const inv = { id: "i1", orgId: "o1", number: "INV-1", status: "CANCELLED", total: 150000 };
     const d = decide({ entity: "Invoice", base: { ...inv, status: "ISSUED" }, baseKnown: true, current: inv, incoming: { ...inv, status: "ISSUED", pdfKey: "x" }, contested: true });

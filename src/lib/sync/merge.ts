@@ -15,7 +15,7 @@ export type ConflictNote = {
   theirs: WireRow | null;
 };
 
-export type Decision = { action: "apply"; data: WireRow | null; conflict?: ConflictNote } | { action: "keep"; conflict: ConflictNote };
+export type Decision = { action: "apply"; data: WireRow | null; conflict?: ConflictNote } | { action: "keep"; conflict?: ConflictNote };
 
 export type DecideInput = {
   entity: string;
@@ -30,10 +30,15 @@ export type DecideInput = {
   contested: boolean;
 };
 
+/** Kept by the database itself on every write; never a disagreement between the two sides. */
+const BOOKKEEPING = new Set(["updatedAt"]);
+
+const later = (a: unknown, b: unknown) => (typeof a === "string" && typeof b === "string" ? (a > b ? a : b) : (a ?? b));
+
 export function decide(i: DecideInput): Decision {
   if (!i.contested) return { action: "apply", data: i.incoming };
   const spec = SYNC_ENTITY.get(i.entity);
-  const all = (a: WireRow | null, b: WireRow | null) => changedFields(i.entity, a, b);
+  const all = (a: WireRow | null, b: WireRow | null) => changedFields(i.entity, a, b).filter((f) => !BOOKKEEPING.has(f));
   // A delete wins over a concurrent edit; the edit is kept so nothing is lost silently.
   if (!i.current) return i.incoming ? { action: "keep", conflict: { kind: "deleted", fields: [], ours: i.incoming, theirs: null } } : { action: "apply", data: null };
   if (!i.incoming) return { action: "apply", data: null, conflict: { kind: "deleted", fields: [], ours: null, theirs: i.current } };
@@ -45,11 +50,16 @@ export function decide(i: DecideInput): Decision {
       const remote = i.baseKnown ? all(i.base, i.current) : local;
       const merged: WireRow = { ...i.current };
       for (const f of local) merged[f] = i.incoming[f];
+      for (const f of BOOKKEEPING) if (f in i.current || f in i.incoming) merged[f] = later(i.current[f], i.incoming[f]);
       const both = local.filter((f) => remote.includes(f));
       return both.length ? { action: "apply", data: merged, conflict: { kind: "merged", fields: both, ours: i.incoming, theirs: i.current } } : { action: "apply", data: merged };
     }
     default:
-      // Money and memberships: the website's record stands.
-      return { action: "keep", conflict: { kind: "kept-website", fields: all(i.current, i.incoming), ours: i.incoming, theirs: i.current } };
+    {
+      // Money and memberships: the website's record stands. When the two agree on everything but the timestamp, nothing
+      // is set aside, because nothing differs.
+      const fields = all(i.current, i.incoming);
+      return fields.length ? { action: "keep", conflict: { kind: "kept-website", fields, ours: i.incoming, theirs: i.current } } : { action: "keep" };
+    }
   }
 }
