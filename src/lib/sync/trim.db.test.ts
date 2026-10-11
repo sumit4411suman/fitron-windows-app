@@ -79,14 +79,14 @@ describe.skipIf(!hasDb || isLocal())("trimming the cloud sync change log (databa
     await db.member.update({ where: { id: m.id }, data: { name: "Away, edited" } });
     await age(gym.org.id, 200);
     // Never pulled, last heard from 200 days ago.
-    await db.syncDevice.update({ where: { id: dev.id }, data: { pulledSeq: 0n, lastSeenAt: new Date(Date.now() - 200 * DAY), linkedAt: new Date(Date.now() - 300 * DAY), resyncAt: null } });
+    await db.syncDevice.update({ where: { id: dev.id }, data: { pulledSeq: BigInt(0), lastSeenAt: new Date(Date.now() - 200 * DAY), linkedAt: new Date(Date.now() - 300 * DAY), resyncAt: null } });
     const r = await trimChanges(gym.org.id);
     expect(r).toMatchObject({ resync: 1 });
     expect(r.removed).toBeGreaterThan(0);
     const back = (await db.syncDevice.findUniqueOrThrow({ where: { id: dev.id } }));
     expect(back.resyncAt).not.toBeNull();
     // Its next download says so, and it downloads the whole gym before anything else.
-    expect((await changesSince({ ...dev, pulledSeq: 0n, resyncAt: back.resyncAt }, 0)).resync).toBe(true);
+    expect((await changesSince({ ...dev, pulledSeq: BigInt(0), resyncAt: back.resyncAt }, 0)).resync).toBe(true);
   });
 
   it("a computer still in touch holds the log back at what it has, even if it is behind", async () => {
@@ -94,7 +94,7 @@ describe.skipIf(!hasDb || isLocal())("trimming the cloud sync change log (databa
     const m = await createMember(owner, { name: "Behind", gender: "Male", phone: "9812000004", source: "Walk-in", tags: [] });
     await db.member.update({ where: { id: m.id }, data: { name: "Behind, edited" } });
     await age(gym.org.id, 120);
-    await db.syncDevice.update({ where: { id: dev.id }, data: { pulledSeq: 0n, lastSeenAt: new Date() } });
+    await db.syncDevice.update({ where: { id: dev.id }, data: { pulledSeq: BigInt(0), lastSeenAt: new Date() } });
     const before = (await rowsOf(gym.org.id)).length;
     expect(await trimChanges(gym.org.id)).toMatchObject({ removed: 0, resync: 0, below: 0 });
     expect((await rowsOf(gym.org.id)).length).toBe(before);
