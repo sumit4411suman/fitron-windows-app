@@ -4,12 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
 import pkg from "../package.json";
-import { answers, health } from "./desktop/launch";
+import { answers, changed, health, snapshot } from "./desktop/launch";
 
 // npm run desktop:installer-test (Windows): the installer as a customer meets it (Phase 15).
 //   install (silent) → program, Start Menu and Desktop shortcuts, Apps & features entry → FITRON starts and makes its data
 //   folder → reinstall while FITRON is open (as an update does): FITRON is closed cleanly first, the data is unchanged →
-//   FITRON starts again → uninstall: program, shortcuts and entry gone, the data folder and every record still there.
+//   FITRON starts again → it runs from a read-only program folder and asks for no administrator (Phase 16) → uninstall:
+//   program, shortcuts and entry gone, the data folder and every record still there.
 // It uses the real %LOCALAPPDATA%\FITRON, so it runs only where that folder does not exist yet (a clean machine, CI).
 
 const TITLE = "FITRON Gym Accounting";
@@ -96,6 +97,17 @@ function records(): { marker: string | null; integrity: string; wal: number } {
   }
 }
 
+/**
+ * The rights a Windows program asks for, from the manifest inside it. A normal user can run only "asInvoker" (or a
+ * program with no level, which is the same). FITRON must never ask for an administrator (Phase 16).
+ */
+function requestedLevels(file: string): string[] {
+  const text = readFileSync(file).toString("latin1");
+  return [...text.matchAll(/requestedExecutionLevel[^>]*?level=["'](\w+)["']/g)].map((m) => m[1]);
+}
+
+const EVERYONE = "*S-1-1-0";
+
 async function main() {
   if (process.platform !== "win32") throw new Error("The installer test runs on Windows.");
   if (!existsSync(setup)) throw new Error(`No installer at ${setup}. Build it first (docs/local-windows/INSTALLER.md).`);
@@ -106,6 +118,11 @@ async function main() {
   if (run(setup, ["/S"]) !== 0) throw new Error("the installer failed");
   for (const f of [program(), path.join(inst, "fitron-node.exe"), path.join(inst, "server", "server.js"), path.join(inst, "uninstall.exe")]) if (!existsSync(f)) throw new Error(`not installed: ${f}`);
   ok(`installed for this user, no administrator needed: ${inst}`);
+  for (const f of [setup, program(), path.join(inst, "uninstall.exe")]) {
+    const levels = requestedLevels(f);
+    if (levels.some((l) => l !== "asInvoker")) throw new Error(`${path.basename(f)} asks Windows for ${levels.join(", ")}`);
+  }
+  ok("the installer, FITRON and its uninstaller ask only for a normal user's rights (asInvoker)");
   if (!startMenu()) throw new Error("no Start Menu shortcut");
   ok(`Start Menu shortcut: ${startMenu()}`);
   if (!existsSync(desktopLink())) throw new Error("no Desktop shortcut (a silent install makes one; /NS leaves it out)");
@@ -140,6 +157,20 @@ async function main() {
   if ((await health(third.port))?.ok !== true) throw new Error("FITRON did not start after the update");
   await close(third);
   ok("FITRON starts after the update");
+
+  // The program folder made read-only, as Program Files is for a normal user: FITRON still runs, and writes nothing there.
+  const before = snapshot(inst);
+  execFileSync("icacls", [inst, "/deny", `${EVERYONE}:(OI)(CI)(W,D,DC)`], { stdio: "ignore" });
+  try {
+    const fourth = await open(4);
+    if ((await health(fourth.port))?.ok !== true) throw new Error("FITRON did not start from a read-only program folder");
+    await close(fourth);
+  } finally {
+    execFileSync("icacls", [inst, "/remove:d", EVERYONE], { stdio: "ignore" });
+  }
+  const wrote = changed(before, snapshot(inst));
+  if (wrote.length) throw new Error(`FITRON wrote into its program folder: ${wrote.slice(0, 10).join(", ")}`);
+  ok("FITRON runs from a read-only program folder and writes nothing there");
 
   // Uninstall. Run in place (_?=) so the test waits for it.
   if (run(path.join(inst, "uninstall.exe"), ["/S", `_?=${inst}`]) !== 0) throw new Error("the uninstaller failed");

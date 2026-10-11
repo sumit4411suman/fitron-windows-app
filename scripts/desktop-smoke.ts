@@ -1,15 +1,16 @@
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import pkg from "../package.json";
-import { answers, health, networkAddresses, walSize } from "./desktop/launch";
+import { answers, changed, health, networkAddresses, snapshot, walSize } from "./desktop/launch";
 
 // npm run desktop:smoke: the real FITRON desktop program, from start to close, as a customer uses it (Phase 14).
 //   1. starts, with a fresh data folder;   2. starts its server on 127.0.0.1 and waits for it to be healthy;
 //   3. opens FITRON in its window;         4. a second start opens nothing new;
 //   5. closing the window stops the server cleanly (WAL written into fitron.db);
-//   6. if FITRON itself is ended (a crash, Task Manager), the server stops too; FITRON starts again afterwards.
+//   6. if FITRON itself is ended (a crash, Task Manager), the server stops too; FITRON starts again afterwards;
+//   7. it wrote nothing into its program folder, and worked from a data folder named with spaces and non-English letters.
 // Build it first: npm run desktop:bundle, then npx tauri build --no-bundle --config src-tauri/tauri.bundle.conf.json
 // (or the installer's program). Linux needs a display: xvfb-run -a npm run desktop:smoke.
 // --shell <path> picks the program; --shot <file.png> saves a screenshot of the window (Linux).
@@ -100,7 +101,13 @@ function endHard(pid: number) {
 async function main() {
   if (!existsSync(shellPath)) throw new Error(`No FITRON program at ${shellPath}. Build it first (see the top of this file).`);
   if (!win && !process.env.DISPLAY) throw new Error("No display. Run: xvfb-run -a npm run desktop:smoke");
-  const dataDir = mkdtempSync(path.join(os.tmpdir(), "fitron-desktop-"));
+  // A data folder like a real Windows user's can be: spaces and letters beyond English in its name (Phase 16).
+  const tmp = mkdtempSync(path.join(os.tmpdir(), "fitron-desktop-"));
+  const dataDir = path.join(tmp, "Rāhul Sharmā ₹ डेटा", "FITRON");
+  mkdirSync(path.dirname(dataDir), { recursive: true });
+  // The program folder is read-only for a normal Windows user (Program Files): FITRON writes nothing into it.
+  const programDir = path.dirname(shellPath);
+  const programBefore = snapshot(programDir);
   console.log(`FITRON desktop smoke test\n  program ${shellPath}\n  data    ${dataDir}`);
   try {
     // 1 to 3: start, server healthy on 127.0.0.1, FITRON in the window.
@@ -158,6 +165,9 @@ async function main() {
     await Promise.race([fourth.exited, sleep(30_000)]);
     if (await answers(port4)) throw new Error("the server still answers after FITRON closed");
     ok("FITRON starts again after being ended, and closes cleanly");
+    const wrote = changed(programBefore, snapshot(programDir));
+    if (wrote.length) throw new Error(`FITRON wrote into its program folder: ${wrote.slice(0, 10).join(", ")}`);
+    ok("wrote nothing into its program folder; everything went to the data folder");
     console.log("\nAll desktop checks passed.");
   } catch (e) {
     console.error(`\n--- shell.log ---\n${shellLog(dataDir)}`);
@@ -165,7 +175,7 @@ async function main() {
     if (existsSync(server)) console.error(`--- server.log (end) ---\n${readFileSync(server, "utf8").slice(-4000)}`);
     throw e;
   } finally {
-    rmSync(dataDir, { recursive: true, force: true });
+    rmSync(tmp, { recursive: true, force: true });
   }
 }
 
