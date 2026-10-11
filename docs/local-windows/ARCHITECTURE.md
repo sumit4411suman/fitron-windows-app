@@ -283,7 +283,7 @@ is the target. Each of its boxes, and where it lives here:
 | Optional Cloud Sync (two-way, user controlled, can be disabled) | not in the source today; designed after the Local Edition ships (section 7) | Planned, off by default |
 | Encrypted database (optional) | SQLCipher build of SQLite, key in Windows DPAPI | Planned with Phase 19 |
 | Local Backup & Restore: `.fitronbackup`, encrypted file, manual or scheduled | Phase 10 | Planned |
-| Security: local data, signed updates, no mandatory internet | Phases 13, 18, 19 | Planned |
+| Security: local data, signed updates, no mandatory internet | Phases 13, 18, 19 | Licence (13) and signed updates (18) done; 19 planned |
 | Multi-Gym Support: single or multiple gyms, switch between gyms | already multi-tenant (`orgId` on every table); one file holds several gyms, sign-in picks the gym. Separate files per gym (optional) is a later switch in the shell | Single file: done. Separate files: planned |
 | Application Updates: check, download signed, install, keep user data | Phase 18 (Tauri updater + pre-update backup) | Planned |
 | Deployment: Windows installer, auto updates, no data loss, uninstall keeps data | Phases 15, 16, 18 | Planned |

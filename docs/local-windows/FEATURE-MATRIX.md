@@ -35,8 +35,8 @@ Classes:
 | Feature | Route | Class | Notes |
 | --- | --- | --- | --- |
 | Invoices: list, create (custom lines), view, cancel with reason, GST split (CGST+SGST / IGST) | `/invoices`, `/invoices/new`, `/invoices/[id]` | LOCAL-SAFE | Integer paise; `gstRate` Decimal read with `Number()`. |
-| Invoice PDF | `/invoices/[id]/pdf` | NEEDS-ADAPTER | pdf-lib + DejaVu fonts: fonts must be inside the standalone bundle (already traced); cwd set by the shell. |
-| Printing (A4, A5, thermal, receipts) | `PrintButton` → `window.print()` | NEEDS-ADAPTER | WebView2 print dialog works; thermal/A5 need `@page` CSS presets and a Tauri print command. Phase 17. |
+| Invoice PDF | `/invoices/[id]/pdf?paper=` | LOCAL-SAFE (done, Phases 14, 17) | pdf-lib + DejaVu fonts inside the packaged server; A4, A5, 80 mm, 58 mm. |
+| Printing (A4, A5, thermal, receipts) | `PaperPrint` → `/invoices/[id]/pdf`, `/payments/[id]/receipt` | LOCAL-SAFE (done, Phase 17) | PDFs made for the paper (A4, A5, 80 mm and 58 mm rolls) printed through the printer's Windows driver, not the screen. Payment receipts are new. PRINTING.md. |
 | Payments: record, partial, reverse with reason, receipts | `/payments`, member/invoice actions | LOCAL-SAFE | |
 | Receivables | `/receivables` | LOCAL-SAFE | |
 | POS & inventory: counter sale, products, stock movements, low-stock notices | `/pos`, `/products`, `/products/[id]`, `/products/new` | LOCAL-SAFE | Walk-in member per branch. |
@@ -121,6 +121,8 @@ RazorpaySubscription, TrainerPayment and the other `Trainer*` tables. They stay 
 Cloud schema; the Local schema does not carry them.
 
 ## Online services in Local (done, Phase 12)
+
+Updates (Phase 18, UPDATES.md): the desktop program checks FITRON's download address, verifies FITRON's signature, backs the data up, installs; the new version backs up again before migrating, checks the database, and puts it back if the update fails. Done.
 
 Each online service has its own folder under `src/lib/integrations/` (email, whatsapp, razorpay, ai, license, updates),
 and nothing else in the app opens a connection. Every one is off on a fresh installation; Settings › Integrations & AI

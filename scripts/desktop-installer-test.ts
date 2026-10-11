@@ -106,7 +106,6 @@ function requestedLevels(file: string): string[] {
   return [...text.matchAll(/requestedExecutionLevel[^>]*?level=["'](\w+)["']/g)].map((m) => m[1]);
 }
 
-const EVERYONE = "*S-1-1-0";
 
 async function main() {
   if (process.platform !== "win32") throw new Error("The installer test runs on Windows.");
@@ -158,17 +157,20 @@ async function main() {
   await close(third);
   ok("FITRON starts after the update");
 
-  // The program folder made read-only, as Program Files is for a normal user: FITRON still runs, and writes nothing there.
+  // The program folder with Program Files' permissions for a normal user: read and run only, nothing granted beyond
+  // that to this user, and Windows itself (SYSTEM) kept in full. (A "deny Everyone" would also deny SYSTEM, which
+  // Windows uses when it starts a program, so the program would not start at all.) FITRON still runs, and writes
+  // nothing there.
   const before = snapshot(inst);
-  // Write data, append, write attributes and extended attributes, delete, delete children: what a normal user lacks in
-  // Program Files. Not the generic "W", which also takes away the rights Windows needs to start a program.
-  execFileSync("icacls", [inst, "/deny", `${EVERYONE}:(OI)(CI)(WD,AD,WEA,WA,D,DC)`], { stdio: "ignore" });
+  const me = process.env.USERNAME ?? os.userInfo().username;
+  execFileSync("icacls", [inst, "/inheritance:r", "/grant:r", `${me}:(OI)(CI)RX`, "/grant:r", "*S-1-5-18:(OI)(CI)F", "/T", "/C", "/Q"], { stdio: "ignore" });
   try {
     const fourth = await open(4);
     if ((await health(fourth.port))?.ok !== true) throw new Error("FITRON did not start from a read-only program folder");
     await close(fourth);
   } finally {
-    execFileSync("icacls", [inst, "/remove:d", EVERYONE], { stdio: "ignore" });
+    // Back to the folder's normal, inherited permissions.
+    execFileSync("icacls", [inst, "/reset", "/T", "/C", "/Q"], { stdio: "ignore" });
   }
   const wrote = changed(before, snapshot(inst));
   if (wrote.length) throw new Error(`FITRON wrote into its program folder: ${wrote.slice(0, 10).join(", ")}`);

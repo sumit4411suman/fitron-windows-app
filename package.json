@@ -24,6 +24,7 @@
     "desktop:bundle": "tsx scripts/desktop-bundle.ts",
     "desktop:build": "tsx scripts/desktop-bundle.ts && tauri build --config src-tauri/tauri.bundle.conf.json && tsx scripts/desktop-installer.ts",
     "desktop:installer": "tsx scripts/desktop-installer.ts",
+    "desktop:release": "tsx scripts/desktop-release.ts",
     "desktop:installer-test": "tsx scripts/desktop-installer-test.ts",
     "desktop:smoke": "tsx scripts/desktop-smoke.ts"
   },
