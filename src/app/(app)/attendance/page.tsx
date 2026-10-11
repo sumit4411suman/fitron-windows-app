@@ -1,6 +1,6 @@
 import Link from "next/link";
 import QRCode from "qrcode";
-import { CaretLeftIcon, CaretRightIcon, DoorOpenIcon, DownloadSimpleIcon, UserCirclePlusIcon, WhatsappLogoIcon } from "@phosphor-icons/react/dist/ssr";
+import { CaretLeftIcon, CaretRightIcon, DoorOpenIcon, DownloadSimpleIcon, UserCirclePlusIcon } from "@phosphor-icons/react/dist/ssr";
 import { requirePermission } from "@/lib/auth/current";
 import { db } from "@/lib/db";
 import { busyHours, canOverrideEntry, dailyCounts, getAccessRules, idleMembers, listDay } from "@/lib/services/attendance";
@@ -13,7 +13,7 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { Tag } from "@/components/tag";
 import { ListHeader, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
 import { fmtClock, fmtDate, fmtStamp, fmtTime, formatRupees } from "@/lib/format";
-import { CheckInDesk, GuestForm } from "./attendance-forms";
+import { CheckInDesk, GuestForm, NudgeButton } from "./attendance-forms";
 import { checkOutAction, closeDayAction, removeAction } from "./actions";
 import { gymAccountingOnly } from "@/lib/runtime/edition";
 
@@ -178,15 +178,7 @@ export default async function AttendancePage({ searchParams }: PageProps<"/atten
                       <div className="font-semibold">{m.name}</div>
                       <div className="text-xs text-muted">{m.lastVisit ? `Last visit ${fmtDate(m.lastVisit)} · ${daysBetween(today, m.lastVisit)} days ago` : "No visits recorded"}</div>
                     </Link>
-                    <a
-                      href={`https://wa.me/91${m.phone.replace(/\D/g, "").slice(-10)}?text=${encodeURIComponent(`Hi ${m.name.split(" ")[0]}, we have missed you at ${gymName}! Come in this week and let’s get back on track.`)}`}
-                      target="_blank"
-                      rel="noopener"
-                      className={`${ghost} text-[13px]`}
-                    >
-                      <WhatsappLogoIcon weight="duotone" />
-                      Nudge
-                    </a>
+                    <NudgeButton phone={m.phone} text={`Hi ${m.name.split(" ")[0]}, we have missed you at ${gymName}! Come in this week and let’s get back on track.`} />
                   </div>
                 ))}
               </div>

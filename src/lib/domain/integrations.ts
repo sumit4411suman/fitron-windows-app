@@ -52,11 +52,17 @@ export function deviceStatusText(d: { lastSeenAt: Date | string | null | undefin
   return `Offline · last seen ${fmtStamp(seen)}, ${fmtTime(seen)}`;
 }
 
-export type AiSettings = { enabled: boolean; dailyBrief: boolean; autoWinback: boolean };
-export const DEFAULT_AI: AiSettings = { enabled: true, dailyBrief: true, autoWinback: false };
+/**
+ * `useClaude`: on FITRON for Windows, whether Fitron AI may send a question and the figures it needs to Anthropic's
+ * Claude over the internet. Off until a gym user turns it on; without it Fitron AI answers from the books on the
+ * computer. (The Cloud Edition is a hosted service and always uses the model when FITRON has set it up.)
+ */
+export type AiSettings = { enabled: boolean; dailyBrief: boolean; autoWinback: boolean; useClaude: boolean };
+export const DEFAULT_AI: AiSettings = { enabled: true, dailyBrief: true, autoWinback: false, useClaude: false };
 
 export const withAiDefaults = (row: Partial<AiSettings> | null | undefined): AiSettings => ({
   enabled: typeof row?.enabled === "boolean" ? row.enabled : DEFAULT_AI.enabled,
   dailyBrief: typeof row?.dailyBrief === "boolean" ? row.dailyBrief : DEFAULT_AI.dailyBrief,
   autoWinback: typeof row?.autoWinback === "boolean" ? row.autoWinback : DEFAULT_AI.autoWinback,
+  useClaude: typeof row?.useClaude === "boolean" ? row.useClaude : DEFAULT_AI.useClaude,
 });

@@ -26,9 +26,10 @@ describe("Settings › Integrations & AI texts", () => {
   });
 
   it("AI defaults: assistant and brief on, win-back off; partial rows keep the rest", () => {
-    expect(withAiDefaults(null)).toEqual({ enabled: true, dailyBrief: true, autoWinback: false });
+    expect(withAiDefaults(null)).toEqual({ enabled: true, dailyBrief: true, autoWinback: false, useClaude: false });
     expect(withAiDefaults({})).toEqual(DEFAULT_AI);
-    expect(withAiDefaults({ enabled: false })).toEqual({ enabled: false, dailyBrief: true, autoWinback: false });
-    expect(withAiDefaults({ autoWinback: true })).toEqual({ enabled: true, dailyBrief: true, autoWinback: true });
+    expect(withAiDefaults({ enabled: false })).toEqual({ enabled: false, dailyBrief: true, autoWinback: false, useClaude: false });
+    expect(withAiDefaults({ autoWinback: true })).toEqual({ enabled: true, dailyBrief: true, autoWinback: true, useClaude: false });
+    expect(withAiDefaults({ useClaude: true }).useClaude).toBe(true);
   });
 });

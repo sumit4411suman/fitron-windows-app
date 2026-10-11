@@ -6,6 +6,8 @@ import { findPlan, PRODUCT_LABEL, rupeesLabel } from "@/lib/domain/pricing";
 import { sendEmail } from "@/lib/integrations/email";
 import { TOPICS, type contactSchema, type trialRequestSchema } from "@/lib/validation/site";
 import { log } from "@/lib/log";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
+import { UserError } from "./errors";
 
 // Website enquiries: saved first, then the team is emailed. A mail failure never loses the enquiry.
 
@@ -19,7 +21,13 @@ async function notify(subject: string, lines: (string | null | undefined)[], rep
   }
 }
 
+/** The website's forms are not part of FITRON for Windows (their pages are closed); refuse one posted to directly. */
+function notOnAComputer() {
+  if (gymAccountingOnly()) throw new UserError("Not part of FITRON for Windows.");
+}
+
 export async function createTrialRequest(d: z.infer<typeof trialRequestSchema>) {
+  notOnAComputer();
   const plan = findPlan(d.plan)!;
   const row = await db.enquiry.create({
     data: { kind: plan.product === "PARTNER" ? "PARTNER" : "TRIAL", plan: plan.key, cycle: d.cycle, name: d.name, email: d.email, phone: d.phone, business: d.business, city: d.city },
@@ -41,6 +49,7 @@ export async function createTrialRequest(d: z.infer<typeof trialRequestSchema>) 
 }
 
 export async function createContactMessage(d: z.infer<typeof contactSchema>) {
+  notOnAComputer();
   const kind = d.topic === "sales" || d.topic === "demo" ? "SALES" : d.topic === "partner" ? "PARTNER" : "CONTACT";
   const row = await db.enquiry.create({ data: { kind, name: d.name, email: d.email, phone: d.phone, business: d.business, message: `[${TOPICS[d.topic]}] ${d.message}` } });
   await notify(

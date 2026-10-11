@@ -21,7 +21,7 @@ import { getSetting, putSetting } from "./settings";
 import { getTax } from "./tax";
 import { fromIso, toIso, todayIso } from "./time";
 import { sendTemplate } from "./whatsapp";
-import { isLocal } from "@/lib/runtime/edition";
+import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
 import { isNetworkError, OfflineError, offlineMessage, probablyOnline, SERVICE } from "@/lib/integrations/online";
 
 export type AutopayMode = "demo" | "live";
@@ -31,6 +31,9 @@ export const getAutopayMode = async (orgId: string): Promise<AutopayMode> => ((a
 export const getAutopaySettings = async (orgId: string): Promise<AutopaySettings> => withAutopayDefaults(await getSetting<Partial<AutopaySettings>>(orgId, "autopay"));
 
 const webhookSet = () => !!process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
+
+/** Members hear about real debits only: on FITRON for Windows a demo mandate's simulated debits message nobody. */
+const messagesMember = (m: { mode: string }) => !(gymAccountingOnly() && m.mode === "demo");
 
 // Live autopay talks to Razorpay over the internet. On a computer with none (FITRON for Windows) each live action says
 // so before trying, and a call that loses the connection is reported as "no internet", never as "Razorpay refused".
@@ -140,7 +143,7 @@ export async function createMandate(u: CurrentUser, a: { memberId: string; planI
       throw new UserError(`Razorpay refused the mandate: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
-  await sendTemplate({ orgId: u.orgId, memberId: member.id, key: "mandate", userId: u.id, auto: true, vars: { plan_name: plan.name, amount: rupeesText(amount), link: mandate.shortUrl ?? "(demo mode, no real link)" } }).catch(() => null);
+  if (messagesMember(mandate)) await sendTemplate({ orgId: u.orgId, memberId: member.id, key: "mandate", userId: u.id, auto: true, vars: { plan_name: plan.name, amount: rupeesText(amount), link: mandate.shortUrl ?? "(demo mode, no real link)" } }).catch(() => null);
   return mandate;
 }
 
@@ -193,7 +196,7 @@ export async function recordCharge(mandateId: string, charge: { paymentId: strin
   const r = await sellMembership(sys, m.memberId, { planId: plan.id, startDate: start, discount: plan.discount, includeRegFee: false, payAmount: Math.min(charge.amount, total), payMethod: "UPI", payRef: charge.paymentId }, { type: "AUTOPAY" });
   const next = addDays(toIso(r.membership.endDate), 1);
   await db.$transaction((tx) => update(tx, m.orgId, null, m.id, { status: "Active", retries: 0, nextRetryOn: null, nextDebitOn: fromIso(next), lastResult: `Charged ₹${rupeesText(charge.amount)} on ${todayIso()} (${r.invoice.number})` }, "autopay.charged"));
-  await sendTemplate({ orgId: m.orgId, memberId: m.memberId, key: "renewal", auto: true, invoiceId: r.invoice.id, vars: { invoice_number: r.invoice.number, amount: rupeesText(r.invoice.total) } }).catch(() => null);
+  if (messagesMember(m)) await sendTemplate({ orgId: m.orgId, memberId: m.memberId, key: "renewal", auto: true, invoiceId: r.invoice.id, vars: { invoice_number: r.invoice.number, amount: rupeesText(r.invoice.total) } }).catch(() => null);
   return "renewed";
 }
 
@@ -281,7 +284,8 @@ async function demoDebit(m: { id: string; orgId: string; branchId: string; membe
   const body = o.halted
     ? `Hi ${first}, we could not collect your ${gymName} renewal of ₹${rupeesText(m.amount)} after ${st.retries} tries. Please pay at the desk or approve a new autopay.`
     : `Hi ${first}, your UPI autopay of ₹${rupeesText(m.amount)} for ${gymName} did not go through (${o.reason.toLowerCase()}). We will retry on ${fmtDate(o.nextRetryOn)}. Keep the balance ready or pay at the desk.`;
-  await sendTemplate({ orgId: m.orgId, memberId: m.memberId, key: "due", auto: true, force: true, body }).catch(() => null);
+  // A simulated debit: the demo mandate's member hears nothing about it on FITRON for Windows.
+  if (messagesMember({ mode: "demo" })) await sendTemplate({ orgId: m.orgId, memberId: m.memberId, key: "due", auto: true, force: true, body }).catch(() => null);
   return { result: o.halted ? "halted" : "failed", reason: o.reason, retries: o.retries, nextRetryOn: o.nextRetryOn };
 }
 

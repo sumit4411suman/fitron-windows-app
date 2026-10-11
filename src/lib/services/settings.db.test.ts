@@ -99,7 +99,7 @@ describe.skipIf(!hasDb)("gym profile and Billing & GST settings (database)", () 
     expect(await getReminderSettings(fresh.org.id)).toEqual(DEFAULT_REMINDERS);
     await db.setting.create({ data: { orgId: fresh.org.id, key: "whatsapp", value: { mode: "connector", expiryDays: [3], dedupDays: 9 } } });
     expect(await getReminderSettings(fresh.org.id)).toEqual({ ...DEFAULT_REMINDERS, expiryDays: [3], dedupDays: 9 });
-    expect(await getWaSettings(fresh.org.id)).toEqual({ mode: "connector", quietFrom: "21:00", quietTo: "08:00", linked: null, dedupDays: 9, dueEveryDays: 3 });
+    expect(await getWaSettings(fresh.org.id)).toEqual({ mode: "connector", quietFrom: "21:00", quietTo: "08:00", linked: null, automatic: false, dedupDays: 9, dueEveryDays: 3 });
     await db.setting.create({ data: { orgId: fresh.org.id, key: "reminders", value: { expiryDays: [15, 0], dedupDays: 2 } } });
     expect(await getReminderSettings(fresh.org.id)).toEqual({ ...DEFAULT_REMINDERS, expiryDays: [15, 0], dedupDays: 2 });
   });
@@ -112,7 +112,7 @@ describe.skipIf(!hasDb)("gym profile and Billing & GST settings (database)", () 
     const accBefore = await auditRows(u.orgId, "access");
 
     await saveReminderSettings(u, { expiryDays: [15, 0], dedupDays: 5, dueEveryDays: 0, defaultMonths: 3, graceDays: 4, birthdays: false });
-    expect(await getWaSettings(u.orgId)).toEqual({ mode: "demo", quietFrom: "21:00", quietTo: "08:00", linked: null, dedupDays: 5, dueEveryDays: 0 });
+    expect(await getWaSettings(u.orgId)).toEqual({ mode: "demo", quietFrom: "21:00", quietTo: "08:00", linked: null, automatic: false, dedupDays: 5, dueEveryDays: 0 });
     // The pills and birthday wishes are the templates' Auto-send switches.
     const on = new Map((await listTemplates(u.orgId)).map((t) => [t.key, t.autoSend]));
     expect([on.get("exp15"), on.get("exp7"), on.get("exp3"), on.get("exp1"), on.get("expired"), on.get("birthday")]).toEqual([true, false, false, false, true, false]);

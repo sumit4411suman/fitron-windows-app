@@ -3,7 +3,7 @@ import { after } from "next/server";
 import { EyeIcon, LightningIcon, PaperPlaneTiltIcon, SlidersHorizontalIcon } from "@phosphor-icons/react/dist/ssr";
 import { requirePermission } from "@/lib/auth/current";
 import { db } from "@/lib/db";
-import { getWaSettings, listMessages, listTemplates, templateRule } from "@/lib/services/whatsapp";
+import { getWaSettings, listMessages, listTemplates, templateRule, whySendingFails } from "@/lib/services/whatsapp";
 import { automationPreview, dispatchScheduled, lastAutomationRun, previewTemplate, ruleSentence } from "@/lib/services/wa-automation";
 import { VARS, runLine } from "@/lib/domain/whatsapp";
 import { isScheduled } from "@/lib/domain/wa-rules";
@@ -34,7 +34,10 @@ export default async function WhatsAppPage({ searchParams }: PageProps<"/whatsap
   const monthStart = new Date(`${today.slice(0, 7)}-01T00:00:00+05:30`);
   const scope = { orgId: u.orgId, OR: [{ memberId: null }, { member: { branchId: { in: u.branchIds } } }] };
   // Messages held by quiet hours or a rule's send time go out once the page has rendered.
-  after(() => dispatchScheduled(u.orgId).catch((e) => log.error("whatsapp.dispatch_failed", e)));
+  // Only when WhatsApp can take them (the internet for Meta, the connector running), as the hourly timer does.
+  after(async () => {
+    if (!(await whySendingFails(u.orgId))) await dispatchScheduled(u.orgId).catch((e) => log.error("whatsapp.dispatch_failed", e));
+  });
   const [settings, templates, month] = await Promise.all([
     getWaSettings(u.orgId),
     listTemplates(u.orgId),

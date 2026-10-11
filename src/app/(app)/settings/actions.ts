@@ -203,7 +203,8 @@ export async function saveAccess(fd: FormData) {
   });
 }
 
-const waInput = z.object({ mode: z.enum(["demo", "cloud", "connector"]) });
+// `automatic`: FITRON for Windows only (the checkbox is shown there); merged into the setting with the mode.
+const waInput = z.object({ mode: z.enum(["demo", "cloud", "connector"]), automatic: z.preprocess((v) => v === "on", z.boolean()) });
 
 /** Settings › WhatsApp: only how messages go out. The reminder schedule is saved from the Reminders tab. */
 export async function saveWhatsApp(fd: FormData) {

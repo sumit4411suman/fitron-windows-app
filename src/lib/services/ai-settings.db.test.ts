@@ -45,9 +45,9 @@ describe.skipIf(!hasDb)("Settings › Integrations & AI (database)", () => {
   };
 
   it("defaults are on/on/off; saving is persisted and audited", async () => {
-    expect(await getAiSettings(gym.org.id)).toEqual({ enabled: true, dailyBrief: true, autoWinback: false });
+    expect(await getAiSettings(gym.org.id)).toEqual({ enabled: true, dailyBrief: true, autoWinback: false, useClaude: false });
     await putSetting(admin, "ai", { enabled: false });
-    expect(await getAiSettings(gym.org.id)).toEqual({ enabled: false, dailyBrief: true, autoWinback: false });
+    expect(await getAiSettings(gym.org.id)).toEqual({ enabled: false, dailyBrief: true, autoWinback: false, useClaude: false });
     const log = await db.auditLog.findFirst({ where: { orgId: gym.org.id, action: "setting.update", entityId: "ai" }, orderBy: { createdAt: "desc" } });
     expect(log).toMatchObject({ entity: "Setting", before: null, after: { enabled: false } });
     await putSetting(admin, "ai", { enabled: true });

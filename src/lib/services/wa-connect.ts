@@ -3,7 +3,7 @@ import { randomInt } from "node:crypto";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import { TEST_META_TEMPLATE, toMetaTemplate, type MetaTemplate } from "@/lib/domain/wa-meta";
-import { exchangeCode, phoneInfo, registerNumber, submitTemplates, subscribeApp, templateStatuses, type CloudCreds, type TemplateStatus } from "@/lib/integrations/whatsapp-cloud";
+import { exchangeCode, phoneInfo, registerNumber, submitTemplates, subscribeApp, templateStatuses, type CloudCreds, type TemplateStatus } from "@/lib/integrations/whatsapp/cloud";
 import { cloudOffline } from "@/lib/integrations/whatsapp";
 import { audit } from "./audit";
 import { UserError } from "./errors";

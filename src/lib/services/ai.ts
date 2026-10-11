@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
-import { claude, type Block, type Msg } from "@/lib/integrations/anthropic";
+import { claude, type Block, type Msg } from "@/lib/integrations/ai";
 import { runTool, TOOL_DEFS } from "./ai-tools";
 import { UserError } from "./errors";
 import { getSetting } from "./settings";

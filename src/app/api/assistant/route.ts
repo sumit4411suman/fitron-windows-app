@@ -1,7 +1,7 @@
 import * as z from "zod";
 import "@/lib/zod-config";
 import { answerFromFacts, assistantSystem, cleanTurns } from "@/lib/domain/assistant";
-import { aiReady, claudeText } from "@/lib/integrations/anthropic";
+import { aiReady, claudeText } from "@/lib/integrations/ai";
 import { log } from "@/lib/log";
 import { rateLimit } from "@/lib/rate-limit";
 import { readCapped } from "../trainer/_lib/http";

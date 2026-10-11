@@ -30,16 +30,18 @@ describe("routes the proxy does not see, on FITRON for Windows", () => {
 
   it("finds them", () => {
     expect(closed.length).toBeGreaterThan(20);
-    expect(closed.map((c) => c.url)).toEqual(expect.arrayContaining(["api/webhooks/razorpay", "api/trainer/pay", "iclock/cdata", "auth/google", "api/assistant"]));
+    expect(closed.map((c) => c.url)).toEqual(expect.arrayContaining(["api/webhooks/razorpay", "api/trainer/pay", "iclock/cdata", "auth/google", "api/assistant", "api/jobs/daily", "api/jobs/dispatch"]));
   });
 
   it("every handler in them closes itself first on Local", () => {
     const open: string[] = [];
     for (const { f, url } of closed) {
       const src = readFileSync(f, "utf8");
-      const handlers = [...src.matchAll(/^export (?:async )?function (GET|POST|PUT|DELETE|PATCH)\([^\n]*\{\n(.*)\n/gm)];
+      // `export function GET(…) {` or `export const GET = handle;` with `async function handle(…) {`.
+      const handlers = [...src.matchAll(/^export (?:async )?function (GET|POST|PUT|DELETE|PATCH)\(/gm)].map((m) => m[1]!);
+      for (const m of src.matchAll(/^export const (GET|POST|PUT|DELETE|PATCH) = (\w+);/gm)) handlers.push(m[2]!);
       expect(handlers.length, url).toBeGreaterThan(0);
-      for (const [, method, first] of handlers) if (!/notInLocal\(\)/.test(first!) && !/notInLocal\(\)/.test(src.split(`function ${method}(`)[1]!.split("\n").slice(1, 4).join("\n"))) open.push(`${method} /${url}`);
+      for (const fn of new Set(handlers)) if (!/notInLocal\(\)/.test(src.split(`function ${fn}(`)[1]?.split("\n").slice(1, 3).join("\n") ?? "")) open.push(`${fn} /${url}`);
     }
     expect(open).toEqual([]);
   });

@@ -21,7 +21,7 @@ import { LinkWatcher } from "./link-watcher";
 import { CloudConnect } from "./cloud-connect";
 import { getCloudCreds, getCloudInfo } from "@/lib/services/wa-cloud-store";
 import { cloudTemplateStatus } from "@/lib/services/wa-connect";
-import { signupConfig } from "@/lib/integrations/whatsapp-cloud";
+import { signupConfig } from "@/lib/integrations/whatsapp/cloud";
 import { Dialog } from "@/components/dialog";
 import { ConfirmButton } from "@/components/confirm-button";
 import { PaperPlaneTiltIcon, PlugsIcon, QrCodeIcon, WhatsappLogoIcon } from "@phosphor-icons/react/dist/ssr";
@@ -43,7 +43,11 @@ import { appUrl } from "@/lib/services/accounts";
 import { HelpTab } from "./help-tab";
 import { BranchesTab } from "./branches-tab";
 import { PARTNER_SHARE } from "@/lib/domain/pricing";
-import { aiReady } from "@/lib/integrations/anthropic";
+import { aiReady } from "@/lib/integrations/ai";
+import { onlineServices } from "@/lib/domain/online-services";
+import { licenceServer } from "@/lib/integrations/license";
+import { updateFeed } from "@/lib/integrations/updates";
+import { razorpayReady } from "@/lib/integrations/razorpay";
 
 export const metadata = { title: "Settings · Fitron" };
 
@@ -123,11 +127,19 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const integrations =
     tab === "int"
       ? await (async () => {
-          const [ai, devices] = await Promise.all([getAiSettings(u.orgId), db.device.findMany({ where: { orgId: u.orgId, approved: true, branchId: { in: u.branchIds } }, orderBy: { createdAt: "asc" } })]);
+          const [ai, devices, monthlyPl] = await Promise.all([getAiSettings(u.orgId), db.device.findMany({ where: { orgId: u.orgId, approved: true, branchId: { in: u.branchIds } }, orderBy: { createdAt: "asc" } }), monthlyPlOn(u.orgId)]);
           const now = new Date();
           const branchName = (id: string | null) => branches.find((b) => b.id === id)?.name ?? "—";
           return {
             ai,
+            online: onlineServices({
+              whatsapp: { mode: wa.mode, automatic: wa.automatic },
+              email: { ready: emailReady(), monthlyPl },
+              ai: { enabled: ai.enabled, keySet: aiReady(), useClaude: ai.useClaude },
+              autopay: { mode: autopay.mode, keysSet: !razorpayReady() },
+              licence: { configured: !!licenceServer() },
+              updates: { configured: !!updateFeed() },
+            }),
             devices: devices.map((d) => ({ id: d.id, name: `${d.name ?? d.serial} · ${branchName(d.branchId)}`, status: deviceStatusText(d, now) })),
             // No poster on FITRON for Windows: members' phones cannot reach the computer (attendance/page.tsx).
             posters: closed ? [] : branches.filter((b) => u.branchIds.includes(b.id)).map((b) => ({ id: b.id, name: `Front desk QR poster · ${b.name}`, status: "Active" })),
@@ -340,6 +352,18 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
                   <option value="connector">Linked gym phone (connector){local ? ": needs the internet" : ""}</option>
                 </Select>
               </Field>
+              {closed && (
+                <div>
+                  <label className="flex items-center gap-2.5 text-[15px]">
+                    <input type="checkbox" name="automatic" defaultChecked={wa.automatic} className="size-[18px] accent-accent" />
+                    Send automatic messages
+                  </label>
+                  <p className="m-0 mt-1 pl-7 text-xs text-muted">
+                    Welcome messages, payment receipts, renewal invoices (the PDF carries the member&apos;s address and your GSTIN), expiry and payment reminders and birthday wishes, as switched on in WhatsApp › Templates. They go to each member&apos;s WhatsApp number through WhatsApp&apos;s servers.
+                    Off: nothing goes out unless staff press send.
+                  </p>
+                </div>
+              )}
               <p className={waStatus.ok ? "text-ok" : "text-alert"}>{waStatus.text}</p>
               {templateStatus && (
                 <div className="flex flex-col gap-1 text-[13px]" data-testid="wa-templates">
@@ -395,6 +419,22 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       )}
       {tab === "int" && integrations && (
         <div className="flex max-w-[900px] flex-col gap-6">
+          {closed && (
+            <Panel title="Online services on this computer" id="online" small>
+              <p className="m-0 text-[13px] text-muted">FITRON works without the internet. These are the only ways gym data can leave this computer, and each one is off until you turn it on.</p>
+              <div className="flex flex-col">
+                {integrations.online.map((r) => (
+                  <div key={r.key} className="grid gap-x-4 gap-y-0.5 border-b border-line py-2.5 text-sm sm:grid-cols-[160px_1fr]" data-testid={`online-${r.key}`}>
+                    <div>
+                      <div className="font-semibold">{r.name}</div>
+                      <div className={r.on ? "text-xs text-accent" : "text-xs text-muted"}>{r.state}</div>
+                    </div>
+                    <div className="text-[13px] text-muted">Sends: {r.sends}</div>
+                  </div>
+                ))}
+              </div>
+            </Panel>
+          )}
           <Panel title="UPI autopay" id="autopay" small>
             <form action={saveAutopay} className="flex flex-col gap-[18px] text-sm">
               <div className="grid gap-x-6 gap-y-[18px] [grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr))]">
@@ -488,10 +528,19 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
                 </label>
                 <p className="m-0 mt-1 pl-7 text-xs text-muted">Drafts a win-back message for staff to confirm. Automatic sending is set per template in WhatsApp › Templates.</p>
               </div>
+              {closed && aiReady() && (
+                <div>
+                  <label className="flex items-center gap-2.5">
+                    <input type="checkbox" name="useClaude" defaultChecked={integrations.ai.useClaude} disabled={!u.has("ai")} className="size-[18px] accent-accent" />
+                    Use Claude for fuller answers (needs the internet)
+                  </label>
+                  <p className="m-0 mt-1 pl-7 text-xs text-muted">Sends each question, the earlier messages in that chat, your gym&apos;s name, the staff member&apos;s name and role, and the records Fitron AI looks up to answer it, to Anthropic&apos;s Claude (USA) over the internet: member names, phone numbers, visits and dues; invoices and payment references; expenses and supplier bills; profit and loss, cash and bank balances; GST figures with your GSTIN; and report rows such as leads with their notes. Off: answers come from the books on this computer and nothing is sent.</p>
+                </div>
+              )}
               <p className="m-0 text-[13px] text-muted">Fitron AI reads data only for the branch and role you are signed in with. It never sends a message or records money without a staff member confirming.</p>
               {local && (
                 <p className="m-0 text-[13px] text-muted">
-                  {aiReady()
+                  {aiReady() && (!closed || integrations.ai.useClaude)
                     ? "On this computer, a question and the figures needed to answer it go to Anthropic's Claude over the internet. With no internet, Fitron AI answers from the books on this computer."
                     : "On this computer, Fitron AI answers from the books on this computer. Nothing is sent over the internet."}
                 </p>

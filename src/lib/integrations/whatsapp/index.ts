@@ -1,7 +1,7 @@
 import "server-only";
-import { graphCall, phoneInfo, type CloudCreds } from "./whatsapp-cloud";
-import { isLocal } from "@/lib/runtime/edition";
-import { isNetworkError, offlineMessage, probablyOnline, SERVICE } from "./online";
+import { graphCall, phoneInfo, type CloudCreds } from "./cloud";
+import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
+import { isNetworkError, offlineMessage, probablyOnline, SERVICE } from "../online";
 
 // Sends one WhatsApp message through the configured provider. Secrets come from the server
 // environment only; the app stores which mode is on, never the keys.
@@ -34,7 +34,8 @@ const DEFAULT_CONNECTOR_KEY = "fitron-local";
 const connectorUrl = () => (env("WA_CONNECTOR_URL") || DEFAULT_CONNECTOR_URL).replace(/\/+$/, "");
 const connectorKey = () => env("WA_CONNECTOR_KEY") || DEFAULT_CONNECTOR_KEY;
 /** The server-wide connection, when the Fitron team set one number for every gym (WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID). */
-const sharedCloud = (): CloudCreds | null => (env("WHATSAPP_TOKEN") && env("WHATSAPP_PHONE_NUMBER_ID") ? { token: env("WHATSAPP_TOKEN"), phoneNumberId: env("WHATSAPP_PHONE_NUMBER_ID"), wabaId: "" } : null);
+// Never on FITRON for Windows: a gym's members would be messaged from, and visible to, a number that is not the gym's.
+const sharedCloud = (): CloudCreds | null => (!gymAccountingOnly() && env("WHATSAPP_TOKEN") && env("WHATSAPP_PHONE_NUMBER_ID") ? { token: env("WHATSAPP_TOKEN"), phoneNumberId: env("WHATSAPP_PHONE_NUMBER_ID"), wabaId: "" } : null);
 
 /** Fitron on Vercel cannot reach a connector on the gym PC (127.0.0.1 is Vercel's own machine): the connector must be hosted and WA_CONNECTOR_URL set. */
 export const HOSTED_NEEDS_CONNECTOR = "Fitron is hosted online, so it cannot reach a connector on your own computer. Run the Fitron connector on an always-on server, then set WA_CONNECTOR_URL and WA_CONNECTOR_KEY on the Fitron server (prototype/connector/README.md).";

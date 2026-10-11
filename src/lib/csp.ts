@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { analyticsId } from "@/lib/analytics";
 import { THEME_SCRIPT } from "@/lib/theme-script";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 
 // The Content-Security-Policy sent with every page (src/proxy.ts): what the browser may load and run on it, so that a
 // script an attacker manages to put in a page is not run and cannot send data elsewhere.
@@ -42,7 +43,11 @@ const GOOGLE = "https://accounts.google.com"; // "Continue with Google" is a red
 const GA_SCRIPT = "https://www.googletagmanager.com";
 const GA_CONNECT = ["https://www.googletagmanager.com", "https://*.google-analytics.com", "https://*.analytics.google.com"];
 
-export function buildCsp({ tier, nonce, dev = false, analytics = analyticsId() !== null }: { tier: CspTier; nonce?: string; dev?: boolean; analytics?: boolean }): string {
+/**
+ * `billing`: the console may open FITRON's plan billing (Razorpay Checkout). Not on FITRON for Windows, where those pages
+ * are closed, so the browser may not reach Razorpay from the console at all.
+ */
+export function buildCsp({ tier, nonce, dev = false, analytics = analyticsId() !== null, billing = !gymAccountingOnly() }: { tier: CspTier; nonce?: string; dev?: boolean; analytics?: boolean; billing?: boolean }): string {
   const d: Record<string, string[]> = {
     "default-src": ["'self'"],
     "object-src": ["'none'"],
@@ -56,12 +61,12 @@ export function buildCsp({ tier, nonce, dev = false, analytics = analyticsId() !
     if (!nonce) throw new Error("The console's policy needs a nonce");
     // 'strict-dynamic': scripts that a nonced script loads (Next.js chunks, Razorpay checkout) may run; the host list
     // after it is for old browsers that do not know it. Styles keep 'unsafe-inline' for the style="" attributes React writes.
-    d["script-src"] = ["'self'", `'nonce-${nonce}'`, THEME_SCRIPT_SOURCE, "'strict-dynamic'", "https://checkout.razorpay.com", META_SDK, ...(dev ? ["'unsafe-eval'"] : [])];
+    d["script-src"] = ["'self'", `'nonce-${nonce}'`, THEME_SCRIPT_SOURCE, "'strict-dynamic'", ...(billing ? ["https://checkout.razorpay.com"] : []), META_SDK, ...(dev ? ["'unsafe-eval'"] : [])];
     d["style-src"] = ["'self'", "'unsafe-inline'"];
     d["img-src"] = ["'self'", "data:", "blob:"];
     d["font-src"] = ["'self'"];
-    d["connect-src"] = ["'self'", RAZORPAY, ...META, ...(dev ? ["ws:", "wss:"] : [])];
-    d["frame-src"] = [RAZORPAY, ...META];
+    d["connect-src"] = ["'self'", ...(billing ? [RAZORPAY] : []), ...META, ...(dev ? ["ws:", "wss:"] : [])];
+    d["frame-src"] = [...(billing ? [RAZORPAY] : []), ...META];
     d["media-src"] = ["'self'", "blob:"];
   } else {
     const ga = analytics && tier === "site";

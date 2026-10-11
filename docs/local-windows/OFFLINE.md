@@ -42,7 +42,7 @@ The Cloud Edition's behaviour is unchanged: these checks run only when `FITRON_E
 
 | Feature | Offline on FITRON for Windows |
 | --- | --- |
-| Email (`integrations/email.ts`) | Not set up by default, so nothing is sent and nothing pretends to be. With SMTP set up: checks the internet first and says "Sending email requires an internet connection."; short timeouts (DNS 5 s, connect 10 s, socket 30 s) bound a send that loses the connection part-way. |
+| Email (`integrations/email/`) | Not set up by default, so nothing is sent and nothing pretends to be. With SMTP set up: checks the internet first and says "Sending email requires an internet connection."; short timeouts (DNS 5 s, connect 10 s, socket 30 s) bound a send that loses the connection part-way. |
 | Support tickets (Settings › Help & support) | The gym's database is out of FITRON's sight, so a ticket reaches support only by email. Without email set up there is no form, only the phone, WhatsApp and email cards and the copyable System details. With email: offline, nothing is saved and the desk is told; a ticket whose email failed is kept, marked not sent, and never acknowledged. |
 | Sign-in by email link or code, password reset by email | Not part of FITRON for Windows. The pages redirect to sign-in and their server actions refuse. The owner resets with the recovery key; a Super Admin resets staff passwords. |
 | WhatsApp, "Not linked" (the default) | Messages are saved, not sent, and every screen says so: "Payment reminder saved, not sent: WhatsApp is not linked". |

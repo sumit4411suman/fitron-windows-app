@@ -52,7 +52,7 @@ export async function HelpTab({ u, waStatus, waMode }: { u: CurrentUser; waStatu
         <h3 className="text-lg">Raise a ticket</h3>
         {ticketsCanReachSupport() ? (
           <>
-            {isLocal() && <p className="text-[13px] text-muted">Sent to FITRON support by email. This needs an internet connection.</p>}
+            {isLocal() && <p className="text-[13px] text-muted">Sent to FITRON support by email, with your name, email and role and the System details below. This needs an internet connection.</p>}
             <TicketForm />
           </>
         ) : (

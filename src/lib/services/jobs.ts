@@ -37,7 +37,12 @@ async function whatsAppOrLater(orgId: string) {
 async function reminderRules(orgId: string, whens: string[], today: string, now: Date): Promise<Result> {
   // On a computer with WhatsApp not linked, the timer saves nothing: saved-but-unsent reminders would only stop the
   // real ones once WhatsApp is linked (a member reminded recently is skipped). The desk can still remind by hand.
-  if (gymAccountingOnly() && (await getWaSettings(orgId)).mode === "demo") return { sent: 0, skipped: 0, held: 0, note: "WhatsApp is not linked: nothing sent" };
+  if (gymAccountingOnly()) {
+    const wa = await getWaSettings(orgId);
+    if (wa.mode === "demo") return { sent: 0, skipped: 0, held: 0, note: "WhatsApp is not linked: nothing sent" };
+    // Linked, but the gym has not chosen automatic messages (Settings › WhatsApp): only staff send.
+    if (!wa.automatic) return { sent: 0, skipped: 0, held: 0, note: "automatic messages are off: nothing sent" };
+  }
   await whatsAppOrLater(orgId);
   const keys = (await listTemplates(orgId)).filter((t) => t.autoSend && whens.includes(t.ruleWhen)).map((t) => t.key);
   const r = await runRules(orgId, null, keys, today, now, null);

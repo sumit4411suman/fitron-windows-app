@@ -130,11 +130,12 @@ export const autopayInput = z.object({
 });
 export type AutopayInput = z.infer<typeof autopayInput>;
 
-/** Settings › Integrations & AI › Fitron AI: three checkboxes. */
+/** Settings › Integrations & AI › Fitron AI: three checkboxes, and on FITRON for Windows a fourth: answers by Claude. */
 export const aiInput = z.object({
   enabled: z.preprocess((v) => v === "on", z.boolean()),
   dailyBrief: z.preprocess((v) => v === "on", z.boolean()),
   autoWinback: z.preprocess((v) => v === "on", z.boolean()),
+  useClaude: z.preprocess((v) => v === "on", z.boolean()),
 });
 export type AiInput = z.infer<typeof aiInput>;
 

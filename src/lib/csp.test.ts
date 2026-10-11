@@ -145,4 +145,12 @@ describe("Google Analytics", () => {
     for (const t of ["app", "trainer"] as const) expect(buildCsp({ tier: t, nonce: "n", analytics: true })).not.toMatch(/googletagmanager|google-analytics/);
   });
 });
+
+  it("lets the console reach Razorpay only where FITRON's plan billing exists, not on FITRON for Windows", () => {
+    const app = (billing: boolean) => buildCsp({ tier: "app", nonce: "n", billing });
+    expect(app(true)).toContain("razorpay.com");
+    expect(app(false)).not.toContain("razorpay");
+    expect(app(false)).toContain("https://connect.facebook.net");
+  });
 });
+

@@ -1,6 +1,6 @@
 import "server-only";
 import type { TrainerMember } from "@/generated/prisma/client";
-import { claudeText } from "@/lib/integrations/anthropic";
+import { claudeText } from "@/lib/integrations/ai";
 import { todayIso } from "./time";
 
 // The AI Coach in the member app. One plain reply per message, grounded in what the member
