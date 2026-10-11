@@ -15,7 +15,7 @@ src/lib/integrations/
   whatsapp/      index.ts: send through the chosen provider; cloud.ts: Meta's WhatsApp Business (Graph API)
   razorpay/      member UPI autopay (live mode), and FITRON's own billing on the Cloud Edition
   ai/            Anthropic's Claude
-  license/       the FITRON licence server (Phase 13 builds the licence rules on it)
+  license/       the FITRON licence server: unused, since licences are signed files checked offline (LICENSING.md)
   updates/       the update feed (Phase 18 adds the signed download and the backup before installing)
   google.ts      "Continue with Google", Cloud Edition only
   storage.ts     where files are kept (the computer's own disk on Windows)
@@ -34,7 +34,7 @@ name: the S3 file bucket and the AI Trainer's push reminders.
 | Email | FITRON sets up a mail server for the installation (SMTP_HOST); the monthly profit and loss also needs its tick in Settings › Reminders (off). | Support tickets a user raises (the message, the user's name, email and role, the System details); the monthly profit and loss to the Super Admins. |
 | Fitron AI | FITRON sets an Anthropic key, and a gym user ticks "Use Claude for fuller answers" (off). | The question, the chat so far, the gym's name, the staff member's name and role, and the records looked up to answer it (named in full next to the tick). |
 | UPI autopay | A gym user picks Live mode, with Razorpay keys set. | Per mandate: the plan name, amount, first debit date and the member's FITRON code. Not the member's name or phone. |
-| Licence | FITRON_LICENCE_URL is set (Phase 13). | Only the licence id, the installation id, the edition, plan and version. `licencePayload()` refuses any other field before a connection opens. |
+| Licence | Nothing: a licence is a signed file checked on the computer (LICENSING.md). If online renewal is added, FITRON_LICENCE_URL. | Only the licence id, the installation id, the edition, plan and version. `licencePayload()` refuses any other field before a connection opens. |
 | Updates | FITRON_UPDATE_URL is set (Phase 18). | Only the edition, version, update channel and kind of Windows. `updateQueryString()` refuses anything else. |
 
 Never on FITRON for Windows, whatever is set:

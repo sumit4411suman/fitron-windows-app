@@ -82,8 +82,8 @@ Classes:
 | Settings › Migrate & import (CSV) | `/settings/import` | LOCAL-SAFE | Long transaction (`timeout: 120 s`), fine on SQLite. |
 | Settings › Backup (JSON per gym in storage, auto backup, restore test) | `/settings/backup` | NEEDS-ADAPTER | Replaced by the `.fitronbackup` file format: SQLite snapshot + documents + manifest + checksum. The existing JSON export stays as "Export data". Phase 10. |
 | Settings › Go live (checklist, clear demo data, security: idle minutes) | `/settings/go-live` | LOCAL-SAFE | |
-| Settings › Subscription (FITRON plan, Razorpay checkout, coupons) | `/settings/billing` | NOT-SUPPORTED-IN-LOCAL | Replaced by Settings › Licence (Phase 13). |
-| Settings › Branches | `/settings?tab=branches` | NEEDS-ADAPTER | Extra-branch billing to FITRON is removed from the flow; branch count is a licence term. |
+| Settings › Subscription (FITRON plan, Razorpay checkout, coupons) | `/settings/billing` | NOT-SUPPORTED-IN-LOCAL | Replaced by Settings › Licence (done, Phase 13): a signed licence file checked offline, a 30-day trial, grace days. See LICENSING.md. |
+| Settings › Branches | `/settings?tab=branches` | NEEDS-ADAPTER (done, Phase 13) | Extra-branch billing to FITRON is removed from the flow; the number of active branches comes from the licence (3 during the trial). |
 | Settings › Privacy & DPDP (officer, member rights export, retention job) | `/settings?tab=privacy`, `/settings/privacy/export` | LOCAL-SAFE | |
 | Settings › Help & support (tickets, system details) | `/settings?tab=help` | ONLINE-REQUIRED (done, Phase 11) | A ticket reaches FITRON only by email. Without email set up there is no form, only the support cards and the copyable System details; offline it says so and saves nothing. See OFFLINE.md. |
 | Biometric & door devices (ZKTeco/eSSL ADMS push) | `/settings/devices`, `/iclock/*` | NEEDS-ADAPTER | Devices push over HTTP to the server. On localhost only they cannot reach it; a LAN opt-in (bind to the LAN address) is a later phase and not in scope for 1.0. Phase 11: the devices page says so instead of the setup steps, and `/iclock/*` answers 404. |

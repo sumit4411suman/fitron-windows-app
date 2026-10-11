@@ -27,6 +27,7 @@ import { lowestGymPrice } from "@/lib/domain/pricing";
 import { daysBetween } from "@/lib/domain/dates";
 import { todayIso } from "@/lib/services/time";
 import { fmtDate, formatInr } from "@/lib/format";
+import { thisLicence, type LicenceStatus } from "@/lib/licence";
 
 const fromPrice = formatInr(lowestGymPrice("MONTHLY")).replace(/\.00$/, "");
 
@@ -41,8 +42,9 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
   // Prototype: a paid plan nearing its end shows "ends in N days" as many days ahead as Settings › Subscription says.
   const expiring = s.kind === "PAID" && left <= sub.remindDays;
   const canPay = u.can("settings.manage");
-  const banner =
-    s.kind === "TRIAL"
+  const banner = isLocal()
+    ? licenceBanner(thisLicence().status)
+    : s.kind === "TRIAL"
       ? {
           alert: left <= 2,
           body: (
@@ -123,7 +125,11 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             />
           </div>
         </header>
-        {banner && <TrialBanner alert={banner.alert} cta={canPay ? banner.cta : undefined}>{banner.body}</TrialBanner>}
+        {banner && (
+          <TrialBanner alert={banner.alert} cta={canPay ? banner.cta : undefined} href={"href" in banner ? banner.href : undefined}>
+            {banner.body}
+          </TrialBanner>
+        )}
         <main id="ft-main" className="mx-auto w-full max-w-[1400px] flex-1 px-4 pt-4 pb-20 max-lg:pb-24 lg:px-10">{children}</main>
       </div>
       <MobileTabBar canMembers={u.can("members.view")} canAdd={u.can("members.create")} canCollect={u.can("payments.collect")} home={groups[0]?.items[0]?.href ?? "/dashboard"} homeLabel={groups[0]?.items[0]?.href === "/dashboard" ? "Home" : (groups[0]?.items[0]?.label ?? "Home")} />
@@ -138,4 +144,19 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
       {!local && <CookieBanner />}
     </div>
   );
+}
+
+/**
+ * FITRON for Windows: the licence's notice above every page, only when it needs doing something: the last week of the
+ * trial, the last month of a licence, its grace days, and once it has ended.
+ */
+function licenceBanner(l: LicenceStatus) {
+  const d = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
+  const to = { cta: "Licence", href: "/settings/licence" };
+  if (l.kind === "trial" && l.daysLeft <= 7) return { alert: l.daysLeft <= 2, body: <>Free trial: <strong>{d(l.daysLeft)} left</strong> · ends {fmtDate(l.until)}. Import a licence from FITRON to keep adding records.</>, ...to };
+  if (l.kind === "active" && l.daysLeft <= 30) return { alert: l.daysLeft <= 7, body: <>Your FITRON licence ends in <strong>{d(l.daysLeft)}</strong> ({fmtDate(l.licence.expiresOn)}). Ask FITRON for the renewal.</>, ...to };
+  if (l.kind === "grace") return { alert: true, body: <>Your FITRON licence has ended. Everything keeps working until {fmtDate(l.graceUntil)}; import the renewal before then.</>, ...to };
+  if (l.kind === "ended") return { alert: true, body: <>{l.licence ? "Your FITRON licence" : "The free trial"} has ended: nothing new can be added. Your records stay readable, exportable and backed up.</>, ...to };
+  if (l.kind === "wrong-computer") return { alert: true, body: <>The licence on file is for another computer. Ask FITRON for one made for this computer.</>, ...to };
+  return null;
 }

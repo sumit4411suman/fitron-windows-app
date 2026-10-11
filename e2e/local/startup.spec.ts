@@ -109,6 +109,15 @@ test("first-run setup checks the form, creates the gym and owner, and shows the 
   await page.goto("/settings");
   await expect(page.getByRole("link", { name: "Subscription" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Backup" }).first()).toBeVisible();
+
+  // Phase 13: the licence instead of FITRON's plan billing. A new installation is on its 30-day trial, shows the
+  // installation id to send FITRON, and refuses anything that is not a licence FITRON signed.
+  await page.getByRole("link", { name: "Licence", exact: true }).click();
+  await expect(page.getByText(/^Free trial: 30 days left/)).toBeVisible();
+  await expect(page.locator("code").filter({ hasText: /^[0-9a-f-]{36}$/ })).toBeVisible();
+  await page.getByLabel("Or paste the licence text").fill("FITRON-LICENCE-1.not.real");
+  await page.getByRole("button", { name: "Import licence" }).click();
+  await expect(page.getByText(/This licence (file is damaged|was not signed by FITRON)|has no licence key built in/).first()).toBeVisible();
 });
 
 test("sign-in offers only what works offline, and locks the account after five wrong passwords", async ({ browser }) => {

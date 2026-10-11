@@ -9,6 +9,7 @@ import { UserError } from "./errors";
 import type { GymInput, TaxInput } from "@/lib/validation/settings";
 import { DEFAULT_IDLE_MINUTES } from "@/lib/domain/security";
 import { ciEquals } from "@/lib/db-dialect";
+import { licensedBranches } from "@/lib/licence";
 
 type Tx = Prisma.TransactionClient;
 
@@ -121,9 +122,12 @@ export async function setBranchActive(u: CurrentUser, id: string, active: boolea
       const others = await tx.branch.count({ where: { orgId: u.orgId, active: true, id: { not: id } } });
       if (!others) throw new UserError("At least one branch must stay active.");
     } else {
-      const { terms, name: planName } = await gymPlan(u.orgId, todayIso(), tx);
       const others = await tx.branch.count({ where: { orgId: u.orgId, active: true, id: { not: id } } });
-      if (others >= terms.includedBranches) {
+      // FITRON for Windows: the licence's branch count; there is no plan billing to pay for more.
+      const licensed = licensedBranches();
+      if (licensed !== null && others >= licensed) throw new UserError(`This computer's FITRON licence covers ${licensed} active branch${licensed === 1 ? "" : "es"}. Close one, or ask FITRON support for a licence with more (Settings › Licence).`);
+      const { terms, name: planName } = await gymPlan(u.orgId, todayIso(), tx);
+      if (licensed === null && others >= terms.includedBranches) {
         const own = await tx.branchSubscription.findFirst({ where: { orgId: u.orgId, kind: "BRANCH", status: "PAID", branchId: id, periodEnd: { gte: fromIso(todayIso()) } }, select: { id: true } });
         if (!own) {
           if (!terms.extraBranches) throw new UserError(`The ${planName} plan is for one branch. Move to Enterprise in Settings › Plan & billing to add more.`);

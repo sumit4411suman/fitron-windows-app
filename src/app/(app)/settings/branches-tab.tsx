@@ -14,6 +14,7 @@ import { fmtDate, formatInr, formatRupees } from "@/lib/format";
 import { fromIso, todayIso, toIso } from "@/lib/services/time";
 import { deleteBranchAction, openBranch, saveBranchAction, setBranchActiveAction } from "./actions";
 import { gymAccountingOnly } from "@/lib/runtime/edition";
+import { licensedBranches } from "@/lib/licence";
 
 function StandingBadge({ s }: { s: Standing }) {
   if (s.kind === "PAID") return <Badge tone="ok">Paid till {fmtDate(s.until)}</Badge>;
@@ -44,7 +45,8 @@ export async function BranchesTab({ u, sp }: { u: CurrentUser; sp: Record<string
   const n = (rowsOf: { branchId: string; _count: number }[], id: string) => rowsOf.find((r) => r.branchId === id)?._count ?? 0;
   const stand = new Map(standing.map((s) => [s.id, s.standing]));
   const open = rows.filter((b) => b.active).length;
-  const included = terms.includedBranches;
+  // FITRON for Windows: the licence's branch count (Settings › Licence); the Cloud Edition: the plan's.
+  const included = licensedBranches() ?? terms.includedBranches;
   const used = Math.min(open, included);
   const extra = Math.max(0, open - included);
   const orgPrefix = numbering?.invoicePrefix || "INV-";
@@ -71,8 +73,8 @@ export async function BranchesTab({ u, sp }: { u: CurrentUser; sp: Record<string
         )}
         {/* FITRON for Windows has no plan billing: more branches are arranged with FITRON support. */}
         {canEdit && !canAddFree && gymAccountingOnly() && (
-          <LinkButton href="/settings?tab=help">
-            <PlusIcon size={16} /> More branches: contact support
+          <LinkButton href="/settings/licence">
+            <PlusIcon size={16} /> More branches: licence
           </LinkButton>
         )}
       </div>
