@@ -30,6 +30,8 @@ jobs:
       - run: npm run typecheck
       - run: npx prisma migrate deploy
       - run: npm test
+      # The same tests against the Local Windows Edition's SQLite database (docs/local-windows/DATABASE-MIGRATION.md).
+      - run: npm run test:local
       - run: npm run build
       # The end-to-end tests drive a real browser against the production build just made (see e2e/ and the README).
       - run: npx playwright install --with-deps chromium

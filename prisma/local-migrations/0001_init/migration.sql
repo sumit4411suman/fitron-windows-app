@@ -1572,66 +1572,68 @@ CREATE UNIQUE INDEX "Member_orgId_phone_active_key" ON "Member"("orgId", "phone"
 -- Restore, after a safety copy) or 'demo-clear' (Go live > Clear demo data, only for rows of a gym flagged demo).
 -- The row is removed again at the end of the transaction by the same code; a rolled-back transaction removes it too.
 -- The audit log can be neither changed nor deleted. SQLite has no TRUNCATE, so no truncate trigger is needed.
+-- fitron: COALESCE everywhere below. With no guard row the subquery is NULL, and NOT (NULL OR NULL) is NULL, which a
+-- WHEN clause treats as false: the delete would go through. Every comparison is made NULL-free so "no permission" refuses.
 CREATE TABLE "_fitron_guard" ("id" INTEGER NOT NULL PRIMARY KEY CHECK ("id" = 1), "allowDelete" TEXT NOT NULL);
 
 CREATE TRIGGER "fitron_guard_delete_Invoice" BEFORE DELETE ON "Invoice" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a Invoice record is not allowed: financial records are kept. Void or reverse it in the app instead.'); END;
 
 CREATE TRIGGER "fitron_guard_delete_InvoiceItem" BEFORE DELETE ON "InvoiceItem" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT o."demo" FROM "Organization" o JOIN "Invoice" i ON i."orgId" = o."id" WHERE i."id" = OLD."invoiceId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT o."demo" FROM "Organization" o JOIN "Invoice" i ON i."orgId" = o."id" WHERE i."id" = OLD."invoiceId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a InvoiceItem record is not allowed: financial records are kept.'); END;
 
 CREATE TRIGGER "fitron_guard_delete_Payment" BEFORE DELETE ON "Payment" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a Payment record is not allowed: financial records are kept. Reverse it in the app instead.'); END;
 
 CREATE TRIGGER "fitron_guard_delete_Membership" BEFORE DELETE ON "Membership" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT o."demo" FROM "Organization" o JOIN "Member" m ON m."orgId" = o."id" WHERE m."id" = OLD."memberId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT o."demo" FROM "Organization" o JOIN "Member" m ON m."orgId" = o."id" WHERE m."id" = OLD."memberId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a Membership record is not allowed: financial records are kept.'); END;
 
 CREATE TRIGGER "fitron_guard_delete_Expense" BEFORE DELETE ON "Expense" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a Expense record is not allowed: financial records are kept. Void it in the app instead.'); END;
 
 CREATE TRIGGER "fitron_guard_delete_Purchase" BEFORE DELETE ON "Purchase" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a Purchase record is not allowed: financial records are kept.'); END;
 
 CREATE TRIGGER "fitron_guard_delete_PurchaseLine" BEFORE DELETE ON "PurchaseLine" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT o."demo" FROM "Organization" o JOIN "Purchase" p ON p."orgId" = o."id" WHERE p."id" = OLD."purchaseId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT o."demo" FROM "Organization" o JOIN "Purchase" p ON p."orgId" = o."id" WHERE p."id" = OLD."purchaseId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a PurchaseLine record is not allowed: financial records are kept.'); END;
 
 CREATE TRIGGER "fitron_guard_delete_VendorPayment" BEFORE DELETE ON "VendorPayment" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT o."demo" FROM "Organization" o JOIN "Purchase" p ON p."orgId" = o."id" WHERE p."id" = OLD."purchaseId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT o."demo" FROM "Organization" o JOIN "Purchase" p ON p."orgId" = o."id" WHERE p."id" = OLD."purchaseId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a VendorPayment record is not allowed: financial records are kept.'); END;
 
 CREATE TRIGGER "fitron_guard_delete_Asset" BEFORE DELETE ON "Asset" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a Asset record is not allowed: financial records are kept.'); END;
 
 CREATE TRIGGER "fitron_guard_delete_Sequence" BEFORE DELETE ON "Sequence" FOR EACH ROW
 WHEN NOT (
-  (SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'restore'
-  OR ((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1) = 'demo-clear' AND (SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId") = 1)
+  COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'restore'
+  OR (COALESCE((SELECT "allowDelete" FROM "_fitron_guard" WHERE "id" = 1), '') = 'demo-clear' AND COALESCE((SELECT "demo" FROM "Organization" WHERE "id" = OLD."orgId"), 0) = 1)
 ) BEGIN SELECT RAISE(ABORT, 'Deleting a Sequence record is not allowed: invoice numbering is kept.'); END;
 
 -- Never deleted by anything: staff pay, FITRON subscription payments, AI Trainer payments.
@@ -1647,3 +1649,7 @@ CREATE TRIGGER "fitron_audit_append_only_update" BEFORE UPDATE ON "AuditLog" FOR
 BEGIN SELECT RAISE(ABORT, 'The audit log is append-only: a row cannot be changed or removed.'); END;
 CREATE TRIGGER "fitron_audit_append_only_delete" BEFORE DELETE ON "AuditLog" FOR EACH ROW
 BEGIN SELECT RAISE(ABORT, 'The audit log is append-only: a row cannot be changed or removed.'); END;
+
+-- fitron: FITRON's own tax invoices to gyms are numbered from one counter across all gyms (PostgreSQL: the sequence
+-- fitron_invoice_seq). Hosted billing only; kept so the same code runs on both databases.
+CREATE TABLE "_fitron_invoice_seq" ("n" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT);

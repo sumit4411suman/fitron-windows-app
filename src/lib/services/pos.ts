@@ -13,7 +13,7 @@ import { notify } from "./notifications";
 import { getTax } from "./tax";
 import { nextNumber } from "./sequence";
 import { fromIso, todayIso } from "./time";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ci } from "@/lib/db-dialect";
 
 type Tx = Prisma.TransactionClient;
 

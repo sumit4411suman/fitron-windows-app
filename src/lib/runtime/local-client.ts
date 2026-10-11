@@ -12,7 +12,12 @@ import { sqliteAdapter } from "./sqlite-adapter";
 // application (src/lib/db-dialect.ts has listHas/listEmpty should one be needed).
 export const LIST_FIELDS = new Set(["tags", "riskReasons", "features", "memberIds"]);
 
-const isPlain = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v) && !(v instanceof Date) && !(v instanceof Uint8Array) && typeof (v as { toFixed?: unknown }).toFixed !== "function";
+/** Only object literals are walked. Prisma's own objects (field references, Decimal, Date, bytes) pass through as they are. */
+const isPlain = (v: unknown): v is Record<string, unknown> => {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+};
 
 /** Arrays under a list key become JSON text. Walks nested writes; leaves `select`/`include` (booleans) and filters (objects) alone. */
 export function encodeLists<T>(value: T): T {
@@ -47,6 +52,20 @@ export function decodeLists<T>(value: T): T {
 
 const LIST_MODELS = new Set(["Member", "MembershipPlan", "AiProposal"]);
 
+/**
+ * A guard trigger (prisma/local-migrations/0001_init) aborts with its own sentence: "Deleting a Payment record is not
+ * allowed…". Prisma reports SQLITE_CONSTRAINT_TRIGGER as a foreign-key error (P2003) and keeps the sentence only deep in
+ * `meta`. Bring it back as the error's message, as PostgreSQL's RAISE EXCEPTION does, so the person sees why.
+ */
+export function triggerError(e: unknown): Error | null {
+  const cause = (e as { meta?: { driverAdapterError?: { cause?: { originalCode?: string; originalMessage?: string } } } })?.meta?.driverAdapterError?.cause;
+  if (cause?.originalCode !== "SQLITE_CONSTRAINT_TRIGGER" || !cause.originalMessage) return null;
+  const err = new Error(cause.originalMessage);
+  err.name = "FinancialRecordGuard";
+  (err as Error & { code?: string }).code = "FITRON_GUARD";
+  return err;
+}
+
 const isUnique = (e: unknown) => !!e && typeof e === "object" && (e as { code?: string }).code === "P2002";
 
 /**
@@ -54,7 +73,8 @@ const isUnique = (e: unknown) => !!e && typeof e === "object" && (e as { code?: 
  * The rows are inserted together first; only when one clashes are they inserted one by one, skipping the clashes.
  */
 async function createManySkippingDuplicates(args: Record<string, unknown>, query: (args: unknown) => Promise<unknown>) {
-  const { skipDuplicates: _skip, ...rest } = args;
+  const rest = { ...args };
+  delete rest.skipDuplicates;
   const data = Array.isArray(rest.data) ? rest.data : [rest.data];
   try {
     return await query({ ...rest, data });
@@ -78,19 +98,22 @@ export function makeLocalClient(url: string): PrismaClient {
   const base = new LocalPrismaClient({ adapter: sqliteAdapter({ url }) });
   // The generated $extends signature is too wide for the compiler to resolve here; the extension below only reshapes
   // arguments and results, so the client's own types are unaffected.
-  type Op = { model: string; operation: string; args: unknown; query: (args: unknown) => Promise<unknown> };
-  const extend = (base as unknown as { $extends: (ext: { query: { $allModels: { $allOperations: (op: Op) => Promise<unknown> } } }) => unknown }).$extends;
+  type Op = { model?: string; operation: string; args: unknown; query: (args: unknown) => Promise<unknown> };
+  const extend = (base as unknown as { $extends: (ext: { query: { $allOperations: (op: Op) => Promise<unknown> } }) => unknown }).$extends;
   const client = extend.call(base, {
     query: {
-      $allModels: {
-        async $allOperations({ model, operation, args, query }: Op) {
+      // Top level, so raw queries ($executeRaw) are covered too; `model` is undefined for those.
+      async $allOperations({ model, operation, args, query }: Op) {
+        try {
           // Writes: only the three models hold list fields, but a nested write can reach them from any model
           // (a lead converted into a member, a plan created with its prices), so encode every write's args.
-          const a = WRITE_OPS.has(operation) || LIST_MODELS.has(model) ? encodeLists(args) : args;
+          const a = WRITE_OPS.has(operation) || (model && LIST_MODELS.has(model)) ? encodeLists(args) : args;
           if (operation === "createMany" && isPlain(a) && a.skipDuplicates) return decodeLists(await createManySkippingDuplicates(a, query));
           const result = await query(a);
           return decodeLists(result);
-        },
+        } catch (e) {
+          throw triggerError(e) ?? e;
+        }
       },
     },
   });

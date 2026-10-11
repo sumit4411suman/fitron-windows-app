@@ -11,11 +11,13 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "vitest run",
     "e2e": "playwright test",
-    "db:generate": "prisma generate",
+    "db:generate": "prisma generate && prisma generate --schema prisma/schema.local.prisma",
     "db:migrate": "prisma migrate dev",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate && prisma generate --schema prisma/schema.local.prisma",
     "db:seed": "prisma db seed",
-    "setup": "tsx scripts/setup.ts"
+    "setup": "tsx scripts/setup.ts",
+    "test:local": "tsx scripts/test-local.ts",
+    "db:local-schema": "tsx scripts/local-schema.ts && prisma generate --schema prisma/schema.local.prisma"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",

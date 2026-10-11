@@ -8,7 +8,7 @@ import { audit } from "./audit";
 import { UserError } from "./errors";
 import type { GymInput, TaxInput } from "@/lib/validation/settings";
 import { DEFAULT_IDLE_MINUTES } from "@/lib/domain/security";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ciEquals } from "@/lib/db-dialect";
 
 type Tx = Prisma.TransactionClient;
 

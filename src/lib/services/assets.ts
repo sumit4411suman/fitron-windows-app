@@ -10,7 +10,7 @@ import { UserError } from "./errors";
 import { assertMonthOpen } from "./locks";
 import { nextNumber } from "./sequence";
 import { fromIso, toIso, todayIso } from "./time";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ci } from "@/lib/db-dialect";
 
 type Tx = Prisma.TransactionClient;
 type AssetRow = Prisma.AssetGetPayload<object>;

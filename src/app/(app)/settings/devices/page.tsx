@@ -17,7 +17,7 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { Tag } from "@/components/tag";
 import { fmtStamp, fmtTime } from "@/lib/format";
 import { assignCardAction, enrolAction, eraseAction, openDoorAction, removeDeviceAction, saveDeviceAction, saveRulesAction, syncDeviceAction, testScanAction } from "./actions";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ci } from "@/lib/db-dialect";
 
 export const metadata = { title: "Biometric & doors · Fitron" };
 

@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
+import { isLocal } from "@/lib/runtime/edition";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { hasDb, makeGym } from "@/test/db";
@@ -210,7 +211,9 @@ describe.skipIf(!hasDb)("Razorpay subscriptions for gym plans (database)", () =>
     expect(await applyFitronBillingEvent(charged(c.subscriptionId, `pay_${uid()}`, 99_900))).toBe("paid");
     expect(Date.now() - t0, "recording the charge waited for the lock").toBeGreaterThanOrEqual(500);
     await holder;
-    // Another subscription's charges are not held up by it.
+    // Another subscription's charges are not held up by it. PostgreSQL only: SQLite (the Local Edition, where FITRON's own
+    // subscription billing does not run) has one writer, so every write waits for an open transaction by design.
+    if (isLocal()) return;
     const other = await trialGym();
     fakeRazorpay();
     const c2 = await startPayment(other.owner, { kind: "PLAN", plan: "starter" }, "MONTHLY");

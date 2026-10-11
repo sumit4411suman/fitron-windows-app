@@ -10,7 +10,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { HIGH_WORDS, MEDIUM_WORDS, deviceLabel, describeAudit, moduleOf, moduleWhere, severityOf, type Severity } from "@/lib/domain/audit";
 import { depreciationIn, disposalsIn } from "@/lib/domain/assets";
 import { assetsFor, toLike } from "./assets";
-import { ci, ciEquals, jsonPath } from "@/lib/db-dialect";
+import { ci, jsonPath } from "@/lib/db-dialect";
 
 export type Period = { from: string; to: string };
 

@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dataDirs, defaultDataRoot, localDatabaseUrl } from "./paths";
+import { log } from "@/lib/log";
 import { migrateLocal } from "./local-migrate";
 
 // What the Local Edition does before serving: make the data folders, apply pending migrations. The result is kept so
@@ -23,10 +24,10 @@ export async function startLocalEdition(): Promise<LocalStartState> {
     const r = migrateLocal(file);
     state.applied = r.applied;
     state.ready = true;
-    if (r.applied.length) console.log(`[fitron-local] applied migrations: ${r.applied.join(", ")}`);
+    log.info("local.start", { applied: r.applied.join(",") || null });
   } catch (e) {
     state.error = e instanceof Error ? e.message : String(e);
-    console.error(`[fitron-local] start failed: ${state.error}`);
+    log.error("local.start.failed", e);
   }
   return state;
 }

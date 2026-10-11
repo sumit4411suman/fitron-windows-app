@@ -5,7 +5,7 @@ import { findPlan, PARTNER_SHARE } from "@/lib/domain/pricing";
 import { trainerAccess } from "@/lib/domain/trainer";
 import { trainerPaymentRef } from "./trainer";
 import { fromIso, toIso, todayIso } from "./time";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ci } from "@/lib/db-dialect";
 
 const label = (plan: string, cycle: string) => `${findPlan(plan)?.name ?? plan}, ${cycle === "YEARLY" ? "yearly" : "monthly"}`;
 

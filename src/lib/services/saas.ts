@@ -1,5 +1,5 @@
 import "server-only";
-import { lockRow } from "@/lib/db-dialect";
+import { lockRow, nextFitronInvoiceNumber } from "@/lib/db-dialect";
 import { couponLabel } from "@/lib/domain/coupons";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
@@ -261,7 +261,7 @@ export async function startPayment(u: CurrentUser, what: PaymentFor, cycle: Cycl
 export const startBranchPayment = (u: CurrentUser, cycle: Cycle, branchId: string | null) => startPayment(u, { kind: "BRANCH", branchId }, cycle);
 
 async function invoiceNumber(tx: Prisma.TransactionClient, today: string) {
-  const [{ n }] = await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('fitron_invoice_seq') AS n`;
+  const n = await nextFitronInvoiceNumber(tx);
   const y = Number(today.slice(0, 4)) - (Number(today.slice(5, 7)) < 4 ? 1 : 0);
   return `FIT/${y}-${String(y + 1).slice(2)}/${String(n).padStart(5, "0")}`;
 }

@@ -20,7 +20,7 @@ import { getSetting, putSettingIn } from "./settings";
 import { getTax } from "./tax";
 import { todayIso } from "./time";
 import { log } from "@/lib/log";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ci } from "@/lib/db-dialect";
 
 export type { ReminderSettings };
 export { DEFAULT_REMINDERS };

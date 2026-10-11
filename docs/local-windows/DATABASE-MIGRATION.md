@@ -206,9 +206,36 @@ Local use by model:
 - `npx prisma validate --schema prisma/schema.local.prisma`: valid.
 - `0001_init` applies to an empty file in one transaction and is idempotent: 72 model tables +
   `_fitron_guard` + `_fitron_migrations`, 15 triggers, 186 indexes, `PRAGMA integrity_check` ok.
-- The existing suite run against SQLite (`FITRON_EDITION=local DATABASE_URL=file:…`): recorded in the
-  Phase 3-4 report in the pull request. PostgreSQL-only test steps (`DISABLE TRIGGER`, `set_config`,
-  `TRUNCATE`, `pg_tables`) are given SQLite equivalents or skipped on Local with a reason.
+- The whole existing suite runs on both databases. `npm test` (PostgreSQL) and `npm run test:local`
+  (a fresh SQLite file migrated by the production runner, `FITRON_EDITION=local`); CI runs both.
+
+  | Suite | Files | Tests passed | Skipped |
+  | --- | --- | --- | --- |
+  | PostgreSQL (Cloud) | 146 | 1,348 | 0 |
+  | SQLite (Local) | 146 + 1 skipped | 1,348 | 4 |
+
+  The four Local skips have no SQLite counterpart: row-level security (no database API in front of a
+  file), the two TRUNCATE tests (SQLite has no TRUNCATE; DELETE runs the row triggers, which are tested),
+  and the vertical-slice file is skipped on PostgreSQL. PostgreSQL-only steps inside other tests
+  (`DISABLE TRIGGER`, `set_config`) have SQLite equivalents.
+- `src/lib/services/local-vertical-slice.db.test.ts` (Phase 6): member → membership with a registration
+  fee and 18% GST → partial payment → balance payment → invoice state PAID → member history; plus
+  overpayment refused before any write, a mid-transaction failure rolling back the invoice number, and a
+  second connection reading the committed invoice from the WAL-mode file.
+
+Bugs the SQLite run found and fixed while porting (each now covered by the suite):
+
+1. Guard triggers let deletes through when no permission row existed (`NOT (NULL OR NULL)` is NULL, which
+   a `WHEN` treats as false). Every comparison is now `COALESCE`d.
+2. The delete permission could outlive its transaction if a caller forgot to revoke it. The adapter now
+   clears it inside every commit, matching PostgreSQL's transaction-local setting.
+3. Prisma reports a trigger abort as a foreign-key error and hides its text; the Local client rethrows it
+   with the trigger's sentence ("Deleting a Payment record is not allowed: financial records are kept").
+4. One shared connection deadlocked when code read through `db` while a transaction was open. Plain reads
+   now use a second, read-only connection (committed data only, like a second PostgreSQL connection);
+   writes wait their turn with a 30-second limit and a clear "database is busy" error.
+5. Prisma field references (`uses < usageLimit` on offers) were being copied by the list-field encoder;
+   only plain object literals are now walked.
 
 ## 8. Future migrations
 

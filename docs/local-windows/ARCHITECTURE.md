@@ -239,10 +239,9 @@ Environment: Ubuntu 24.04, Node 22, PostgreSQL 16 local cluster, Rust 1.97 (for 
 | ESLint | `npm run lint` | pass, 0 errors, 2 pre-existing warnings in `scripts/site-assistant.js` (unused `e`) |
 | Unit + database tests | `DATABASE_URL=… npm test` | 145 files, 1,345 tests, all pass (2 m 54 s) |
 | Production build | `npm run build` | pass, 137 static pages, 375 MB `.next` (1 m 23 s) |
-| E2E | `CI=1 npx playwright test` | recorded in the Phase 1 report below once the run finishes |
+| E2E | `CI=1 npx playwright test` | 313 tests, all pass (6 m 24 s) |
 
-No existing failures were found in the type, lint, unit or build checks; the two lint
-warnings pre-date this work.
+No existing failures were found in any check; the two lint warnings pre-date this work.
 
 ## 5. Risks found during inspection
 

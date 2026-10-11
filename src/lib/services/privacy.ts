@@ -12,7 +12,7 @@ import { fromIso, todayIso, toIso } from "./time";
 import { formatRupees, fmtDate } from "@/lib/format";
 import { DEFAULT_PRIVACY, anonymisedMember, editedSections, filledPersonalFields, retentionCutoff, type NoticeKey, type PrivacySettings } from "@/lib/domain/privacy";
 import { log } from "@/lib/log";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ciEquals } from "@/lib/db-dialect";
 
 const OPEN_MANDATE = ["Pending", "Active", "Paused"];
 

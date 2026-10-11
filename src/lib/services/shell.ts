@@ -7,7 +7,7 @@ import { memberScope } from "./members";
 import { unreadCount } from "./notifications";
 import { aiOn } from "./ai-settings";
 import { fromIso, todayIso, toIso } from "./time";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ci } from "@/lib/db-dialect";
 
 export type NavCounts = Partial<Record<"renewals" | "receivables" | "notifications" | "ai" | "leads", number>>;
 

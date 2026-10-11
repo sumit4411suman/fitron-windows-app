@@ -8,7 +8,7 @@ import { LEAD_STAGES, type LeadInput, type LeadStage } from "@/lib/validation/fr
 import { audit } from "./audit";
 import { UserError } from "./errors";
 import { fromIso, todayIso } from "./time";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ci } from "@/lib/db-dialect";
 
 const scope = (u: CurrentUser): Prisma.LeadWhereInput => ({ orgId: u.orgId, branchId: { in: u.branchIds } });
 

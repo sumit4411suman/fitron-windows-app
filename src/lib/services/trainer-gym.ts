@@ -9,7 +9,7 @@ import { isUniqueViolation, UserError } from "./errors";
 import { getSetting } from "./settings";
 import { fromIso, todayIso, toIso } from "./time";
 import { dayLog, trainerPaymentRef } from "./trainer";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ciEquals } from "@/lib/db-dialect";
 
 // The Gym Partnership: a member of the AI Trainer links to a gym on FITRON with the gym's trainer code.
 // The gym then sees that member's training next to their dues, and earns PARTNER_SHARE of what the

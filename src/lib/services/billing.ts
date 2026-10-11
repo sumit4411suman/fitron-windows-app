@@ -16,7 +16,7 @@ import { getSetting } from "./settings";
 import { getTax, type TaxSetting } from "./tax";
 import { fromIso, toIso, todayIso } from "./time";
 import { assertBranchWritable } from "./saas";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ci } from "@/lib/db-dialect";
 
 type Tx = Prisma.TransactionClient;
 

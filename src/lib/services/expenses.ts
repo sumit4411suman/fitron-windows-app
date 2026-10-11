@@ -9,7 +9,7 @@ import { UserError } from "./errors";
 import { assertMonthOpen } from "./locks";
 import { nextNumber } from "./sequence";
 import { fromIso, toIso } from "./time";
-import { ci, ciEquals } from "@/lib/db-dialect";
+import { ci } from "@/lib/db-dialect";
 
 export const listCategories = () => db.expenseCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] });
 

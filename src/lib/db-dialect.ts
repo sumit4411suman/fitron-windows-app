@@ -55,3 +55,13 @@ export function jsonPath(keys: string[]): string[] {
   // Typed as the Cloud client expects; the Local client receives the string it expects.
   return (isLocal() ? `$.${keys.join(".")}` : keys) as string[];
 }
+
+/** The next number of FITRON's own tax invoices to gyms (one counter for all gyms). */
+export async function nextFitronInvoiceNumber(tx: Tx): Promise<bigint> {
+  if (isLocal()) {
+    const [{ n }] = await tx.$queryRaw<{ n: bigint }[]>`INSERT INTO "_fitron_invoice_seq" DEFAULT VALUES RETURNING "n"`;
+    return BigInt(n);
+  }
+  const [{ n }] = await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('fitron_invoice_seq') AS n`;
+  return n;
+}
