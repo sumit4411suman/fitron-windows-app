@@ -10,6 +10,7 @@ import { LinkButton, ListHeader, Pager, SEARCH, Select, Stat, TABLE, TD, TH, TR,
 import { fmtDate, formatRupees } from "@/lib/format";
 import { METHODS } from "@/lib/validation/billing";
 import { ReversePayment } from "../invoices/[id]/invoice-forms";
+import { ReceiptLink } from "@/components/paper-print";
 
 export const metadata = { title: "Payments · Fitron" };
 
@@ -101,7 +102,12 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/payment
                   <Tag label={p.status === "SUCCESS" ? "Success" : "Failed"}>{p.status === "SUCCESS" ? "Success" : "Reversed"}</Tag>
                 </td>
                 <td className={cx(TD, "text-right whitespace-nowrap")}>{formatRupees(p.amount)}</td>
-                <td className={TD}>{canReverse && p.status === "SUCCESS" && <ReversePayment paymentId={p.id} invoiceId={p.invoice.id} compact />}</td>
+                <td className={TD}>
+                  <span className="flex flex-wrap items-center gap-2">
+                    <ReceiptLink paymentId={p.id} code={p.code} />
+                    {canReverse && p.status === "SUCCESS" && <ReversePayment paymentId={p.id} invoiceId={p.invoice.id} compact />}
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>

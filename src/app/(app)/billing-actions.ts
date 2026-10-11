@@ -69,15 +69,17 @@ export async function collect(invoiceId: string, _: FormState, fd: FormData): Pr
   const u = await requirePermission("payments.collect");
   const parsed = paymentInput.safeParse(read(fd));
   if (!parsed.success) return failed(fd, { errors: fieldErrors(parsed.error), message: "Check the highlighted fields." });
+  let payment: { id: string; code: string };
   try {
     const p = await collectPayment(u, invoiceId, parsed.data);
+    payment = { id: p.id, code: p.code };
     const inv = await getInvoice(u, invoiceId);
     sendLater({ orgId: u.orgId, memberId: p.memberId, key: "payment", userId: u.id, vars: { amount: rupeesText(p.amount), invoice_number: inv?.number ?? "", pending_amount: rupeesText(inv?.balance ?? 0) } });
   } catch (e) {
     return userError(fd, e);
   }
   revalidatePath(`/invoices/${invoiceId}`);
-  return { ok: true, message: "Payment recorded.", nonce: Math.random().toString(36) };
+  return { ok: true, message: `Payment recorded (${payment.code}).`, nonce: Math.random().toString(36), payment };
 }
 
 export async function cancel(invoiceId: string, _: FormState, fd: FormData): Promise<FormState> {

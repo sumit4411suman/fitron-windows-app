@@ -6,28 +6,13 @@ import { getTax } from "@/lib/services/tax";
 import { todayIso } from "@/lib/services/time";
 import { Badge, Card, LinkButton, Notice, ScrollRegion } from "@/components/ui";
 import { PrintButton } from "@/components/print-button";
+import { PaperPrint } from "@/components/paper-print";
 import { gymLogoUrl } from "@/components/gym-logo";
-import { FilePdfIcon } from "@phosphor-icons/react/dist/ssr";
 import { fmtDate, formatInr, formatRupees, initials } from "@/lib/format";
 import { CancelInvoice, CollectForm, ReversePayment } from "./invoice-forms";
+import { amountInWords } from "@/lib/domain/words";
 
 const cx2 = (...c: (string | false)[]) => c.filter(Boolean).join(" ");
-/** "Rupees Two Thousand only", Indian grouping, as the prototype prints it. */
-function inWords(n: number) {
-  n = Math.round(n);
-  if (!n) return "Zero rupees only";
-  const a = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"];
-  const b = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
-  const two = (x: number) => (x < 20 ? a[x]! : b[Math.floor(x / 10)]! + (x % 10 ? " " + a[x % 10] : ""));
-  const three = (x: number) => (x >= 100 ? a[Math.floor(x / 100)] + " Hundred" + (x % 100 ? " " : "") : "") + (x % 100 ? two(x % 100) : "");
-  const out: string[] = [];
-  const cr = Math.floor(n / 1e7), lk = Math.floor((n % 1e7) / 1e5), th = Math.floor((n % 1e5) / 1e3), rest = n % 1e3;
-  if (cr) out.push(three(cr) + " Crore");
-  if (lk) out.push(two(lk) + " Lakh");
-  if (th) out.push(two(th) + " Thousand");
-  if (rest) out.push(three(rest));
-  return "Rupees " + out.join(" ") + " only";
-}
 
 const LBL = "mb-1.5 text-[10.5px] font-semibold tracking-[0.14em] text-[#605d5d] uppercase";
 const TH2 = "pb-2.5 text-[10.5px] font-semibold tracking-[0.14em] text-[#605d5d] uppercase";
@@ -43,6 +28,8 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
   const inv = await getInvoice(u, id);
   if (!inv) notFound();
   const [profile, tax] = await Promise.all([getGymProfile(u.orgId), getTax(u.orgId)]);
+  // The receipt to hand over after a payment: the latest one received (the desk prints it right after collecting).
+  const lastReceipt = [...inv.payments].reverse().find((p) => p.status === "SUCCESS");
   // What the PDF prints as "From": a branch's own GSTIN wins over the gym-level one.
   const cancelled = inv.status === "CANCELLED";
   const half = inv.gstType === "CGST+SGST";
@@ -70,11 +57,9 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
     <div className="mx-auto flex w-full max-w-[820px] flex-col gap-3">
       {created && <Notice tone="ok">Invoice created.</Notice>}
       <div className="flex flex-wrap justify-end gap-2 rounded-lg bg-bg p-2.5 print:hidden" data-testid="invoice-from">
-        <LinkButton href={`/invoices/${inv.id}/pdf`} prefetch={false} target="_blank">
-          <FilePdfIcon size={16} weight="duotone" />
-          Download PDF
-        </LinkButton>
-        <PrintButton label="Print" />
+        <PaperPrint href={`/invoices/${inv.id}/pdf`} kind="invoice" label="Print invoice" papers={["a4", "a5", "80mm", "58mm"]} fallback="a4" />
+        {lastReceipt && <PaperPrint href={`/payments/${lastReceipt.id}/receipt`} kind="receipt" label="Print receipt" papers={["80mm", "58mm", "a5", "a4"]} fallback="80mm" />}
+        <PrintButton label="Print page" />
         {!cancelled && inv.balance > 0 && u.can("payments.collect") && (
           <LinkButton href="#collect" variant="primary">
             Collect balance
@@ -192,7 +177,7 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
           <div className="flex max-w-[340px] flex-[1_1_240px] flex-col gap-3.5 text-[13px]">
             <div>
               <div className={LBL}>Amount in words</div>
-              <div className="leading-normal italic">{inWords(inv.total / 100)}</div>
+              <div className="leading-normal italic">{amountInWords(inv.total)}</div>
             </div>
             <div>
               <div className={LBL}>Payments received</div>
@@ -261,7 +246,7 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
             <CollectForm invoiceId={inv.id} balance={inv.balance} today={todayIso()} />
           </Card>
         )}
-        {inv.payments.some((p) => p.status === "SUCCESS") && !cancelled && u.can("payments.reverse") && (
+        {inv.payments.length > 0 && (
           <Card title="Payments">
             <ul className="divide-y divide-line text-sm">
               {inv.payments.map((p) => (
@@ -277,7 +262,10 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
                     {p.txnRef ? ` · Ref ${p.txnRef}` : ""}
                   </div>
                   {p.status === "REVERSED" && <div className="text-muted">Reason: {p.reverseReason}</div>}
-                  {p.status === "SUCCESS" && <ReversePayment paymentId={p.id} invoiceId={inv.id} />}
+                  <div>
+                    <PaperPrint href={`/payments/${p.id}/receipt`} kind="receipt" label="Receipt" papers={["80mm", "58mm", "a5", "a4"]} fallback="80mm" compact />
+                  </div>
+                  {p.status === "SUCCESS" && !cancelled && u.can("payments.reverse") && <ReversePayment paymentId={p.id} invoiceId={inv.id} />}
                 </li>
               ))}
             </ul>
