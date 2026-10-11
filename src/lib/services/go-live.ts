@@ -20,7 +20,7 @@ import { getTax } from "./tax";
 import { todayIso } from "./time";
 import { getWaSettings } from "./whatsapp";
 import pkg from "../../../package.json";
-import { allowDelete } from "./db-guard";
+import { allowDelete, revokeDelete } from "./db-guard";
 
 /** Settings › Go live: every check reads the gym's real state. */
 export async function goLiveChecklist(u: CurrentUser) {
@@ -145,6 +145,7 @@ export async function clearDemoData(u: CurrentUser) {
       count("sequences", await tx.sequence.deleteMany({ where: { orgId } }));
       await tx.setting.deleteMany({ where: { orgId, key: "opening" } });
       await tx.organization.update({ where: { id: orgId }, data: { demo: false } });
+      await revokeDelete(tx);
       await audit(tx, { orgId, userId: u.id, action: "demo.clear", entity: "Organization", entityId: orgId, after: { removed } });
       return removed;
     },

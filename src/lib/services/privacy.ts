@@ -12,6 +12,7 @@ import { fromIso, todayIso, toIso } from "./time";
 import { formatRupees, fmtDate } from "@/lib/format";
 import { DEFAULT_PRIVACY, anonymisedMember, editedSections, filledPersonalFields, retentionCutoff, type NoticeKey, type PrivacySettings } from "@/lib/domain/privacy";
 import { log } from "@/lib/log";
+import { ci, ciEquals } from "@/lib/db-dialect";
 
 const OPEN_MANDATE = ["Pending", "Active", "Paused"];
 
@@ -36,7 +37,7 @@ export const assertCanErase = (u: CurrentUser) => {
 export async function findMemberByCode(u: CurrentUser, code: string) {
   const c = code.trim().split(/\s+/)[0] ?? "";
   if (!c) return null;
-  return db.member.findFirst({ where: { orgId: u.orgId, branchId: { in: u.branchIds }, walkIn: false, code: { equals: c, mode: "insensitive" } } });
+  return db.member.findFirst({ where: { orgId: u.orgId, branchId: { in: u.branchIds }, walkIn: false, code: ciEquals(c) } });
 }
 
 /** "{n} of {n} members have given consent": registration consent is taken on the member form, so every member counts. */

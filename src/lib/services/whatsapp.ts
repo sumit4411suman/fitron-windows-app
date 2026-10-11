@@ -20,6 +20,7 @@ import { getSetting, putSettingIn } from "./settings";
 import { getTax } from "./tax";
 import { todayIso } from "./time";
 import { log } from "@/lib/log";
+import { ci, ciEquals } from "@/lib/db-dialect";
 
 export type { ReminderSettings };
 export { DEFAULT_REMINDERS };
@@ -309,7 +310,7 @@ export async function listMessages(u: CurrentUser, f: { status?: string; key?: s
     ...(f.status ? { status: f.status } : {}),
     ...(f.key ? { templateKey: f.key } : {}),
     ...(f.memberId ? { memberId: f.memberId } : {}),
-    ...(f.q ? { AND: [{ OR: [{ member: { name: { contains: f.q, mode: "insensitive" } } }, { toNumber: { contains: f.q.replace(/\D/g, "") || f.q } }] }] } : {}),
+    ...(f.q ? { AND: [{ OR: [{ member: { name: ci(f.q) } }, { toNumber: { contains: f.q.replace(/\D/g, "") || f.q } }] }] } : {}),
   };
   const [rows, total, counts] = await Promise.all([
     db.whatsAppMessage.findMany({ where, orderBy: { sentAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize, include: { member: { select: { id: true, name: true, code: true } } } }),

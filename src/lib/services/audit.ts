@@ -1,4 +1,5 @@
 import "server-only";
+import { lockKey } from "@/lib/db-dialect";
 import { cookies, headers } from "next/headers";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
@@ -31,7 +32,7 @@ export async function audit(
     // No request.
   }
   // Serialise writers per organisation so two transactions cannot chain onto the same previous hash.
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${a.orgId}))`;
+  await lockKey(tx, a.orgId);
   const prev = await tx.auditLog.findFirst({ where: { orgId: a.orgId, hash: { not: null } }, orderBy: { id: "desc" }, select: { hash: true } });
   const prevHash = prev?.hash ?? GENESIS;
   const before = json(a.before);

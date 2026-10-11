@@ -8,6 +8,7 @@ import { LEAD_STAGES, type LeadInput, type LeadStage } from "@/lib/validation/fr
 import { audit } from "./audit";
 import { UserError } from "./errors";
 import { fromIso, todayIso } from "./time";
+import { ci, ciEquals } from "@/lib/db-dialect";
 
 const scope = (u: CurrentUser): Prisma.LeadWhereInput => ({ orgId: u.orgId, branchId: { in: u.branchIds } });
 
@@ -18,7 +19,7 @@ export async function listLeads(u: CurrentUser, f: { stage?: string; q?: string;
     ...scope(u),
     ...(f.stage ? { stage: f.stage } : { stage: { notIn: ["Won", "Lost"] } }),
     ...(f.due ? { followUpOn: { lte: today } } : {}),
-    ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { phone: { contains: q.replace(/\D/g, "") || q } }] } : {}),
+    ...(q ? { OR: [{ name: ci(q) }, { phone: { contains: q.replace(/\D/g, "") || q } }] } : {}),
   };
   const [leads, byStage, owners] = await Promise.all([
     db.lead.findMany({ where, orderBy: [{ followUpOn: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }], take: 200 }),

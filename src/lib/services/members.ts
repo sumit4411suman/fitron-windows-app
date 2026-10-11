@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import { deleteObject, getObject, putObject, sniffType } from "@/lib/integrations/storage";
 import { formatRupees } from "@/lib/format";
 import { assertBranchWritable, assertMemberRoom } from "./saas";
+import { ci, ciEquals } from "@/lib/db-dialect";
 
 /** Members a user may see: their branches, and only assigned members for trainers. */
 export function memberScope(u: CurrentUser): Prisma.MemberWhereInput {
@@ -100,10 +101,10 @@ export async function listMembers(
     ...(q
       ? {
           OR: [
-            { name: { contains: q, mode: "insensitive" } },
+            { name: ci(q) },
             { phone: { contains: q.replace(/\s/g, "") } },
-            { code: { contains: q, mode: "insensitive" } },
-            { email: { contains: q, mode: "insensitive" } },
+            { code: ci(q) },
+            { email: ci(q) },
           ],
         }
       : {}),
@@ -276,7 +277,7 @@ export async function memberOptions(u: CurrentUser) {
 export async function resolveMemberRef(u: CurrentUser, text: string) {
   const code = text.trim().split(/\s+/)[0] ?? "";
   if (!code) return null;
-  return db.member.findFirst({ where: { ...memberScope(u), walkIn: false, code: { equals: code, mode: "insensitive" } }, select: { id: true, name: true } });
+  return db.member.findFirst({ where: { ...memberScope(u), walkIn: false, code: ciEquals(code) }, select: { id: true, name: true } });
 }
 
 // ---- Member photo (private, like staff photos) ----

@@ -1,4 +1,5 @@
 import "server-only";
+import { lockRow } from "@/lib/db-dialect";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import { writeBranch } from "@/lib/auth/current";
@@ -94,7 +95,7 @@ export async function book(u: CurrentUser, slotId: string, date: string, memberI
   try {
     return await db.$transaction(async (tx) => {
       // Lock the class row so two desks can't both take the last place.
-      await tx.$queryRaw`SELECT id FROM "ClassSlot" WHERE id = ${slotId} FOR UPDATE`;
+      await lockRow(tx, "ClassSlot", slotId);
       const held = await tx.booking.count({ where: { classSlotId: slotId, date: fromIso(date), status: { in: HOLDS } } });
       const status = held >= slot.capacity ? "Waitlist" : "Booked";
       const existing = await tx.booking.findUnique({ where: { classSlotId_date_memberId: { classSlotId: slotId, date: fromIso(date), memberId } } });
@@ -122,7 +123,7 @@ export async function setBookingStatus(u: CurrentUser, bookingId: string, status
   if ((status === "Attended" || status === "No-show") && date > todayIso()) throw new UserError("Mark attendance on the day of the class.");
   if (status === "Booked" && before.status !== "Attended" && before.status !== "No-show") throw new UserError("Only attendance can be undone this way.");
   return db.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM "ClassSlot" WHERE id = ${before.classSlotId} FOR UPDATE`;
+    await lockRow(tx, "ClassSlot", before.classSlotId);
     const after = await tx.booking.update({ where: { id: bookingId }, data: { status } });
     await audit(tx, { orgId: u.orgId, userId: u.id, action: "booking.status", entity: "Booking", entityId: bookingId, before, after });
     let promoted: string | null = null;

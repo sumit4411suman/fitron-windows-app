@@ -16,6 +16,7 @@ import { getSetting } from "./settings";
 import { getTax, type TaxSetting } from "./tax";
 import { fromIso, toIso, todayIso } from "./time";
 import { assertBranchWritable } from "./saas";
+import { ci, ciEquals } from "@/lib/db-dialect";
 
 type Tx = Prisma.TransactionClient;
 
@@ -300,7 +301,7 @@ export async function listInvoices(u: CurrentUser, f: { q?: string; status?: str
       ...(f.memberId ? { memberId: f.memberId } : {}),
       ...(f.openOnly ? { status: "ISSUED" } : {}),
       ...(f.from || f.to ? { date: { ...(f.from ? { gte: fromIso(f.from) } : {}), ...(f.to ? { lte: fromIso(f.to) } : {}) } } : {}),
-      ...(q ? { OR: [{ number: { contains: q, mode: "insensitive" } }, { member: { name: { contains: q, mode: "insensitive" } } }, { member: { phone: { contains: q } } }] } : {}),
+      ...(q ? { OR: [{ number: ci(q) }, { member: { name: ci(q) } }, { member: { phone: { contains: q } } }] } : {}),
     },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     take: f.openOnly || f.memberId ? undefined : 500,
@@ -332,10 +333,10 @@ export async function listPayments(u: CurrentUser, f: { q?: string; method?: str
       ...(q
         ? {
             OR: [
-              { code: { contains: q, mode: "insensitive" } },
-              { txnRef: { contains: q, mode: "insensitive" } },
-              { invoice: { number: { contains: q, mode: "insensitive" } } },
-              { member: { name: { contains: q, mode: "insensitive" } } },
+              { code: ci(q) },
+              { txnRef: ci(q) },
+              { invoice: { number: ci(q) } },
+              { member: { name: ci(q) } },
             ],
           }
         : {}),

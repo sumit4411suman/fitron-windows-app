@@ -17,6 +17,7 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { Tag } from "@/components/tag";
 import { fmtStamp, fmtTime } from "@/lib/format";
 import { assignCardAction, enrolAction, eraseAction, openDoorAction, removeDeviceAction, saveDeviceAction, saveRulesAction, syncDeviceAction, testScanAction } from "./actions";
+import { ci, ciEquals } from "@/lib/db-dialect";
 
 export const metadata = { title: "Biometric & doors · Fitron" };
 
@@ -44,7 +45,7 @@ export default async function DevicesPage({ searchParams }: PageProps<"/settings
       return ms.filter((m) => m.cardNo || withTpl.has(m.id)).length;
     }),
     db.member.findMany({
-      where: { ...base, ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }, { phone: { contains: q } }] } : {}) },
+      where: { ...base, ...(q ? { OR: [{ name: ci(q) }, { code: ci(q) }, { phone: { contains: q } }] } : {}) },
       select: { id: true, code: true, name: true, devicePin: true, cardNo: true, biometricConsentAt: true, suspended: true },
       orderBy: { name: "asc" },
       take: 30,

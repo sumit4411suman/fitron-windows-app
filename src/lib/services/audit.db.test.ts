@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
+import { isLocal } from "@/lib/runtime/edition";
 import { audit, verifyAuditChain } from "./audit";
 import { hasDb, makeGym } from "@/test/db";
 
@@ -30,11 +31,21 @@ describe.skipIf(!hasDb)("audit chain", () => {
     const mid = (await db.auditLog.findMany({ where: { orgId: g.org.id }, orderBy: { id: "asc" } }))[1]!;
     // The database refuses to change an audit row (financial-guard.db.test.ts). Someone who owns the database could switch that
     // off and edit history, which is the case the chain exists for, so the test does the same.
-    await db.$executeRawUnsafe('ALTER TABLE "AuditLog" DISABLE TRIGGER fitron_audit_append_only');
-    try {
-      await db.$executeRaw`UPDATE "AuditLog" SET action = 'x' WHERE id = ${mid.id}`;
-    } finally {
-      await db.$executeRawUnsafe('ALTER TABLE "AuditLog" ENABLE TRIGGER fitron_audit_append_only');
+    if (isLocal()) {
+      // SQLite has no "disable trigger": drop it, edit, and put it back as the migration wrote it.
+      await db.$executeRawUnsafe('DROP TRIGGER "fitron_audit_append_only_update"');
+      try {
+        await db.$executeRaw`UPDATE "AuditLog" SET action = 'x' WHERE id = ${mid.id}`;
+      } finally {
+        await db.$executeRawUnsafe(`CREATE TRIGGER "fitron_audit_append_only_update" BEFORE UPDATE ON "AuditLog" FOR EACH ROW BEGIN SELECT RAISE(ABORT, 'The audit log is append-only: a row cannot be changed or removed.'); END`);
+      }
+    } else {
+      await db.$executeRawUnsafe('ALTER TABLE "AuditLog" DISABLE TRIGGER fitron_audit_append_only');
+      try {
+        await db.$executeRaw`UPDATE "AuditLog" SET action = 'x' WHERE id = ${mid.id}`;
+      } finally {
+        await db.$executeRawUnsafe('ALTER TABLE "AuditLog" ENABLE TRIGGER fitron_audit_append_only');
+      }
     }
     expect(await verifyAuditChain(g.org.id)).toEqual({ checked: 3, bad: 1 });
   });

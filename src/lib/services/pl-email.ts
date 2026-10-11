@@ -1,4 +1,5 @@
 import "server-only";
+import { jsonPath } from "@/lib/db-dialect";
 import { db } from "@/lib/db";
 import { emailReady, sendEmail } from "@/lib/integrations/email";
 import { log } from "@/lib/log";
@@ -33,7 +34,7 @@ export async function sendMonthlyPl(orgId: string, today: string, now: Date): Pr
   if (plan.standing.kind === "LAPSED") return { sent: 0, note: "plan ended" };
   if (!planHas({ key: plan.key, name: plan.name, custom: plan.terms.custom }, "accounting")) return { sent: 0, note: "not on the plan" };
 
-  const done = await db.jobRun.findFirst({ where: { orgId, name: "reports.monthly", error: null, finishedAt: { not: null }, result: { path: ["month"], equals: month } }, select: { id: true } });
+  const done = await db.jobRun.findFirst({ where: { orgId, name: "reports.monthly", error: null, finishedAt: { not: null }, result: { path: jsonPath(["month"]), equals: month } }, select: { id: true } });
   if (done) return { sent: 0, month, note: "already sent" };
 
   const owners = await db.user.findMany({ where: { orgId, active: true, deletedAt: null, role: { name: "Super Admin" }, email: { not: "" } }, select: { name: true, email: true }, orderBy: { createdAt: "asc" } });

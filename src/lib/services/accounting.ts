@@ -10,6 +10,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { HIGH_WORDS, MEDIUM_WORDS, deviceLabel, describeAudit, moduleOf, moduleWhere, severityOf, type Severity } from "@/lib/domain/audit";
 import { depreciationIn, disposalsIn } from "@/lib/domain/assets";
 import { assetsFor, toLike } from "./assets";
+import { ci, ciEquals, jsonPath } from "@/lib/db-dialect";
 
 export type Period = { from: string; to: string };
 
@@ -162,17 +163,17 @@ export async function unlockMonth(u: CurrentUser, month: string) {
 export async function listAudit(u: CurrentUser, f: { q?: string; userId?: string; module?: string; severity?: Severity; from?: string; to?: string; page?: number; pageSize?: number }) {
   const pageSize = f.pageSize ?? 50;
   const page = Math.max(1, f.page ?? 1);
-  const has = (words: string[]) => words.map((w) => ({ action: { contains: w, mode: "insensitive" as const } }));
+  const has = (words: string[]) => words.map((w) => ({ action: ci(w) }));
   const q = f.q?.trim();
   let qUsers: string[] = [];
-  if (q) qUsers = (await db.user.findMany({ where: { orgId: u.orgId, name: { contains: q, mode: "insensitive" } }, select: { id: true } })).map((x) => x.id);
+  if (q) qUsers = (await db.user.findMany({ where: { orgId: u.orgId, name: ci(q) }, select: { id: true } })).map((x) => x.id);
   const jsonHit = (col: "after" | "before") => {
     const up = q?.toUpperCase() ?? "";
     return [
-      ...["code", "number", "sku"].map((k) => ({ [col]: { path: [k], string_contains: up } })),
-      ...["name", "invoiceNumber"].map((k) => ({ [col]: { path: [k], string_contains: q! } })),
-      { [col]: { path: ["invoice", "number"], string_contains: up } },
-      { [col]: { path: ["membership", "code"], string_contains: up } },
+      ...["code", "number", "sku"].map((k) => ({ [col]: { path: jsonPath([k]), string_contains: up } })),
+      ...["name", "invoiceNumber"].map((k) => ({ [col]: { path: jsonPath([k]), string_contains: q! } })),
+      { [col]: { path: jsonPath(["invoice", "number"]), string_contains: up } },
+      { [col]: { path: jsonPath(["membership", "code"]), string_contains: up } },
     ];
   };
   const where: Prisma.AuditLogWhereInput = {
@@ -186,9 +187,9 @@ export async function listAudit(u: CurrentUser, f: { q?: string; userId?: string
         ? [
             {
               OR: [
-                { action: { contains: q, mode: "insensitive" as const } },
-                { entity: { contains: q, mode: "insensitive" as const } },
-                { entityId: { contains: q, mode: "insensitive" as const } },
+                { action: ci(q) },
+                { entity: ci(q) },
+                { entityId: ci(q) },
                 ...(qUsers.length ? [{ userId: { in: qUsers } }] : []),
                 ...jsonHit("after"),
                 ...jsonHit("before"),

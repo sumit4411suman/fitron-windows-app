@@ -1,4 +1,5 @@
 import "server-only";
+import { lockKey } from "@/lib/db-dialect";
 import { db } from "@/lib/db";
 import type { Prisma, RazorpaySubscription } from "@/generated/prisma/client";
 import type { Cycle } from "@/lib/domain/pricing";
@@ -127,4 +128,4 @@ export const markCharged = (tx: Prisma.TransactionClient, id: string) =>
 
 /** One charge at a time per subscription: the checkout's reply and Razorpay's webhook for the same payment arrive together. */
 // The lock function returns `void`, which the Prisma driver can't read back as a column, so it is run with $executeRaw.
-export const lockSubscription = (tx: Prisma.TransactionClient, id: string) => tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${id}))`;
+export const lockSubscription = (tx: Prisma.TransactionClient, id: string) => lockKey(tx, id);

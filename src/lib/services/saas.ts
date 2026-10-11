@@ -1,4 +1,5 @@
 import "server-only";
+import { lockRow } from "@/lib/db-dialect";
 import { couponLabel } from "@/lib/domain/coupons";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
@@ -275,7 +276,7 @@ async function completeIn(tx: Prisma.TransactionClient, where: { id: string } | 
   const today = todayIso();
   const sub = await tx.branchSubscription.findFirst({ where });
   if (!sub) return null;
-  await tx.$queryRaw`SELECT id FROM "BranchSubscription" WHERE id = ${sub.id} FOR UPDATE`;
+  await lockRow(tx, "BranchSubscription", sub.id);
   const fresh = await tx.branchSubscription.findUniqueOrThrow({ where: { id: sub.id } });
   if (fresh.status === "PAID") return fresh;
   let last: string | null = null;

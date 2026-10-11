@@ -9,6 +9,7 @@ import { UserError } from "./errors";
 import { assertMonthOpen } from "./locks";
 import { nextNumber } from "./sequence";
 import { fromIso, toIso } from "./time";
+import { ci, ciEquals } from "@/lib/db-dialect";
 
 export const listCategories = () => db.expenseCategory.findMany({ orderBy: [{ group: "asc" }, { name: "asc" }] });
 
@@ -23,7 +24,7 @@ export async function listExpenses(u: CurrentUser, f: { from?: string; to?: stri
       ...(f.categoryId ? { categoryId: f.categoryId } : {}),
       ...(f.method ? { method: f.method } : {}),
       ...(f.from || f.to ? { date: { ...(f.from ? { gte: fromIso(f.from) } : {}), ...(f.to ? { lte: fromIso(f.to) } : {}) } } : {}),
-      ...(q ? { OR: [{ description: { contains: q, mode: "insensitive" } }, { vendor: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }, { billNo: { contains: q, mode: "insensitive" } }] } : {}),
+      ...(q ? { OR: [{ description: ci(q) }, { vendor: ci(q) }, { code: ci(q) }, { billNo: ci(q) }] } : {}),
     },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     include: { category: true, branch: { select: { name: true } } },

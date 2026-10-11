@@ -7,6 +7,7 @@ import { memberScope } from "./members";
 import { unreadCount } from "./notifications";
 import { aiOn } from "./ai-settings";
 import { fromIso, todayIso, toIso } from "./time";
+import { ci, ciEquals } from "@/lib/db-dialect";
 
 export type NavCounts = Partial<Record<"renewals" | "receivables" | "notifications" | "ai" | "leads", number>>;
 
@@ -57,22 +58,22 @@ export async function globalSearch(u: CurrentUser, raw: string): Promise<SearchH
   const q = raw.trim();
   if (q.length < 2) return [];
   const branch = { orgId: u.orgId, branchId: { in: u.branchIds } };
-  const ci = { contains: q, mode: "insensitive" as const };
+  const like = ci(q);
   const [members, invoices, payments] = await Promise.all([
     u.can("members.view")
       ? db.member.findMany({
-          where: { ...memberScope(u), walkIn: false, OR: [{ name: ci }, { code: ci }, { phone: { contains: q } }, { email: ci }] },
+          where: { ...memberScope(u), walkIn: false, OR: [{ name: like }, { code: like }, { phone: { contains: q } }, { email: like }] },
           orderBy: { name: "asc" },
           take: 6,
           select: { id: true, name: true, code: true, phone: true },
         })
       : [],
     u.can("invoices.view")
-      ? db.invoice.findMany({ where: { ...branch, number: ci }, orderBy: { date: "desc" }, take: 4, select: { id: true, number: true, total: true, status: true, member: { select: { name: true } } } })
+      ? db.invoice.findMany({ where: { ...branch, number: like }, orderBy: { date: "desc" }, take: 4, select: { id: true, number: true, total: true, status: true, member: { select: { name: true } } } })
       : [],
     u.can("invoices.view")
       ? db.payment.findMany({
-          where: { ...branch, OR: [{ code: ci }, { txnRef: ci }] },
+          where: { ...branch, OR: [{ code: like }, { txnRef: like }] },
           orderBy: { date: "desc" },
           take: 4,
           select: { code: true, txnRef: true, amount: true, invoiceId: true, member: { select: { name: true } }, invoice: { select: { number: true } } },

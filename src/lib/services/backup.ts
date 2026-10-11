@@ -22,7 +22,7 @@ import {
   type TableSpec,
 } from "@/lib/domain/backup";
 import { audit } from "./audit";
-import { allowDelete } from "./db-guard";
+import { allowDelete, revokeDelete } from "./db-guard";
 import { UserError, isUniqueViolation } from "./errors";
 import { notify } from "./notifications";
 
@@ -378,6 +378,7 @@ async function applyRestore(u: CurrentUser, source: RestoreSource, now: Date, dr
         const restoredMembers = new Set((file.tables.Member ?? []).map((m) => String(m.id)));
         for (const l of trainerLinks) if (l.gymMemberId && restoredMembers.has(l.gymMemberId)) await tx.trainerMember.update({ where: { id: l.id }, data: { gymMemberId: l.gymMemberId } });
 
+        await revokeDelete(tx);
         if (dryRun) throw new RestoreTestDone();
         if (backup) await tx.backup.update({ where: { id: backup.id }, data: { restoredAt: now, restoredById: u.id } });
         await audit(tx, {
