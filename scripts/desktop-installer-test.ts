@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -46,6 +46,14 @@ function run(file: string, args: string[]): number {
   if (r.error) throw r.error;
   return r.status ?? -1;
 }
+
+/** icacls, failing loudly: a permission change that did not take is a wrong test, not a passed one. */
+function icacls(...args: string[]) {
+  const r = spawnSync("icacls", args, { encoding: "utf8", windowsHide: true });
+  if (r.error) throw r.error;
+  if (r.status !== 0) throw new Error(`icacls ${args.join(" ")} failed (${r.status}):\n${r.stdout}${r.stderr}`);
+}
+const permissions = (p: string) => spawnSync("icacls", [p], { encoding: "utf8", windowsHide: true }).stdout;
 
 function program(): string {
   for (const n of ["fitron.exe", `${TITLE}.exe`]) if (existsSync(path.join(inst, n))) return path.join(inst, n);
@@ -159,24 +167,42 @@ async function main() {
   await close(third);
   ok("FITRON starts after the update");
 
-  // The program folder with Program Files' permissions for a normal user: read and run only, nothing granted beyond
-  // that to this user, and Windows itself (SYSTEM) kept in full. (A "deny Everyone" would also deny SYSTEM, which
-  // Windows uses when it starts a program, so the program would not start at all.) FITRON still runs, and writes
-  // nothing there.
+  // The program folder with Program Files' permissions: read and run only for this user and for administrators,
+  // Windows itself (SYSTEM) kept in full. Set on the folder alone: Windows carries the permissions down to every file
+  // and subfolder itself. (With /T, icacls would also strip each file's inherited permissions but drop the (OI)(CI)
+  // grants there, which only folders can carry, leaving every file with no permissions at all, so nothing could open
+  // FITRON: "spawn EPERM". A "deny" of write rights is no good either: icacls's W and D rights carry SYNCHRONIZE, which
+  // every file open needs.) Permissions a file or subfolder holds of its own are taken away too, and the result is
+  // checked before FITRON starts, so a failure names the permissions.
   const before = snapshot(inst);
   const me = process.env.USERNAME ?? os.userInfo().username;
-  execFileSync("icacls", [inst, "/inheritance:r", "/grant:r", `${me}:(OI)(CI)RX`, "/grant:r", "*S-1-5-18:(OI)(CI)F", "/T", "/C", "/Q"], { stdio: "ignore" });
+  const ADMINISTRATORS = "*S-1-5-32-544";
+  const SYSTEM = "*S-1-5-18";
+  icacls(inst, "/inheritance:r", "/grant:r", `${me}:(OI)(CI)RX`, "/grant:r", `${ADMINISTRATORS}:(OI)(CI)RX`, "/grant:r", `${SYSTEM}:(OI)(CI)F`);
+  icacls(path.join(inst, "*"), "/remove:g", me, "/remove:g", ADMINISTRATORS, "/T", "/C", "/Q");
   try {
-    const fourth = await open(4);
+    const exe = program();
+    const state = () => `--- permissions ---\n${permissions(inst)}${permissions(exe)}`;
+    const can = (f: () => void) => { try { f(); return true; } catch { return false; } };
+    // Opening for writing changes nothing by itself; creating a file is undone at once.
+    const tmp = path.join(inst, "fitron-permission-test.tmp");
+    if (!can(() => closeSync(openSync(exe, "r")))) throw new Error(`FITRON is not readable after the permission change\n${state()}`);
+    if (can(() => closeSync(openSync(exe, "r+"))) || can(() => { writeFileSync(tmp, ""); rmSync(tmp); })) throw new Error(`the program folder is still writable after the permission change\n${state()}`);
+    let fourth: Awaited<ReturnType<typeof open>>;
+    try {
+      fourth = await open(4);
+    } catch (e) {
+      throw new Error(`FITRON could not be started from the read-only program folder: ${(e as Error).message}\n${state()}`);
+    }
     if ((await health(fourth.port))?.ok !== true) throw new Error("FITRON did not start from a read-only program folder");
     await close(fourth);
   } finally {
     // Back to the folder's normal, inherited permissions.
-    execFileSync("icacls", [inst, "/reset", "/T", "/C", "/Q"], { stdio: "ignore" });
+    icacls(inst, "/reset", "/T", "/C", "/Q");
   }
   const wrote = changed(before, snapshot(inst));
   if (wrote.length) throw new Error(`FITRON wrote into its program folder: ${wrote.slice(0, 10).join(", ")}`);
-  ok("FITRON runs from a read-only program folder and writes nothing there");
+  ok("FITRON runs from a read-only program folder (read and run only, for administrators too) and writes nothing there");
 
   // Uninstall, as Apps & features does. The uninstaller copies itself to a temporary folder and returns at once (its
   // "_?=" option, which would keep it in place, cannot be passed through a path with spaces), so wait for it to finish.
