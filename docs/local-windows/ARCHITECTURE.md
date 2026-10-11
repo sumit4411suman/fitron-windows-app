@@ -192,7 +192,7 @@ same shape. Differences (`String[]` → JSON, `Decimal` handling) are listed per
 ### Local Edition runtime layout
 
 ```
-<program folder>\                              (from the installer, read-only for the app; Phase 15 sets where)
+%LOCALAPPDATA%\FITRON Gym Accounting\         (per-user install, Phase 15 INSTALLER.md; the app writes nothing here)
 ├── FITRON Gym Accounting.exe                  Tauri shell (src-tauri)
 ├── fitron-node.exe                            the Node.js that built the server (npm run desktop:bundle)
 └── server\                                    Next.js standalone + static + public + prisma/local-migrations
@@ -214,7 +214,8 @@ Start-up and shut-down (Phase 14, `DESKTOP.md`):
 3. Starts `fitron-node.exe server\server.js` with `FITRON_EDITION=local`, `FITRON_SHELL=1`,
    `FITRON_INSTANCE`, `FITRON_DATA_DIR`, `PORT`, `HOSTNAME=127.0.0.1`, standard input held open.
 4. The server makes the data folders and applies pending migrations from `prisma/local-migrations`
-   (src/lib/runtime/local-start.ts), then reports ready.
+   (src/lib/runtime/local-start.ts), after a safety backup when an update changes an existing database,
+   then reports ready.
 5. The shell polls `/api/health` until `{ ok: true, edition: "local", instance }` is its own, then
    opens FITRON in the window.
 6. On close the shell closes the server's standard input; the server stops its timer, waits for a

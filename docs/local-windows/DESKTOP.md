@@ -45,7 +45,7 @@ must match the Node.js shipped with them.
 npm ci
 npm run desktop:bundle          # the server in build/local-server, Node.js in src-tauri/binaries, then checks them
 npx tauri build --config src-tauri/tauri.bundle.conf.json
-                                # the program and its installer (Phase 15); add --no-bundle for the program only
+                                # the program and its installer (INSTALLER.md); add --no-bundle for the program only
 npm run desktop:smoke           # starts, closes and ends the real program (Linux: xvfb-run -a npm run desktop:smoke)
 ```
 
