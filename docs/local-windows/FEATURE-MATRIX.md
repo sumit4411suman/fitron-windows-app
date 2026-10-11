@@ -76,6 +76,7 @@ Classes:
 | Feature | Route | Class | Notes |
 | --- | --- | --- | --- |
 | Plans & pricing categories | `/plans`, `/plans/new`, `/plans/[id]/edit` | NEEDS-ADAPTER | `features String[]` → JSON column. |
+| Cloud sync with fitron.in | `/settings/sync`, `/api/local/sync/status`; on fitron.in `/api/sync/*` | ONLINE-REQUIRED to sync, LOCAL-SAFE to work (done, S3 to S9) | Off until a Super Admin links the computer. Offline the desk works as usual and changes wait in the outbox; they go up and come down when the connection is back. Linked computers number from their own range and leave the daily jobs to fitron.in. SYNC.md, DEPLOY-SYNC.md. |
 | Staff: add, edit, reset password, deactivate | `/staff`, `/staff/new`, `/staff/[id]/edit` | LOCAL-SAFE | |
 | Roles & custom permissions | `/settings/roles` | LOCAL-SAFE | |
 | Settings › Gym profile, logo | `/settings`, `/settings/logo` | NEEDS-ADAPTER | Logo file storage adapter. |
@@ -128,6 +129,6 @@ Cloud schema; the Local schema does not carry them.
 
 Updates (Phase 18, UPDATES.md): the desktop program checks FITRON's download address, verifies FITRON's signature, backs the data up, installs; the new version backs up again before migrating, checks the database, and puts it back if the update fails. Done.
 
-Each online service has its own folder under `src/lib/integrations/` (email, whatsapp, razorpay, ai, license, updates),
+Each online service has its own folder under `src/lib/integrations/` (email, whatsapp, razorpay, ai, license, updates, sync),
 and nothing else in the app opens a connection. Every one is off on a fresh installation; Settings › Integrations & AI
 lists them with what each sends. Details, consent rules and tests: ONLINE-SERVICES.md.

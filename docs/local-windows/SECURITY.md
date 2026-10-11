@@ -52,6 +52,18 @@ the loop. What that means in practice, piece by piece, and what checks it.
 Not encrypted at rest: `fitron.db` itself. Anyone who can read the Windows user's files can read it (and would equally
 read a backup). Encrypting the database (SQLCipher with a DPAPI-held key) is possible later; it is not in 1.0.
 
+## Cloud sync (when a gym links the computer to fitron.in)
+
+| Concern | Behaviour | Where, checked by |
+| --- | --- | --- |
+| Who may link | The gym's Super Admin on fitron.in, with password and two-step code, and the same lockout as the sign-in page. Only a Super Admin on the computer can start it. | `src/lib/sync/server.ts` (`owner`), `server.db.test.ts` |
+| The computer's credential | A 256-bit device token, shown to nobody: fitron.in keeps its SHA-256, the computer keeps it sealed with the installation's key. Every request carries it; fitron.in finds the gym from it, never from the request. Unlinking (either side) stops it at the next request; so does the linking person losing Super Admin. | `authDevice`, `server.db.test.ts` |
+| Tenant isolation | A change naming another gym's record, or a new record naming another gym, is refused and written to the gym's audit log. | `server.db.test.ts` |
+| No direct database access | The computer has no database credentials for fitron.in and never connects to PostgreSQL: it sends changes over HTTPS and fitron.in checks and stores each one (types, whole paise, what a money record may change, closed months, balances). | `checkWrite`, `codec.ts` |
+| Replays | Every upload carries a change id; one already applied is answered from the record, never applied again. | `SyncApplied`, `e2e/sync/sync.spec.ts` |
+| What never syncs | Passwords, two-step secrets, sessions, recovery keys, WhatsApp keys, this computer's own settings. | `entities.ts` (`omit`, `LOCAL_ONLY_SETTINGS`), `codec.test.ts` |
+| Transport | HTTPS to fitron.in only (plain HTTP to 127.0.0.1 for tests). Every connection is in `src/lib/integrations/sync/` (the egress rule). | `cloudUrl`, `egress.test.ts` |
+
 ## Audit logging
 
 Every financial and administrative action writes an entry in the audit log inside the same transaction, hash-chained

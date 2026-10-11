@@ -1,7 +1,7 @@
 # FITRON cloud sync: design (phase S1 and S2 of the sync work)
 
-Status: design, agreed defaults. Nothing here is built yet. The first two steps the owner asked for are this document
-(the existing architecture and data, and the protocol and conflict rules); the build follows it phase by phase.
+Status: built (S3 to S9); deployment, recovery and rollback in DEPLOY-SYNC.md. §1 to §10 are the design as agreed;
+§11 lists where the build differs from it, and why.
 
 ## 1. What exists today
 
@@ -163,3 +163,18 @@ button, open conflicts with both versions and the actions of §6, a link to the 
 | S8 | Settings › Cloud sync, the header badge, diagnostics |
 | S9 | The tests of §9, including the load test |
 | S10 | Deployment, migration, recovery and rollback notes (DEPLOY-SYNC.md) |
+
+## 11. As built: where the build differs from the design
+
+| Design said | Built | Why |
+| --- | --- | --- |
+| A hook next to `audit()` in the services writes the outbox row | **Database triggers** on each synced table write it, in the same transaction (`src/lib/sync/triggers.ts`, generated into both migrations) | Every write path is covered, including nested writes, imports and raw SQL, not only the services that were changed |
+| An upload is applied by calling the website's service function for that action | An upload is applied as a **checked record write** (`src/lib/sync/server.ts`): the gym, every field's type (whole paise), the fields a money record may change (cancel, reverse, void, freeze), closed months, an invoice's remaining balance for a payment, then stored with its id | Records must keep the same ids and numbers on both sides; replaying a sale through `sellMembership` would make a second invoice with new ids and a new number |
+| Each side's invoices carry their own prefix (`INV-W1-`) | Each linked computer numbers from its **own range**: computer N from N × 1,000,000 (`src/lib/services/sequence.ts`) | One change in one place covers every numbered record (invoices, payments, members, memberships, expenses, purchases…), some of which have no prefix setting |
+| The device token sealed with DPAPI beside the other secrets | Sealed with the installation's key (`BIOMETRIC_KEY`, itself DPAPI-sealed) in `SyncState`, as two-step secrets are | The server cannot call DPAPI; the protection at rest is the same |
+| Sync writes an audit entry per applied change | One `sync.upload` entry per batch (counts, first reasons), plus entries for refusals of another gym's record, linking, unlinking and settled conflicts | An initial upload of a large gym would otherwise write one hash-chained entry per record |
+| Linking (one way) | **Two ways**: download a fitron.in gym into a new database, or create the fitron.in account from the computer; separate books on both sides cannot be merged | Ids differ between a gym set up on a computer and one made on fitron.in; one side must adopt the other's |
+| (not covered) | A linked computer leaves the **daily jobs** to fitron.in | Otherwise each member gets every reminder twice, and every member's risk score is written on both sides daily |
+| Page refresh through the page's data hooks | The header badge reads the computer's sync state every 5 seconds and re-renders the open page when new changes arrived (not while a form has focus) | The console renders on the server; a re-render keeps what was typed |
+| Outbox trimmed after 90 days | Not built yet | DEPLOY-SYNC.md §7 |
+| File bodies fetched by key when missing | Not built yet: files' records sync, the files do not | DEPLOY-SYNC.md §7 |
