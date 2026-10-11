@@ -138,7 +138,7 @@ async function main() {
     const code = await Promise.race([first.exited, sleep(30_000).then(() => "running" as const)]);
     if (code === "running") throw new Error(`FITRON did not close:\n${shellLog(dataDir)}`);
     const log = shellLog(dataDir);
-    if (!/server stopped cleanly \(exit (status: )?0\)/.test(log)) throw new Error(`the server did not stop cleanly:\n${log}`);
+    if (!/server stopped cleanly \(exit (status|code): 0\)/.test(log)) throw new Error(`the server did not stop cleanly:\n${log}`);
     if (!/FITRON closed/.test(log)) throw new Error(`no "FITRON closed" in the log:\n${log}`);
     if (await answers(port)) throw new Error("the server still answers after FITRON closed");
     if (walSize(dataDir) !== 0) throw new Error("the WAL was not written into fitron.db");
