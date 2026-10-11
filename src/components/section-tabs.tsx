@@ -9,8 +9,8 @@ type Tab = { href: string; label: string; perm?: Permission };
 
 /** Underlined tabs across the top of a section, as in the prototype's Accounting and Settings. */
 export function SectionTabs({ u, tabs, current, className = "mb-6", ruled, label = "Page sections" }: { u: CurrentUser; tabs: Tab[]; current: string; className?: string; ruled?: boolean; label?: string }) {
-  // FITRON for Windows has no FITRON plan billing (its licence comes in Phase 13).
-  const shown = tabs.filter((t) => (!t.perm || u.can(t.perm)) && !(isLocal() && t.href === "/settings/billing"));
+  // FITRON for Windows has a licence instead of FITRON's plan billing; the Cloud Edition the other way round.
+  const shown = tabs.filter((t) => (!t.perm || u.can(t.perm)) && !(isLocal() && t.href === "/settings/billing") && !(!isLocal() && t.href === "/settings/licence"));
   if (shown.length < 2) return null;
   return (
     <nav aria-label={label} className={cx("flex flex-wrap", ruled ? "gap-0.5 border-b border-line" : "gap-1", className)}>
@@ -62,6 +62,7 @@ export const SETTINGS_TABS: Tab[] = [
   { href: "/settings/backup", label: "Backup" },
   { href: "/settings/go-live", label: "Go live" },
   { href: "/settings/billing", label: "Subscription" },
+  { href: "/settings/licence", label: "Licence" },
   { href: "/settings?tab=branches", label: "Branches" },
   { href: "/settings/roles", label: "Roles & access", perm: "staff.manage" },
   { href: "/settings?tab=privacy", label: "Privacy & DPDP" },

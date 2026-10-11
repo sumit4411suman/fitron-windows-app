@@ -1,8 +1,9 @@
 import "server-only";
 import { askService, serviceUrl, type ServiceAnswer } from "../service";
 
-// The FITRON licence server, for FITRON for Windows. Phase 13 decides what a licence allows and how long it lasts with
-// no internet; this file fixes what may leave the computer to ask about it, and nothing else does. A request carries the
+// The FITRON licence server, for FITRON for Windows. Licences are signed files checked on the computer with no internet
+// (src/lib/licence, LICENSING.md), so nothing calls this today. If FITRON ever adds online renewal, this file fixes what
+// may leave the computer to ask about it, and nothing else does. A request carries the
 // licence's own identifiers and the app's edition, plan and version: never a member, payment, invoice, expense, GST
 // figure, attendance or accounting record. The payload is built from a closed list of fields, each a short code or a
 // date, and anything else is refused before a connection is opened.

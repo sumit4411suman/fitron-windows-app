@@ -172,6 +172,8 @@ src/lib/db-dialect.ts           the few SQL differences (locks, case-insensitive
 src/lib/integrations/<service>/ every online service in its own folder (email, whatsapp, razorpay, ai, license,
                                 updates), off until a gym user turns it on, offline answered in words (Phase 12,
                                 ONLINE-SERVICES.md); nothing else in the app opens a connection
+src/lib/licence/                the licence: a FITRON-signed file checked offline, trial, grace, clock guard
+                                (Phase 13, LICENSING.md)
 ```
 
 Two Prisma schemas, one generated client each:
@@ -200,7 +202,8 @@ C:\Program Files\FITRON Gym Accounting\        (installer, read-only for the app
 ├── backups\FITRON-Backup-YYYY-MM-DD-HHMM.fitronbackup
 ├── documents\<orgId>\{invoices,receipts,member-documents}\
 ├── logs\server.log, shell.log
-└── license.json, settings.json (port, last version, install id)
+├── licence.fitronlicence, licence-state.json   the licence and the latest date seen (Phase 13)
+└── secrets.json, settings.json (install id and date, keys; port, last version)
 ```
 
 Start-up sequence (Phase 14):
