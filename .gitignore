@@ -63,3 +63,4 @@ session/
 /src-tauri/gen/
 /src-tauri/binaries/fitron-node*
 /build/local-server/
+/dist/desktop/

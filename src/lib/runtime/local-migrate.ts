@@ -60,6 +60,22 @@ export function pendingMigrations(file: string, dir = migrationsDir()): string[]
 }
 
 /**
+ * Migrations a new version of FITRON would apply to a database that already holds data (an update). None for a database
+ * that does not exist yet or has never been migrated (a first start): there is nothing to protect.
+ */
+export function pendingUpdate(file: string, dir = migrationsDir()): string[] {
+  if (!existsSync(file)) return [];
+  const db = openForMigration(file);
+  try {
+    const done = new Set(appliedMigrations(db).map((m) => m.name));
+    if (!done.size) return [];
+    return listMigrations(dir).filter((m) => !done.has(m.name)).map((m) => m.name);
+  } finally {
+    db.close();
+  }
+}
+
+/**
  * Applies every pending migration. `file` is the SQLite path (not a file: URL). Throws on the first failure, leaving
  * the database as it was before that migration (each one is its own transaction).
  */

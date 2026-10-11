@@ -1,15 +1,16 @@
 import { mkdirSync } from "node:fs";
 import { dataDirs, defaultDataRoot, localDatabaseUrl } from "./paths";
 import { log } from "@/lib/log";
-import { migrateLocal } from "./local-migrate";
+import { migrateLocal, pendingUpdate } from "./local-migrate";
 import { ensureLocalSecrets } from "./local-secrets";
-import { recoverDocuments } from "./fitron-backup";
+import { createLocalBackup, recoverDocuments } from "./fitron-backup";
 import { startLocalScheduler } from "./local-scheduler";
 import { stopWhenShellCloses } from "./local-shutdown";
 
-// What the Local Edition does before serving: make the data folders, apply pending migrations. The result is kept so
+// What the Local Edition does before serving: make the data folders, back the database up if an update will change it,
+// apply pending migrations. The result is kept so
 // /api/health can report it and refuse to say "ok" while the database is not ready.
-export type LocalStartState = { ready: boolean; error?: string; applied: string[]; dataRoot: string; startedAt: string };
+export type LocalStartState = { ready: boolean; error?: string; applied: string[]; safetyBackup?: string; dataRoot: string; startedAt: string };
 
 const g = globalThis as unknown as { fitronLocalStart?: LocalStartState };
 
@@ -33,6 +34,14 @@ export async function startLocalEdition(): Promise<LocalStartState> {
     for (const d of [dirs.data, dirs.backups, dirs.documents, dirs.logs]) mkdirSync(d, { recursive: true });
     ensureLocalSecrets(root);
     const file = localDatabaseUrl().replace(/^file:/, "");
+    // The first start after an update changes the database only after a safety backup of it (Settings › Backup lists
+    // it under "safety"). If the backup cannot be made, nothing is migrated and FITRON says so.
+    const pending = pendingUpdate(file);
+    if (pending.length) {
+      const b = await createLocalBackup({ dirs, kind: "safety", appVersion: process.env.APP_VERSION ?? "0.0.0", note: `Before updating the database (${pending.join(", ")})` });
+      state.safetyBackup = b.name;
+      log.info("local.start.safety_backup", { name: b.name, pending: pending.join(",") });
+    }
     const r = migrateLocal(file);
     state.applied = r.applied;
     state.ready = true;
