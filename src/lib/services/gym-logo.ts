@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
-import { deleteObject, getObject, putObject, sniffType } from "@/lib/integrations/storage";
+import { deleteObject, putObject, sniffType, getObjectOrNull } from "@/lib/integrations/storage";
 import { audit } from "./audit";
 import { UserError } from "./errors";
 import { putSettingIn, type GymProfile } from "./settings";
@@ -56,5 +56,6 @@ export const logoMime = (key: string) => {
 export async function readGymLogo(orgId: string) {
   const gym = (await db.setting.findUnique({ where: { orgId_key: { orgId, key: "gym" } } }))?.value as Partial<GymProfile> | null;
   if (!gym?.logoKey) return null;
-  return { body: await getObject(gym.logoKey), mime: logoMime(gym.logoKey) };
+  const body = await getObjectOrNull(gym.logoKey);
+  return body ? { body, mime: logoMime(gym.logoKey) } : null;
 }

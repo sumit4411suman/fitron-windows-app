@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { deleteObject, getObject, putObject, sniffType } from "@/lib/integrations/storage";
+import { deleteObject, putObject, sniffType, getObjectOrNull } from "@/lib/integrations/storage";
 import type { PasswordChangeInput, ProfileInput } from "@/lib/validation/profile";
 import { audit } from "./audit";
 import { UserError } from "./errors";
@@ -92,5 +92,6 @@ export async function readProfilePhoto(u: CurrentUser, userId: string) {
   if (!staff?.photoKey) return null;
   const ext = staff.photoKey.split(".").pop();
   const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-  return { body: await getObject(staff.photoKey), mime };
+  const body = await getObjectOrNull(staff.photoKey);
+  return body ? { body, mime } : null;
 }

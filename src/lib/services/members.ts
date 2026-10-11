@@ -14,7 +14,7 @@ import { getSetting } from "./settings";
 import { markLeadWon } from "./leads";
 import { eraseBiometrics } from "./biometric";
 import { randomUUID } from "node:crypto";
-import { deleteObject, getObject, putObject, sniffType } from "@/lib/integrations/storage";
+import { deleteObject, putObject, sniffType, getObjectOrNull } from "@/lib/integrations/storage";
 import { formatRupees } from "@/lib/format";
 import { assertBranchWritable, assertMemberRoom } from "./saas";
 import { ci, ciEquals } from "@/lib/db-dialect";
@@ -339,5 +339,6 @@ export async function readMemberPhoto(u: CurrentUser, memberId: string) {
   if (!m?.photoKey) return null;
   const ext = m.photoKey.split(".").pop();
   const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
-  return { body: await getObject(m.photoKey), mime };
+  const body = await getObjectOrNull(m.photoKey);
+  return body ? { body, mime } : null;
 }
