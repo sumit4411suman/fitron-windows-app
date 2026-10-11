@@ -60,6 +60,7 @@ export const SETTINGS_TABS: Tab[] = [
   { href: "/settings?tab=int", label: "Integrations & AI" },
   { href: "/settings/import", label: "Migrate & import", perm: "import.run" },
   { href: "/settings/backup", label: "Backup" },
+  { href: "/settings/sync", label: "Cloud sync" },
   { href: "/settings/go-live", label: "Go live" },
   { href: "/settings/billing", label: "Subscription" },
   { href: "/settings/licence", label: "Licence" },

@@ -251,14 +251,16 @@ export async function syncOnce(base: string): Promise<RoundResult | null> {
   if (!c.token) throw new SyncHttpError(401, "This computer has no device token. Link it again in Settings › Cloud sync.", "unlinked");
   const out: RoundResult = { pushed: 0, pulled: 0, resynced: false };
   try {
+    // After a restore (here or on fitron.in) the whole gym comes down first; records still waiting to go up are left
+    // as they are by the download and go up afterwards, from the versions it brought.
+    if (state.needsSnapshot) {
+      await resync(c);
+      out.resynced = true;
+    }
     for (let i = 0; i < 1000; i++) {
       const n = await pushPending(c);
       out.pushed += n;
       if (!n) break;
-    }
-    if (state.needsSnapshot) {
-      await resync(c);
-      out.resynced = true;
     }
     out.pulled = await pullAll(c);
     const after = await readState();

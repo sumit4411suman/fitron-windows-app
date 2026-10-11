@@ -265,7 +265,17 @@ export const runDailyJobs = (orgId: string, today = todayIso(), now = new Date()
  */
 const NOT_ON_A_COMPUTER = new Set(["autopay", "devices.sync", "billing.branches", "backup.auto", "backup.nudge"]);
 export const LOCAL_JOBS = JOBS.filter((j) => !NOT_ON_A_COMPUTER.has(j.name));
-export const runLocalDailyJobs = (orgId: string, today = todayIso(), now = new Date()) => runJobList(LOCAL_JOBS, "Daily", orgId, today, now);
+/**
+ * While the computer is linked to fitron.in, the daily jobs run there, on the same records: running them here too would
+ * send members every reminder twice and write every member's risk score on both sides each day.
+ */
+export const ON_FITRON_IN = "runs on fitron.in while this computer is linked";
+const linkedToCloud = async () => isLocal() && !!(await db.syncState.findUnique({ where: { id: 1 }, select: { linked: true } }))?.linked;
+
+export async function runLocalDailyJobs(orgId: string, today = todayIso(), now = new Date()) {
+  if (await linkedToCloud()) return LOCAL_JOBS.map((j) => ({ name: j.name, status: "skipped" as const, result: { note: ON_FITRON_IN } as Result, error: undefined as string | undefined }));
+  return runJobList(LOCAL_JOBS, "Daily", orgId, today, now);
+}
 
 /**
  * One pass of FITRON for Windows' timer, for every gym on the computer: today's jobs that are still due (each runs once
@@ -280,7 +290,7 @@ export async function runDueOnThisComputer(now = new Date(), only?: string[]) {
     const jobs = await runLocalDailyJobs(o.id, today, now);
     ran += jobs.filter((j) => j.status === "ran").length;
     waiting += jobs.filter((j) => j.status === "waiting").length;
-    if (!(await whySendingFails(o.id))) await dispatchScheduled(o.id, now);
+    if (!(await linkedToCloud()) && !(await whySendingFails(o.id))) await dispatchScheduled(o.id, now);
   }
   return { gyms: orgs.length, ran, waiting };
 }

@@ -21,6 +21,7 @@ import { todayIso } from "./time";
 import { getWaSettings } from "./whatsapp";
 import pkg from "../../../package.json";
 import { allowDelete, revokeDelete } from "./db-guard";
+import { requireResync } from "@/lib/sync/server";
 
 /** Settings › Go live: every check reads the gym's real state. */
 export async function goLiveChecklist(u: CurrentUser) {
@@ -107,6 +108,8 @@ export async function clearDemoData(u: CurrentUser) {
     async (tx) => {
       // The database refuses to delete money records unless told why, and then only for a gym flagged demo.
       await allowDelete(tx, "demo-clear");
+      // Linked computers download the gym again rather than replay a wholesale clear-out.
+      await requireResync(tx, orgId);
       const removed: Record<string, number> = {};
       const count = (key: string, r: { count: number }) => (removed[key] = r.count);
       count("autopayEvents", await tx.autopayEvent.deleteMany({ where: { mandate: { orgId } } }));

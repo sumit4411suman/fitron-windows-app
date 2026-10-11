@@ -6,6 +6,7 @@ import { integrityCheck, migrateLocal, pendingUpdate } from "./local-migrate";
 import { ensureLocalSecrets } from "./local-secrets";
 import { createLocalBackup, recoverDocuments, unpackBackup, type CreatedBackup } from "./fitron-backup";
 import { startLocalScheduler } from "./local-scheduler";
+import { startSyncWorker } from "@/lib/sync/worker";
 import { stopWhenShellCloses } from "./local-shutdown";
 
 // What the Local Edition does before serving: make the data folders, back the database up if an update will change it,
@@ -88,7 +89,11 @@ export async function startLocalEdition(): Promise<LocalStartState> {
       throw e;
     }
     state.ready = true;
-    if (process.env.FITRON_LOCAL_SCHEDULER !== "off") startLocalScheduler();
+    if (process.env.FITRON_LOCAL_SCHEDULER !== "off") {
+      startLocalScheduler();
+      // Cloud sync, when this computer is linked to fitron.in (it stops by itself when it is not).
+      startSyncWorker();
+    }
     log.info("local.start", { applied: state.applied.join(",") || null, safetyBackup: state.safetyBackup ?? null });
   } catch (e) {
     state.error = e instanceof Error ? e.message : String(e);

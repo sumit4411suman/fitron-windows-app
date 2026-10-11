@@ -74,6 +74,9 @@ export async function localRestore(u: CurrentUser, a: { file: string; password?:
     // Reload: every database connection of FITRON is closed and reopened, so nothing goes on serving what was there
     // before the restore (no restart needed).
     await reopenLocalConnections();
+    // A computer linked to fitron.in now holds older records than the website: it downloads the gym again before it
+    // uploads anything, so the restore never sends old values over newer ones.
+    await db.syncState.updateMany({ where: { id: 1, linked: true }, data: { needsSnapshot: true } });
     return r;
   } catch (e) {
     if (e instanceof BackupError) throw new UserError(e.message);

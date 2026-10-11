@@ -10,6 +10,7 @@ import { UserMenu } from "@/components/user-menu";
 import { photoUrl } from "@/components/avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { GlobalSearch } from "@/components/global-search";
+import { SyncBadge } from "@/components/sync-badge";
 import { SideLogo } from "@/components/side-logo";
 import { BellLink, TrialBanner } from "@/components/shell";
 import { AskAi } from "@/components/ask-ai";
@@ -110,6 +111,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <GlobalSearch />
           <div className="flex flex-none items-center gap-1.5 sm:gap-2.5 lg:ml-auto">
             <BranchSwitcher branches={u.branches.filter((b) => b.active)} value={u.branch} />
+            {local && <SyncBadge />}
             <ThemeToggle />
             <BellLink unread={counts.notifications ?? 0} />
             <UserMenu

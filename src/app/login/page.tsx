@@ -150,6 +150,7 @@ async function LocalLogin({ q, next }: { q: Record<string, string | string[] | u
       {typeof q.idle === "string" && /^\d+$/.test(q.idle) && <Notice tone="alert">You were signed out after {q.idle} minutes of inactivity.</Notice>}
       {q.reset && <Notice tone="ok">Password changed. Sign in with your new password.</Notice>}
       {typeof q.restored === "string" && <Notice tone="ok">Backup restored. Everyone was signed out; sign in again to continue.</Notice>}
+      {typeof q.linked === "string" && <Notice tone="ok">This computer now holds {q.linked} from fitron.in and keeps it in step. Sign in with your fitron.in email and password; other staff sign in once a Super Admin sets their password here.</Notice>}
       <LoginForm next={next} forgotHref="/recover" />
     </LocalAuthShell>
   );
