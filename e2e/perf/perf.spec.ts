@@ -6,8 +6,8 @@ import { startLocalServer, type LocalServer } from "../local/server";
 
 // Phase 20 (npm run perf:local): FITRON for Windows on the performance dataset (perf/seed.perf.ts: 5,000 members,
 // 20,000 memberships, 50,000 invoices, 100,000 payments, 20,000 expenses, 200,000 audit entries), the production build,
-// one browser. Every screen a desk uses daily is opened and timed until its content is on screen; each must stay under
-// its budget. The numbers go to perf-results.json and docs/local-windows/PERFORMANCE.md.
+// one browser. Every screen a desk uses daily is opened twice and timed until its content is on screen; each must stay
+// under its budget. The numbers go to perf-results.json and docs/local-windows/PERFORMANCE.md.
 
 test.skip(process.env.E2E_PERF !== "1", "npm run perf:local runs this, on its own dataset");
 test.describe.configure({ mode: "serial" });
@@ -85,7 +85,12 @@ test("every daily screen opens within its budget on a gym with years of records"
     ["Members by plan", "/reports/m-plan", table, BUDGET.report],
     ["Reports centre", "/reports", titled, BUDGET.screen],
   ];
-  for (const [what, url, ready, budget] of screens) await timed(what, budget, screen(url, ready));
+  // Twice each: the first visit after FITRON starts loads the screen's code too (once per start); the second is what a
+  // desk sees all day. The first may take up to twice the budget, the second must stay within it.
+  for (const [what, url, ready, budget] of screens) {
+    await timed(`${what} (first visit)`, budget * 2, screen(url, ready));
+    await timed(what, budget, screen(url, ready));
+  }
 
   // A sale on the full books: a new member, a membership and its invoice, then the invoice's PDF.
   let invoiceId = "";

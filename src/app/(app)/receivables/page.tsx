@@ -5,13 +5,15 @@ import { listReceivables } from "@/lib/services/billing";
 import { INVOICE_STATUS_TAG } from "@/lib/domain/billing";
 import { todayIso, toIso } from "@/lib/services/time";
 import { Tag } from "@/components/tag";
-import { ListHeader, Notice, toneOf, Segmented, Stat, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
+import { ListHeader, Notice, Pager, toneOf, Segmented, Stat, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
 import { fmtDate, formatRupees } from "@/lib/format";
 import { remindAllOverdueAction, remindDueAction } from "../reminder-actions";
 
 export const metadata = { title: "Outstanding payments · Fitron" };
 
 const STATUS_TAG = INVOICE_STATUS_TAG;
+/** Rows a page shows, most overdue first: the totals above always cover every invoice owed. */
+const PAGE = 100;
 
 export default async function ReceivablesPage({ searchParams }: PageProps<"/receivables">) {
   const u = await requirePermission("invoices.view");
@@ -22,8 +24,11 @@ export default async function ReceivablesPage({ searchParams }: PageProps<"/rece
   const [{ list, counts, total }, all] = await Promise.all([listReceivables(u, f), f ? listReceivables(u) : null]);
   const open = all?.list ?? list;
   const today = todayIso();
-  const rows = [...list].sort((a, b) => b.overdueDays - a.overdueDays);
+  const sorted = [...list].sort((a, b) => b.overdueDays - a.overdueDays);
+  const page = Math.min(Math.max(1, Number(sp.p) || 1), Math.max(1, Math.ceil(sorted.length / PAGE)));
+  const rows = sorted.slice((page - 1) * PAGE, page * PAGE);
   const here = `/receivables${f ? `?f=${f}` : ""}`;
+  const pageHref = (p: number) => `/receivables?${new URLSearchParams({ ...(f ? { f } : {}), ...(p > 1 ? { p: String(p) } : {}) })}`;
   const canWa = u.can("whatsapp.send");
 
   return (
@@ -113,6 +118,7 @@ export default async function ReceivablesPage({ searchParams }: PageProps<"/rece
         </table>
       </ScrollRegion>
       {rows.length === 0 && <p className="text-muted">Nothing outstanding in this view.</p>}
+      <Pager page={page} pageSize={PAGE} total={sorted.length} href={pageHref} />
     </div>
   );
 }

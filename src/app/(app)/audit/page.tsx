@@ -3,7 +3,7 @@ import { DownloadSimpleIcon, MicrosoftExcelLogoIcon, XIcon } from "@phosphor-ico
 import { requirePermission, upgradePath } from "@/lib/auth/current";
 import { db } from "@/lib/db";
 import { listAudit } from "@/lib/services/accounting";
-import { verifyAuditChain } from "@/lib/services/audit";
+import { auditChainStatus } from "@/lib/services/audit";
 import { istInstant, todayIso } from "@/lib/services/time";
 import { addDays } from "@/lib/domain/dates";
 import { AUDIT_MODULES, changedFields, deviceLabel, describeAudit, moduleOf, severityOf, type Severity } from "@/lib/domain/audit";
@@ -54,7 +54,7 @@ export default async function AuditPage({ searchParams }: PageProps<"/audit">) {
     db.auditLog.count({ where: { orgId: u.orgId } }),
     db.auditLog.findMany({ where: { orgId: u.orgId, createdAt: { gte: istInstant(today, "00:00") } }, select: { userId: true } }),
     severity && severity !== "High" ? Promise.resolve(null) : listAudit(u, { q: s("q"), userId: s("user"), module: mod, severity: "High", from, to, pageSize: 1 }),
-    verifyAuditChain(u.orgId),
+    auditChainStatus(u.orgId),
   ]);
   const rows = list.rows;
   const pages = Math.max(1, Math.ceil(list.total / list.pageSize));
@@ -72,7 +72,9 @@ export default async function AuditPage({ searchParams }: PageProps<"/audit">) {
   const kpis: [string, string, string][] = [
     ["Entries today", todays.length.toLocaleString("en-IN"), todays.length ? `${new Set(todays.map((t) => t.userId)).size} ${new Set(todays.map((t) => t.userId)).size === 1 ? "user" : "users"} active` : "No activity yet"],
     ["High-severity in view", highInView ? highInView.total.toLocaleString("en-IN") : "0", "reversals, deletions, unlocks, role changes"],
-    ["Integrity", chain.bad ? `${chain.bad} broken` : "Verified", chain.checked ? `hash chain over ${chain.checked.toLocaleString("en-IN")} entries` : "hash chain starts with the next entry"],
+    chain.checking
+      ? ["Integrity", "Checking…", "the hash chain is being walked; open this page again in a moment"]
+      : ["Integrity", chain.bad ? `${chain.bad} broken` : "Verified", chain.checked ? `hash chain over ${chain.checked.toLocaleString("en-IN")} entries` : "hash chain starts with the next entry"],
     ["Retention", "7 years", "append-only; nothing can be edited or deleted"],
   ];
 

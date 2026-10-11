@@ -74,9 +74,23 @@ function registry(): Record<string, string> | null {
 const startMenu = () => [path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", `${TITLE}.lnk`), path.join(appData, "Microsoft", "Windows", "Start Menu", "Programs", TITLE, `${TITLE}.lnk`)].find(existsSync);
 const desktopLink = () => path.join(os.homedir(), "Desktop", `${TITLE}.lnk`);
 
+/**
+ * What a clean Windows 10/11 gives a program (Phase 23): Windows' own folders on the PATH and the user's folders, nothing
+ * a developer or a server installs (no Node.js, npm, PostgreSQL, Docker, Git, Python).
+ */
+type Env = Record<string, string | undefined>;
+function cleanWindowsEnv(): Env {
+  const keep = ["SystemRoot", "windir", "SystemDrive", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "TEMP", "TMP", "USERNAME", "USERDOMAIN", "COMPUTERNAME", "HOMEDRIVE", "HOMEPATH", "PATHEXT", "ComSpec", "OS", "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS", "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "PUBLIC", "ALLUSERSPROFILE"];
+  const env: Env = {};
+  for (const k of keep) if (process.env[k] !== undefined) env[k] = process.env[k];
+  const win = process.env.SystemRoot ?? "C:\\Windows";
+  env.PATH = [`${win}\\system32`, win, `${win}\\System32\\Wbem`, `${win}\\System32\\WindowsPowerShell\\v1.0\\`, `${win}\\System32\\OpenSSH\\`].join(";");
+  return env;
+}
+
 /** Starts the installed FITRON as a customer does: no test settings, its own data folder. */
-async function open(n: number): Promise<{ child: ChildProcess; port: number; exited: Promise<number | null> }> {
-  const env = { ...process.env };
+async function open(n: number, base: Env = process.env): Promise<{ child: ChildProcess; port: number; exited: Promise<number | null> }> {
+  const env = { ...base } as NodeJS.ProcessEnv;
   delete env.FITRON_DATA_DIR;
   const child = spawn(program(), [], { env, stdio: "ignore" });
   const exited = new Promise<number | null>((r) => child.once("exit", (c) => r(c)));
@@ -167,6 +181,19 @@ async function main() {
   await close(third);
   ok("FITRON starts after the update");
 
+  // A clean Windows machine (Phase 23): only Windows on the PATH. First show that nothing a developer installs can be
+  // found from there, then FITRON must start and answer as before, on its own bundled runtime.
+  const clean = cleanWindowsEnv();
+  for (const tool of ["node", "npm", "npx", "psql", "postgres", "docker", "git", "python"]) {
+    const found = spawnSync("where", [tool], { env: clean as NodeJS.ProcessEnv, encoding: "utf8", windowsHide: true });
+    if (found.status === 0) throw new Error(`the clean environment still finds ${tool}: ${found.stdout.trim()}`);
+  }
+  const bare = await open(4, clean);
+  const bareHealth = await health(bare.port);
+  if (bareHealth?.ok !== true || bareHealth.edition !== "local") throw new Error(`FITRON with only Windows on the PATH: ${JSON.stringify(bareHealth)}`);
+  await close(bare);
+  ok("FITRON starts with only Windows on the PATH: no Node.js, npm, PostgreSQL, Docker, Git or Python (its own runtime is fitron-node.exe)");
+
   // The program folder with Program Files' permissions: read and run only for this user and for administrators,
   // Windows itself (SYSTEM) kept in full. Set on the folder alone: Windows carries the permissions down to every file
   // and subfolder itself. (With /T, icacls would also strip each file's inherited permissions but drop the (OI)(CI)
@@ -190,7 +217,7 @@ async function main() {
     if (can(() => closeSync(openSync(exe, "r+"))) || can(() => { writeFileSync(tmp, ""); rmSync(tmp); })) throw new Error(`the program folder is still writable after the permission change\n${state()}`);
     let fourth: Awaited<ReturnType<typeof open>>;
     try {
-      fourth = await open(4);
+      fourth = await open(5);
     } catch (e) {
       throw new Error(`FITRON could not be started from the read-only program folder: ${(e as Error).message}\n${state()}`);
     }
