@@ -1,4 +1,5 @@
 import "server-only";
+import { openInvoiceIds } from "./billing";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import { balanceDue } from "@/lib/domain/billing";
@@ -143,7 +144,8 @@ export const MORE: Record<string, Def> = {
   ),
   recv: monthly("Receivables", "invoices.view", async (u) => {
     const today = todayIso();
-    const invs = await db.invoice.findMany({ where: { ...scope(u), status: "ISSUED" }, orderBy: { dueDate: "asc" }, include: { member: { select: { name: true } }, payments: { where: { status: "SUCCESS" }, select: { amount: true } } } });
+    // Only invoices with something owed are read (openInvoiceIds), not every invoice the gym issued.
+    const invs = await db.invoice.findMany({ where: { ...scope(u), status: "ISSUED", id: { in: await openInvoiceIds(u) } }, orderBy: { dueDate: "asc" }, include: { member: { select: { name: true } }, payments: { where: { status: "SUCCESS" }, select: { amount: true } } } });
     const rows = invs
       .map((i) => ({ i, paid: i.payments.reduce((s, p) => s + p.amount, 0) }))
       .filter((x) => balanceDue(x.i.total, x.paid) > 0)

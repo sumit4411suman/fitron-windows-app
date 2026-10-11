@@ -27,7 +27,8 @@
     "desktop:release": "tsx scripts/desktop-release.ts",
     "desktop:installer-test": "tsx scripts/desktop-installer-test.ts",
     "desktop:smoke": "tsx scripts/desktop-smoke.ts",
-    "e2e:sync": "tsx scripts/e2e-sync.ts"
+    "e2e:sync": "tsx scripts/e2e-sync.ts",
+    "perf:local": "tsx scripts/perf-local.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",

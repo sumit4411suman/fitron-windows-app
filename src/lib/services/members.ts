@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import { writeBranch } from "@/lib/auth/current";
 import { membershipStatus, type MembershipStatus } from "@/lib/domain/membership";
-import { invoiceState } from "@/lib/domain/billing";
+import { invoiceState, ROUND_OFF_PAISE } from "@/lib/domain/billing";
 import type { MemberInput } from "@/lib/validation/member";
 import type { Prisma } from "@/generated/prisma/client";
 import { audit } from "./audit";
@@ -47,18 +47,44 @@ export type MemberRow = {
   status: MembershipStatus;
 };
 
+/** Above this many members, balances are added up in the database for the whole gym instead of invoice by invoice. */
+const MANY_MEMBERS = 200;
+
+/**
+ * What each member of a gym owes: per member, the sum of balanceDue over their issued invoices (nothing paid on a
+ * non-zero total: the total; otherwise what is left when it is a rupee or more), added up in one query. For lists of
+ * hundreds or thousands of members, which would otherwise read every invoice and payment the gym ever had.
+ */
+async function owedByMember(orgId: string): Promise<Map<string, number>> {
+  const rows = await db.$queryRaw<{ memberId: string; owed: number | bigint | string }[]>`
+    SELECT t."memberId", SUM(CASE WHEN t.paid = 0 AND t."total" > 0 THEN t."total" WHEN t."total" - t.paid >= ${ROUND_OFF_PAISE} THEN t."total" - t.paid ELSE 0 END) AS owed
+    FROM (
+      SELECT i."memberId", i."total",
+        COALESCE((SELECT SUM(p."amount") FROM "Payment" p WHERE p."invoiceId" = i."id" AND p."status" = 'SUCCESS'), 0) AS paid
+      FROM "Invoice" i
+      WHERE i."orgId" = ${orgId} AND i."status" = 'ISSUED'
+    ) t
+    GROUP BY t."memberId"`;
+  return new Map(rows.map((r) => [r.memberId, Number(r.owed)]));
+}
+
 /** Latest end date, current plan and outstanding balance for each member, computed (rules 3, 4, 11). */
 export async function summarize(memberIds: string[], today = todayIso()) {
-  const [memberships, invoices] = await Promise.all([
+  const many = memberIds.length > MANY_MEMBERS;
+  const orgId = many ? (await db.member.findUnique({ where: { id: memberIds[0]! }, select: { orgId: true } }))?.orgId : undefined;
+  const [memberships, invoices, owed] = await Promise.all([
     db.membership.findMany({
       where: { memberId: { in: memberIds }, status: "VALID" },
       select: { memberId: true, startDate: true, endDate: true, plan: { select: { name: true } } },
       orderBy: { startDate: "asc" },
     }),
-    db.invoice.findMany({
-      where: { memberId: { in: memberIds }, status: "ISSUED" },
-      select: { memberId: true, total: true, dueDate: true, payments: { select: { amount: true, status: true } } },
-    }),
+    orgId
+      ? []
+      : db.invoice.findMany({
+          where: { memberId: { in: memberIds }, status: "ISSUED" },
+          select: { memberId: true, total: true, dueDate: true, payments: { select: { amount: true, status: true } } },
+        }),
+    orgId ? owedByMember(orgId) : null,
   ]);
   /** `current`: a membership covers today. A member whose only plan starts later is not current. */
   const out = new Map<string, { latestEnd: string | null; planName: string | null; planStart: string | null; outstanding: number; current: boolean }>();
@@ -88,6 +114,7 @@ export async function summarize(memberIds: string[], today = todayIso()) {
     );
     out.get(inv.memberId)!.outstanding += st.balance;
   }
+  if (owed) for (const [id, s] of out) s.outstanding = owed.get(id) ?? 0;
   return out;
 }
 

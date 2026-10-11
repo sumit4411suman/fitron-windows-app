@@ -64,3 +64,4 @@ session/
 /src-tauri/binaries/fitron-node*
 /build/local-server/
 /dist/desktop/
+.perf/

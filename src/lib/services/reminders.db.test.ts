@@ -8,6 +8,8 @@ import { cancelInvoice, sellMembership } from "./billing";
 import { expiryKey, lastRenewalReminders, remindAllOverdue, remindDue, remindRenewal, renewalAmounts, sendInvoiceWhatsApp } from "./reminders";
 import { todayIso } from "./time";
 import { putSetting } from "./settings";
+import { saveConnectorSite } from "./wa-connector-store";
+import { isLocal } from "@/lib/runtime/edition";
 
 describe.skipIf(!hasDb)("reminders (database)", () => {
   let gym: Awaited<ReturnType<typeof makeGym>>;
@@ -65,14 +67,17 @@ describe.skipIf(!hasDb)("reminders (database)", () => {
   it("checks WhatsApp once before reminding everyone: with the connector not running nothing is sent or recorded", async () => {
     const admin = pick(await gym.user("Super Admin"), gym.a.id);
     await putSetting(admin, "whatsapp", { mode: "connector" });
+    // Where the connector is: the server's settings on fitron.in, the gym's own on Windows (Settings › WhatsApp).
     vi.stubEnv("WA_CONNECTOR_URL", "http://127.0.0.1:9");
     vi.stubEnv("WA_CONNECTOR_KEY", "x");
+    if (isLocal()) await saveConnectorSite(gym.org.id, { url: "http://127.0.0.1:9", key: "x" });
     try {
       const before = await db.whatsAppMessage.count({ where: { orgId: gym.org.id } });
       await expect(remindAllOverdue(admin)).rejects.toThrow(/^Nothing was sent\. Nothing is answering at http:\/\/127\.0\.0\.1:9/);
       expect(await db.whatsAppMessage.count({ where: { orgId: gym.org.id } })).toBe(before);
     } finally {
       vi.unstubAllEnvs();
+      if (isLocal()) await saveConnectorSite(gym.org.id, null);
       await putSetting(admin, "whatsapp", { mode: "demo" });
     }
   });

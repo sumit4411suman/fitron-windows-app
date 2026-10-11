@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -48,6 +48,30 @@ function proxy() {
     },
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
+}
+
+/** A PDF of `size` bytes whose content says which side made it. */
+function pdf(size: number, mark: string) {
+  const b = Buffer.alloc(size, mark.charCodeAt(0));
+  b.write(`%PDF-1.7\n% ${mark}\n`, 0);
+  return b;
+}
+
+/** Every file under a folder, by name. */
+function filesUnder(dir: string): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!existsSync(dir)) return out;
+  for (const e of readdirSync(dir, { withFileTypes: true, recursive: true })) if (e.isFile()) out.set(e.name, path.join(e.parentPath, e.name));
+  return out;
+}
+
+async function uploadDocument(p: Page, memberId: string, title: string, body: Buffer) {
+  await p.goto(`/members/${memberId}?tab=documents`);
+  const form = p.locator("#upload");
+  await form.getByLabel("Title").fill(title);
+  await form.getByLabel("File", { exact: true }).setInputFiles({ name: `${title}.pdf`, mimeType: "application/pdf", buffer: body });
+  await form.getByRole("button", { name: "Upload document" }).click();
+  await expect(p.getByText(title).first()).toBeVisible();
 }
 
 let cloud: LocalServer;
@@ -239,4 +263,31 @@ test("the same member changed on both sides while apart: one version stands, bot
   await localPage.goto("/settings/sync");
   await expect(localPage.getByText("Name From Website")).toBeVisible();
   await expect(localPage.getByRole("button", { name: "Keep fitron.in's" })).toBeVisible();
+});
+
+test("documents follow their records both ways, a large one in pieces, byte for byte", async () => {
+  const [{ id: websiteMember }] = here<{ id: string }>(`select id from "Member" where name = 'Website Member Renamed'`);
+  const [{ id: deskMember }] = here<{ id: string }>(`select id from "Member" where name = 'Name From Computer'`);
+
+  // Uploaded on fitron.in, 4 MB: it comes down in two pieces.
+  const big = pdf(4 * 1024 * 1024 + 321, "W");
+  await uploadDocument(cloudPage, websiteMember, "Website Aadhaar", big);
+  const [cloudDoc] = await sql<{ storageKey: string }>(`select "storageKey" from "MemberDocument" where "memberId" = $1 and title = 'Website Aadhaar'`, [websiteMember]);
+  const name = cloudDoc!.storageKey.split("/").pop()!;
+  const arrived = await eventually("the website's document on the computer", () => filesUnder(localDir).get(name), 120_000);
+  expect(readFileSync(arrived).equals(big)).toBe(true);
+  await localPage.goto(`/members/${websiteMember}?tab=documents`);
+  await expect(localPage.getByText("Website Aadhaar").first()).toBeVisible();
+
+  // Uploaded on the computer: its record goes up first, then the file.
+  const small = pdf(20_000, "C");
+  await uploadDocument(localPage, deskMember, "Desk Waiver", small);
+  const [{ storageKey }] = here<{ storageKey: string }>(`select "storageKey" from "MemberDocument" where "memberId" = ? and title = 'Desk Waiver'`, deskMember);
+  const there = path.join(cloudDir, "storage", ...storageKey.split("/"));
+  await eventually("the computer's document on fitron.in", () => existsSync(there) && readFileSync(there).length === small.length, 150_000);
+  expect(readFileSync(there).equals(small)).toBe(true);
+  // Opened on fitron.in by the signed-in owner, as a browser opens it.
+  const docId = (await sql<{ id: string }>(`select id from "MemberDocument" where "storageKey" = $1`, [storageKey]))[0]!.id;
+  const got = Buffer.from(await cloudPage.evaluate(async (u) => Array.from(new Uint8Array(await (await fetch(u)).arrayBuffer())), `/documents/${docId}`));
+  expect(got.equals(small)).toBe(true);
 });
