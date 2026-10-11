@@ -41,14 +41,18 @@ export function judgeSignatures(files: FileSignature[], o: { require: boolean; p
     const who = publisherOf(f.signer);
     const problems: string[] = [];
     const allowed = [o.publisher, ...(o.vendors ?? VENDOR_SIGNED).filter((v) => v.file.test(f.file)).flatMap((v) => v.publishers)];
-    if (f.status !== "Valid") problems.push(f.status === "NotSigned" ? "not signed" : `signature ${f.status}`);
+    if (!f.status) {
+      // Windows said nothing about the file: the check itself failed, so the report would be meaningless.
+      problems.push("Windows reported no signature status (the check did not run)");
+      ok = false;
+    } else if (f.status !== "Valid") problems.push(f.status === "NotSigned" ? "not signed" : `signature ${f.status}`);
     else {
       if (!who || !allowed.some((p) => who.toLowerCase().includes(p.toLowerCase()))) problems.push(`signed by ${who ?? "an unknown publisher"}, not ${allowed.join(" or ")}`);
       if (!f.timestamper) problems.push("no timestamp (the signature would stop being valid when the certificate expires)");
     }
     if (!problems.length) lines.push(`✓ ${f.file}: signed by ${who}, timestamped`);
     else {
-      lines.push(`${o.require ? "✗" : "-"} ${f.file}: ${problems.join("; ")}`);
+      lines.push(`${o.require || !f.status ? "✗" : "-"} ${f.file}: ${problems.join("; ")}`);
       if (o.require) ok = false;
     }
   }

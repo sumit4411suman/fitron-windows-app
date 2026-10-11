@@ -31,16 +31,21 @@ function files(): string[] {
 }
 
 function signatures(list: string[]): FileSignature[] {
-  // One PowerShell for all files; paths go in through the environment, never through the command line's quoting.
+  // One PowerShell for all files; paths go in through the environment, never through the command line's quoting. Any
+  // error stops it: a cmdlet that failed to load must not read as an empty status.
   const ps = `
+    $ErrorActionPreference = "Stop"
     $files = $env:FITRON_SIGN_FILES -split "\`n" | Where-Object { $_ }
     $out = foreach ($f in $files) {
       $s = Get-AuthenticodeSignature -LiteralPath $f
       [pscustomobject]@{ file = $f; status = [string]$s.Status; signer = $s.SignerCertificate.Subject; timestamper = $s.TimeStamperCertificate.Subject }
     }
     ConvertTo-Json -InputObject @($out) -Compress`;
-  const r = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", env: { ...process.env, FITRON_SIGN_FILES: list.join("\n") }, windowsHide: true });
-  if (r.status !== 0) throw new Error(`Get-AuthenticodeSignature failed: ${r.stderr}`);
+  // Windows PowerShell builds its own module path; one inherited from PowerShell 7 (a pwsh CI step) points it at
+  // PowerShell 7's Microsoft.PowerShell.Security, which it cannot load, and Get-AuthenticodeSignature goes missing.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toLowerCase() !== "psmodulepath")) as NodeJS.ProcessEnv;
+  const r = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", env: { ...env, FITRON_SIGN_FILES: list.join("\n") }, windowsHide: true });
+  if (r.status !== 0) throw new Error(`Get-AuthenticodeSignature failed: ${r.stderr || r.stdout}`);
   return (JSON.parse(r.stdout) as FileSignature[]).map((s) => ({ ...s, file: path.relative(root, s.file) || s.file, signer: s.signer || null, timestamper: s.timestamper || null }));
 }
 

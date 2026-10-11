@@ -47,4 +47,10 @@ describe("Authenticode release checks", () => {
     expect(v.ok).toBe(true);
     expect(v.lines.join("\n")).toMatch(/Unknown publisher/);
   });
+
+  it("fails even a report when Windows gave no status: the check itself did not run", () => {
+    const v = judgeSignatures([signed("setup.exe", { status: "", signer: null, timestamper: null })], { require: false, publisher: "FITRON" });
+    expect(v.ok).toBe(false);
+    expect(v.lines[0]).toMatch(/^✗ setup\.exe: Windows reported no signature status/);
+  });
 });
