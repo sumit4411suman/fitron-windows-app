@@ -1,5 +1,5 @@
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -75,16 +75,18 @@ const startMenu = () => [path.join(appData, "Microsoft", "Windows", "Start Menu"
 const desktopLink = () => path.join(os.homedir(), "Desktop", `${TITLE}.lnk`);
 
 /**
- * What a clean Windows 10/11 gives a program (Phase 23): Windows' own folders on the PATH and the user's folders, nothing
- * a developer or a server installs (no Node.js, npm, PostgreSQL, Docker, Git, Python).
+ * Stricter than a clean Windows 10/11 (Phase 23): the user's folders and Windows' own settings, and nothing at all on the
+ * PATH but an empty folder, so nothing a developer or a server installs (Node.js, npm, PostgreSQL, Docker, Git, Python)
+ * can be found, not even what a CI machine keeps in System32. FITRON starts its runtime by its full path and needs none.
  */
 type Env = Record<string, string | undefined>;
 function cleanWindowsEnv(): Env {
   const keep = ["SystemRoot", "windir", "SystemDrive", "USERPROFILE", "LOCALAPPDATA", "APPDATA", "TEMP", "TMP", "USERNAME", "USERDOMAIN", "COMPUTERNAME", "HOMEDRIVE", "HOMEPATH", "PATHEXT", "ComSpec", "OS", "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS", "ProgramData", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "PUBLIC", "ALLUSERSPROFILE"];
   const env: Env = {};
   for (const k of keep) if (process.env[k] !== undefined) env[k] = process.env[k];
-  const win = process.env.SystemRoot ?? "C:\\Windows";
-  env.PATH = [`${win}\\system32`, win, `${win}\\System32\\Wbem`, `${win}\\System32\\WindowsPowerShell\\v1.0\\`, `${win}\\System32\\OpenSSH\\`].join(";");
+  const empty = path.join(os.tmpdir(), "fitron-empty-path");
+  mkdirSync(empty, { recursive: true });
+  env.PATH = empty;
   return env;
 }
 
@@ -181,18 +183,18 @@ async function main() {
   await close(third);
   ok("FITRON starts after the update");
 
-  // A clean Windows machine (Phase 23): only Windows on the PATH. First show that nothing a developer installs can be
-  // found from there, then FITRON must start and answer as before, on its own bundled runtime.
+  // A clean Windows machine (Phase 23), stricter: nothing on the PATH. First show that nothing a developer installs can
+  // be found from there, then FITRON must start and answer as before, on its own bundled runtime.
   const clean = cleanWindowsEnv();
   for (const tool of ["node", "npm", "npx", "psql", "postgres", "docker", "git", "python"]) {
-    const found = spawnSync("where", [tool], { env: clean as NodeJS.ProcessEnv, encoding: "utf8", windowsHide: true });
+    const found = spawnSync(path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "where.exe"), [tool], { env: clean as NodeJS.ProcessEnv, encoding: "utf8", windowsHide: true });
     if (found.status === 0) throw new Error(`the clean environment still finds ${tool}: ${found.stdout.trim()}`);
   }
   const bare = await open(4, clean);
   const bareHealth = await health(bare.port);
-  if (bareHealth?.ok !== true || bareHealth.edition !== "local") throw new Error(`FITRON with only Windows on the PATH: ${JSON.stringify(bareHealth)}`);
+  if (bareHealth?.ok !== true || bareHealth.edition !== "local") throw new Error(`FITRON with nothing on the PATH: ${JSON.stringify(bareHealth)}`);
   await close(bare);
-  ok("FITRON starts with only Windows on the PATH: no Node.js, npm, PostgreSQL, Docker, Git or Python (its own runtime is fitron-node.exe)");
+  ok("FITRON starts with nothing on the PATH: no Node.js, npm, PostgreSQL, Docker, Git or Python to be found (its own runtime is fitron-node.exe)");
 
   // The program folder with Program Files' permissions: read and run only for this user and for administrators,
   // Windows itself (SYSTEM) kept in full. Set on the folder alone: Windows carries the permissions down to every file

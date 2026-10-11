@@ -16,7 +16,7 @@ commit where all of it is green.
 | `npm run e2e`, `npm run e2e:local` | every screen in a browser, on the production build, on both editions; on Windows' edition also start-up, database, crash, recovery, update, restore, offline and the 25-step acceptance test | `OFFLINE.md`, `DISASTER-RECOVERY.md` |
 | `npm run e2e:sync` | fitron.in and a computer as two servers: sync both ways, offline, a cut connection, conflicts, documents | `DEPLOY-SYNC.md` |
 | `npm run perf:local` | every daily screen within its budget on 5,000 members and 100,000 payments | `PERFORMANCE.md` |
-| Desktop (Windows) job | the shell's tests, the packaged server, the real program started and closed, the installer installed, updated over a running FITRON, started with only Windows on the PATH (no Node.js, PostgreSQL, Docker or developer tools), from a read-only program folder, and uninstalled with the data kept | `DESKTOP.md`, `INSTALLER.md` |
+| Desktop (Windows) job | the shell's tests, the packaged server, the real program started and closed, the installer installed, updated over a running FITRON, started with nothing on the PATH (no Node.js, PostgreSQL, Docker or developer tools to be found), from a read-only program folder, and uninstalled with the data kept | `DESKTOP.md`, `INSTALLER.md` |
 
 `npm run perf:local` and `npm run e2e:sync` take minutes; run them before every release, not only when their areas
 changed.
@@ -63,7 +63,7 @@ Actions › **Desktop release (Windows, signed)** › Run workflow, with the rel
    program and the bundled runtime each signed,
    valid, timestamped, by `FITRON_PUBLISHER` (the bundled Node.js runtime may instead keep the OpenJS Foundation's own
    signature). Anything else fails the release;
-5. runs the same start, install, update, clean-PATH and uninstall tests as every build, on the signed files;
+5. runs the same start, install, update, empty-PATH and uninstall tests as every build, on the signed files;
 6. writes the update feed (`latest.json`) and keeps the installer, its `.sha256` and the feed as the run's files.
 
 On a computer with the certificate instead of the workflow, the same steps by hand:
