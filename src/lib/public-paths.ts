@@ -15,7 +15,7 @@ const PUBLIC = [
   "contact", "about", "privacy", "terms", "refund", "c",
   "robots.txt", "sitemap.xml", "favicon.ico", "fitron-mark.png", "fitron-logo.png", "site", "_next",
   "trainer", "api/trainer", "api/coach", "api/gym-demo", "api/assistant",
-  "api/health", "api/analytics-config", "api/client-error", "api/csp-report", "api/webhooks", "api/jobs", "iclock",
+  "api/health", "api/local/shell", "api/analytics-config", "api/client-error", "api/csp-report", "api/webhooks", "api/jobs", "iclock",
   // The pages about Gym Accounting (src/lib/domain/gym-pages.ts) join this list by themselves.
   ...GYM_PAGES.map((p) => p.path.slice(1)),
   TRAINER_PAGE.path.slice(1), GUIDES_PATH.slice(1), TOOLS_PATH.slice(1), "manifest.webmanifest",

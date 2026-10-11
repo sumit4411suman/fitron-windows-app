@@ -35,7 +35,7 @@ name: the S3 file bucket and the AI Trainer's push reminders.
 | Fitron AI | FITRON sets an Anthropic key, and a gym user ticks "Use Claude for fuller answers" (off). | The question, the chat so far, the gym's name, the staff member's name and role, and the records looked up to answer it (named in full next to the tick). |
 | UPI autopay | A gym user picks Live mode, with Razorpay keys set. | Per mandate: the plan name, amount, first debit date and the member's FITRON code. Not the member's name or phone. |
 | Licence | Nothing: a licence is a signed file checked on the computer (LICENSING.md). If online renewal is added, FITRON_LICENCE_URL. | Only the licence id, the installation id, the edition, plan and version. `licencePayload()` refuses any other field before a connection opens. |
-| Updates | FITRON_UPDATE_URL is set (Phase 18). | Only the edition, version, update channel and kind of Windows. `updateQueryString()` refuses anything else. |
+| Updates | A release built with FITRON_UPDATE_URL and FITRON_UPDATE_PUBKEY (Phase 18, UPDATES.md). The desktop program checks, not the server. | One request for `latest.json` and the installer's download: nothing about the gym. The server-side `updates/` module stays for a future online channel and sends only the edition, version, channel and kind of Windows (`updateQueryString()`). |
 
 Never on FITRON for Windows, whatever is set:
 

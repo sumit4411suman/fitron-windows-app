@@ -5,7 +5,6 @@ import { ReasonForm } from "@/components/reason-form";
 import { cancel, collect, reverse } from "../../billing-actions";
 import { Button, Field, Input, Notice, Select } from "@/components/ui";
 import { METHODS } from "@/lib/validation/billing";
-import { ReceiptLink } from "@/components/paper-print";
 
 export function CollectForm({ invoiceId, balance, today }: { invoiceId: string; balance: number; today: string }) {
   const [state, action, pending] = useActionState(collect.bind(null, invoiceId), undefined);
@@ -13,11 +12,7 @@ export function CollectForm({ invoiceId, balance, today }: { invoiceId: string; 
   const sent = state?.ok ? undefined : (state?.values as Record<string, string> | undefined);
   return (
     <form action={action} key={state?.nonce} className="flex flex-col gap-3">
-      {state?.message && (
-        <Notice tone={state.ok ? "ok" : "alert"}>
-          {state.message} {state.payment && <ReceiptLink paymentId={state.payment.id} code={state.payment.code} />}
-        </Notice>
-      )}
+      {state?.message && <Notice tone={state.ok ? "ok" : "alert"}>{state.message}</Notice>}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Amount (₹)" error={e.amount}>
           <Input name="amount" inputMode="decimal" defaultValue={sent?.amount ?? String(balance / 100)} required />

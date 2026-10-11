@@ -122,6 +122,8 @@ Cloud schema; the Local schema does not carry them.
 
 ## Online services in Local (done, Phase 12)
 
+Updates (Phase 18, UPDATES.md): the desktop program checks FITRON's download address, verifies FITRON's signature, backs the data up, installs; the new version backs up again before migrating, checks the database, and puts it back if the update fails. Done.
+
 Each online service has its own folder under `src/lib/integrations/` (email, whatsapp, razorpay, ai, license, updates),
 and nothing else in the app opens a connection. Every one is off on a fresh installation; Settings › Integrations & AI
 lists them with what each sends. Details, consent rules and tests: ONLINE-SERVICES.md.

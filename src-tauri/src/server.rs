@@ -38,6 +38,14 @@ pub fn free_port() -> io::Result<u16> {
     Ok(l.local_addr()?.port())
 }
 
+/// A secret shared by the shell and the server it starts, for the shell's own requests (an update's backup). Random,
+/// never shown, never written down; a new one each time FITRON opens.
+pub fn new_token() -> String {
+    let mut b = [0u8; 32];
+    getrandom::fill(&mut b).expect("Windows could not provide random numbers");
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
 /// A new id for one start of the server. It is not a secret: it only lets the shell tell its own server's answer apart
 /// from another program that might have taken the port.
 pub fn new_instance_id() -> String {
@@ -66,8 +74,9 @@ pub fn removed_variable(name: &str) -> bool {
 }
 
 /// The server's settings: the Local Edition, the data folder, 127.0.0.1 and the port, production mode.
-pub fn server_variables(l: &Launch, port: u16, instance: &str) -> Vec<(&'static str, OsString)> {
+pub fn server_variables(l: &Launch, port: u16, instance: &str, token: &str) -> Vec<(&'static str, OsString)> {
     vec![
+        ("FITRON_SHELL_TOKEN", token.into()),
         ("FITRON_EDITION", "local".into()),
         ("FITRON_SHELL", "1".into()),
         ("FITRON_INSTANCE", instance.into()),
@@ -93,7 +102,7 @@ fn server_log(data_root: &Path) -> io::Result<File> {
     OpenOptions::new().create(true).append(true).open(file)
 }
 
-pub fn spawn(l: &Launch, port: u16, instance: &str) -> io::Result<Server> {
+pub fn spawn(l: &Launch, port: u16, instance: &str, token: &str) -> io::Result<Server> {
     let log = server_log(&l.data_root)?;
     let mut cmd = Command::new(&l.node);
     cmd.arg(l.server_dir.join("server.js"))
@@ -106,7 +115,7 @@ pub fn spawn(l: &Launch, port: u16, instance: &str) -> io::Result<Server> {
             cmd.env_remove(&name);
         }
     }
-    for (name, value) in server_variables(l, port, instance) {
+    for (name, value) in server_variables(l, port, instance, token) {
         cmd.env(name, value);
     }
     #[cfg(windows)]
@@ -179,9 +188,12 @@ pub fn read_health(body: &str, instance: &str) -> Health {
     if v["ok"] == true {
         return Health::Ready { version: v["version"].as_str().unwrap_or("").to_string() };
     }
-    match v["error"].as_str() {
-        Some("Starting") | None => Health::NotYet,
-        Some(e) => Health::Failed(e.to_string()),
+    match (v["error"].as_str(), v["detail"].as_str()) {
+        (Some("Starting") | None, _) => Health::NotYet,
+        // The server's own sentence for the desk, when it has one (a database that could not be updated).
+        (Some(_), Some(detail)) => Health::Failed(detail.to_string()),
+        (Some("Database migration failed"), None) => Health::Failed("FITRON could not update its database to this version. Nothing was changed: the database is as it was before.".into()),
+        (Some(e), None) => Health::Failed(format!("The FITRON server reported: {e}.")),
     }
 }
 
@@ -192,6 +204,22 @@ fn get(port: u16, path: &str) -> io::Result<String> {
     s.set_read_timeout(Some(Duration::from_secs(3)))?;
     s.set_write_timeout(Some(Duration::from_secs(3)))?;
     write!(s, "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAccept: application/json\r\nConnection: close\r\n\r\n")?;
+    let mut raw = Vec::new();
+    s.read_to_end(&mut raw)?;
+    body_of(&String::from_utf8_lossy(&raw)).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "not an HTTP answer"))
+}
+
+/// One request from the shell to its own server, with the shell's secret. Returns the body of the answer.
+pub fn post(port: u16, path: &str, token: &str, body: &str, timeout: Duration) -> io::Result<String> {
+    let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+    let mut s = TcpStream::connect_timeout(&addr, Duration::from_secs(2))?;
+    s.set_read_timeout(Some(timeout))?;
+    s.set_write_timeout(Some(Duration::from_secs(10)))?;
+    write!(
+        s,
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nX-Fitron-Shell: {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )?;
     let mut raw = Vec::new();
     s.read_to_end(&mut raw)?;
     body_of(&String::from_utf8_lossy(&raw)).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "not an HTTP answer"))
@@ -290,6 +318,13 @@ mod tests {
     }
 
     #[test]
+    fn shell_secrets_are_long_and_new_each_time() {
+        let a = new_token();
+        assert_eq!(a.len(), 64);
+        assert_ne!(a, new_token());
+    }
+
+    #[test]
     fn instance_ids_differ() {
         let a = new_instance_id();
         assert_eq!(a.len(), 32);
@@ -309,12 +344,13 @@ mod tests {
     #[test]
     fn starts_the_server_on_127_0_0_1_in_the_local_edition() {
         let l = Launch { node: "node".into(), server_dir: PathBuf::from("srv"), data_root: PathBuf::from("data") };
-        let v: std::collections::HashMap<_, _> = server_variables(&l, 51234, "abc").into_iter().collect();
+        let v: std::collections::HashMap<_, _> = server_variables(&l, 51234, "abc", "secret").into_iter().collect();
         assert_eq!(v["HOSTNAME"], "127.0.0.1");
         assert_eq!(v["PORT"], "51234");
         assert_eq!(v["FITRON_EDITION"], "local");
         assert_eq!(v["FITRON_SHELL"], "1");
         assert_eq!(v["FITRON_INSTANCE"], "abc");
+        assert_eq!(v["FITRON_SHELL_TOKEN"], "secret");
         assert_eq!(v["FITRON_DATA_DIR"], "data");
         assert_eq!(PathBuf::from(&v["FITRON_MIGRATIONS_DIR"]), PathBuf::from("srv").join("prisma").join("local-migrations"));
         assert!(!v.contains_key("FITRON_LOCAL_ALLOW_SIGNUP"));
@@ -328,9 +364,10 @@ mod tests {
         assert_eq!(read_health(ok, "xyz"), Health::NotYet);
         assert_eq!(read_health(r#"{"ok":true,"edition":"cloud","instance":"abc"}"#, "abc"), Health::NotYet);
         assert_eq!(read_health(r#"{"ok":false,"edition":"local","instance":"abc","error":"Starting"}"#, "abc"), Health::NotYet);
+        assert!(matches!(read_health(r#"{"ok":false,"edition":"local","instance":"abc","error":"Database migration failed"}"#, "abc"), Health::Failed(m) if m.contains("could not update its database")));
         assert_eq!(
-            read_health(r#"{"ok":false,"edition":"local","instance":"abc","error":"Database migration failed"}"#, "abc"),
-            Health::Failed("Database migration failed".into())
+            read_health(r#"{"ok":false,"edition":"local","instance":"abc","error":"Database migration failed","detail":"Put back from backup X."}"#, "abc"),
+            Health::Failed("Put back from backup X.".into())
         );
         assert_eq!(read_health("<html>", "abc"), Health::NotYet);
     }

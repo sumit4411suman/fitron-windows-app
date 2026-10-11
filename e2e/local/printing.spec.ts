@@ -42,8 +42,9 @@ test("the invoice and each payment's receipt print on the paper chosen", async (
   // Collecting the balance offers its receipt at once.
   await page.getByLabel("Amount (₹)").fill("1270");
   await page.getByRole("button", { name: "Record payment" }).click();
-  const offered = page.getByRole("link", { name: /^Receipt PAY-/ }).first();
+  await page.waitForURL(/\?receipt=/);
   await expect(page.getByText(/Payment recorded \(PAY-/)).toBeVisible();
+  const offered = page.getByRole("link", { name: /^Receipt PAY-/ }).first();
   const href = (await offered.getAttribute("href"))!;
   expect(href).toMatch(/\/payments\/[^/]+\/receipt\?paper=80mm$/);
   for (const paper of ["80mm", "58mm", "a5", "a4"] as const) expect(await pdfWidth(page, href.replace("80mm", paper)), paper).toBeCloseTo(WIDTH[paper], 1);

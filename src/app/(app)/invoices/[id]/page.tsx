@@ -6,7 +6,7 @@ import { getTax } from "@/lib/services/tax";
 import { todayIso } from "@/lib/services/time";
 import { Badge, Card, LinkButton, Notice, ScrollRegion } from "@/components/ui";
 import { PrintButton } from "@/components/print-button";
-import { PaperPrint } from "@/components/paper-print";
+import { PaperPrint, ReceiptLink } from "@/components/paper-print";
 import { gymLogoUrl } from "@/components/gym-logo";
 import { fmtDate, formatInr, formatRupees, initials } from "@/lib/format";
 import { CancelInvoice, CollectForm, ReversePayment } from "./invoice-forms";
@@ -24,12 +24,14 @@ export const metadata = { title: "Invoice · Fitron" };
 export default async function InvoicePage({ params, searchParams }: PageProps<"/invoices/[id]">) {
   const u = await requirePermission("invoices.view");
   const { id } = await params;
-  const { created } = await searchParams;
+  const { created, receipt } = await searchParams;
   const inv = await getInvoice(u, id);
   if (!inv) notFound();
   const [profile, tax] = await Promise.all([getGymProfile(u.orgId), getTax(u.orgId)]);
   // The receipt to hand over after a payment: the latest one received (the desk prints it right after collecting).
   const lastReceipt = [...inv.payments].reverse().find((p) => p.status === "SUCCESS");
+  // Just recorded (the collect action comes back here with ?receipt=): offer its receipt at the top.
+  const justPaid = typeof receipt === "string" ? inv.payments.find((p) => p.id === receipt) : undefined;
   // What the PDF prints as "From": a branch's own GSTIN wins over the gym-level one.
   const cancelled = inv.status === "CANCELLED";
   const half = inv.gstType === "CGST+SGST";
@@ -56,6 +58,11 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
   return (
     <div className="mx-auto flex w-full max-w-[820px] flex-col gap-3">
       {created && <Notice tone="ok">Invoice created.</Notice>}
+      {justPaid && (
+        <Notice tone="ok">
+          Payment recorded ({justPaid.code}). <ReceiptLink paymentId={justPaid.id} code={justPaid.code} />
+        </Notice>
+      )}
       <div className="flex flex-wrap justify-end gap-2 rounded-lg bg-bg p-2.5 print:hidden" data-testid="invoice-from">
         <PaperPrint href={`/invoices/${inv.id}/pdf`} kind="invoice" label="Print invoice" papers={["a4", "a5", "80mm", "58mm"]} fallback="a4" />
         {lastReceipt && <PaperPrint href={`/payments/${lastReceipt.id}/receipt`} kind="receipt" label="Print receipt" papers={["80mm", "58mm", "a5", "a4"]} fallback="80mm" />}

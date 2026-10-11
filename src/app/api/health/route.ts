@@ -14,7 +14,10 @@ export async function GET() {
     const { localStopping } = await import("@/lib/runtime/local-shutdown");
     const start = localStartState();
     if (localStopping()) return Response.json({ ok: false, ...body, error: "Stopping" }, { status: 503 });
-    if (!start?.ready) return Response.json({ ok: false, ...body, error: start?.error ? "Database migration failed" : "Starting" }, { status: 503 });
+    if (!start?.ready) {
+      // `detail` is the sentence the shell shows the desk when the database could not be updated.
+      return Response.json({ ok: false, ...body, error: start?.error ? "Database migration failed" : "Starting", ...(start?.error ? { detail: start.error } : {}) }, { status: 503 });
+    }
   }
   try {
     await db.$queryRaw`SELECT 1`;

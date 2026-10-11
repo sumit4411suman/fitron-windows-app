@@ -36,8 +36,6 @@ export type FormState =
       values?: Record<string, string | string[]>;
       /** Changes on every response so the form remounts with `values`. */
       nonce?: string;
-      /** The payment just recorded, so the form can offer its receipt. */
-      payment?: { id: string; code: string };
     }
   | undefined;
 

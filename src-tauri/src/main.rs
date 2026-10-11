@@ -15,6 +15,7 @@
 mod nav;
 mod server;
 mod shell_log;
+mod update;
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU16, AtomicUsize, Ordering};
@@ -36,11 +37,13 @@ const START_TIMEOUT: Duration = Duration::from_secs(300);
 /// The server waits up to 8 s for a backup or job already running, then writes its WAL into the database file.
 const STOP_TIMEOUT: Duration = Duration::from_secs(15);
 
-struct Shell {
+pub(crate) struct Shell {
     server: Mutex<Option<Server>>,
-    port: Arc<AtomicU16>,
-    log: ShellLog,
+    pub(crate) port: Arc<AtomicU16>,
+    pub(crate) log: ShellLog,
     data_root: PathBuf,
+    /// The secret for the shell's own requests to its server (server::new_token).
+    pub(crate) token: String,
     /// Held while FITRON is open (see setup).
     _lock: std::fs::File,
 }
@@ -151,7 +154,7 @@ fn start(app: AppHandle, window: WebviewWindow) {
             Err(e) => return failed(format!("No free port on this computer ({e}).")),
         };
         let instance = server::new_instance_id();
-        let srv = match server::spawn(&l, port, &instance) {
+        let srv = match server::spawn(&l, port, &instance, &shell.token) {
             Ok(s) => s,
             Err(e) => return failed(format!("The FITRON server could not be started ({e}).")),
         };
@@ -164,10 +167,7 @@ fn start(app: AppHandle, window: WebviewWindow) {
             }
             match server::check_health(port, &instance) {
                 Health::Ready { version } => break Ok(version),
-                Health::Failed(e) if e == "Database migration failed" => {
-                    break Err("FITRON could not update its database to this version. Nothing was changed: the database is as it was before.".into())
-                }
-                Health::Failed(e) => break Err(format!("The FITRON server reported: {e}.")),
+                Health::Failed(e) => break Err(e),
                 Health::NotYet => {}
             }
             if began.elapsed() > START_TIMEOUT {
@@ -180,6 +180,7 @@ fn start(app: AppHandle, window: WebviewWindow) {
                 shell.port.store(port, Ordering::SeqCst);
                 let url = format!("http://127.0.0.1:{port}/login");
                 log.line(&format!("ready: FITRON {version} at http://127.0.0.1:{port} after {} ms", began.elapsed().as_millis()));
+                update::watch(app.clone());
                 match url.parse() {
                     Ok(u) => {
                         if let Err(e) = window.navigate(u) {
@@ -205,9 +206,23 @@ fn start(app: AppHandle, window: WebviewWindow) {
     }
 }
 
+/// Stops the server cleanly (it writes everything into fitron.db), if it is running. On close, and before an update.
+pub(crate) fn stop_server(app: &AppHandle) {
+    let shell = app.state::<Shell>();
+    let taken = shell.server.lock().map(|mut s| s.take()).unwrap_or(None);
+    if let Some(mut s) = taken {
+        shell.log.line(&s.stop(STOP_TIMEOUT));
+    }
+}
+
 fn main() {
     let port = Arc::new(AtomicU16::new(0));
-    let app = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // Updates only in a release built with FITRON's update address and public key (src/update.rs).
+    if let Some((_, key)) = update::configured() {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().pubkey(key).build());
+    }
+    let app = builder
         // One FITRON per Windows user: a second start brings the open window forward instead of starting a second
         // server on the same database.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -217,8 +232,10 @@ fn main() {
                 let _ = w.set_focus();
             }
         }))
-        // Used by the shell itself to open websites in the computer's browser; pages cannot call it (no capabilities).
+        // Used by the shell itself to open websites in the computer's browser, and for its own update questions;
+        // pages cannot call either (no capabilities).
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(move |app| {
             let handle = app.handle().clone();
             let root = data_root(&handle)?;
@@ -233,7 +250,7 @@ fn main() {
             }
             let log = ShellLog::open(&root.join("logs").join("shell.log"));
             log.line(&format!("FITRON {} starting; data folder {}", handle.package_info().version, root.display()));
-            app.manage(Shell { server: Mutex::new(None), port: port.clone(), log, data_root: root, _lock: lock });
+            app.manage(Shell { server: Mutex::new(None), port: port.clone(), log, data_root: root, token: server::new_token(), _lock: lock });
             let b = WebviewWindowBuilder::new(&handle, "main", WebviewUrl::App("index.html".into()))
                 .title(TITLE)
                 .inner_size(1280.0, 800.0)
@@ -247,12 +264,8 @@ fn main() {
         .expect("FITRON could not open its window");
     app.run(|app, event| {
         if let RunEvent::Exit = event {
-            let shell = app.state::<Shell>();
-            let taken = shell.server.lock().map(|mut s| s.take()).unwrap_or(None);
-            if let Some(mut s) = taken {
-                shell.log.line(&s.stop(STOP_TIMEOUT));
-            }
-            shell.log.line("FITRON closed");
+            stop_server(app);
+            app.state::<Shell>().log.line("FITRON closed");
         }
     });
 }
