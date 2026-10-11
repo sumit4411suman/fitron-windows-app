@@ -1,5 +1,6 @@
 import { readdirSync } from "node:fs";
 import path from "node:path";
+import { EDITION } from "./env";
 import { expect, horizontalOverflow, test, watch } from "./support";
 
 // Every page of the console, on a desktop and on a phone: it opens (no redirect, no error page), nothing in the browser
@@ -19,8 +20,10 @@ function pagesUnder(dir: string, prefix = ""): string[] {
 
 // The FITRON team's own screens answer only to the team, not to a gym.
 const TEAM_ONLY = /^\/fitron-admin/;
+// FITRON for Windows' licence (Phase 13): the Cloud Edition has its plan billing instead, and sends this page to Settings.
+const LOCAL_ONLY = /^\/settings\/licence$/;
 const ROUTES = pagesUnder(APP)
-  .filter((r) => !TEAM_ONLY.test(r))
+  .filter((r) => !TEAM_ONLY.test(r) && !(EDITION !== "local" && LOCAL_ONLY.test(r)))
   .sort();
 
 const SIZES = {
