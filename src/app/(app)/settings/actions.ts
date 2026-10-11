@@ -9,8 +9,8 @@ import { cookies } from "next/headers";
 import { BRANCH_COOKIE, requireUser } from "@/lib/auth/current";
 import { reasonInput } from "@/lib/validation/billing";
 import { deleteBranch, putSetting, saveBranch, setBranchActive, saveGymProfile, saveTax as saveTaxSettings } from "@/lib/services/settings";
-import { getWaSettings, sendTest, setLinked } from "@/lib/services/whatsapp";
-import { connectorAddress, connectorLogout, connectorProblem, connectorStatus, providerReady } from "@/lib/integrations/whatsapp";
+import { forgetConnectorAddress, getWaSettings, saveConnectorAddress, sendTest, setLinked } from "@/lib/services/whatsapp";
+import { connectorAddress, connectorLogout, connectorProblem, connectorReady, connectorSite, connectorStatus, providerReady } from "@/lib/integrations/whatsapp";
 import { connectCloud, disconnectCloud, resubmitTemplates } from "@/lib/services/wa-connect";
 import { removeGymLogo, setGymLogo } from "@/lib/services/gym-logo";
 import { aiInput, autopayInput, branchInput, cookieNoticeInput, gymInput, numberingInput, privacyNoticeInput, privacyOfficerInput, reminderInput, reportsInput, taxInput } from "@/lib/validation/settings";
@@ -290,11 +290,30 @@ export async function unlinkAction() {
   const mode = (await getWaSettings(u.orgId)).mode;
   if (mode === "cloud") await disconnectCloud(u);
   else {
-    if (mode === "connector" && !providerReady("connector")) await connectorLogout(u.orgId);
+    if (mode === "connector" && !(await connectorReady(u.orgId))) await connectorLogout(u.orgId);
     await setLinked(u, null, "demo");
   }
   revalidatePath("/", "layout");
   waBack({ msg: "WhatsApp unlinked." });
+}
+
+/** FITRON for Windows: where the gym's WhatsApp connector is (Settings › WhatsApp › Connector). */
+export async function saveConnectorAction(fd: FormData) {
+  const u = await waUser();
+  if (fd.get("forget")) {
+    await forgetConnectorAddress(u);
+    revalidatePath("/", "layout");
+    waBack({ msg: "Connector address forgotten. Messages are saved and not sent until it is entered again." });
+  }
+  let address: string;
+  try {
+    address = await saveConnectorAddress(u, { url: String(fd.get("url") ?? ""), key: String(fd.get("key") ?? "") });
+  } catch (e) {
+    if (e instanceof UserError) waBack({ error: e.message });
+    throw e;
+  }
+  revalidatePath("/", "layout");
+  waBack({ msg: `Connector saved: ${address}. Press Link WhatsApp to scan the QR code.` });
 }
 
 export type ConnectResult = { ok: true; number: string; name: string; submitted: number; failed: number; warnings: string[] } | { ok: false; error: string };
@@ -336,13 +355,14 @@ export type LinkStatus = { state: "offline" | "waiting" | "qr" | "ready"; qr?: s
  */
 export async function linkStatusAction(): Promise<LinkStatus> {
   const u = await waUser();
-  const missing = providerReady("connector");
+  const site = await connectorSite(u.orgId);
+  const missing = providerReady("connector", null, site);
   if (missing) return { state: "offline", text: missing };
   let st: Awaited<ReturnType<typeof connectorStatus>>;
   try {
     st = await connectorStatus(u.orgId, { start: true, gymName: u.orgName });
   } catch (e) {
-    return { state: "offline", text: connectorProblem(e) };
+    return { state: "offline", text: connectorProblem(e, site.url) };
   }
   if (st.state === "ready") {
     const number = (st.number ?? "").replace(/\D/g, "");
@@ -350,7 +370,7 @@ export async function linkStatusAction(): Promise<LinkStatus> {
     if (!(s.mode === "connector" && s.linked?.number === number)) {
       let host = "gym PC";
       try {
-        host = new URL(connectorAddress()).host || host;
+        host = new URL(connectorAddress(site)).host || host;
       } catch {
         // Keep the fallback.
       }

@@ -34,6 +34,7 @@ the loop. What that means in practice, piece by piece, and what checks it.
 | Guessing | Per account: 5 wrong passwords in 15 minutes lock the account, unknown emails included. Per address: 30 a minute on one shared computer. | `src/lib/auth/lockout.ts` |
 | Forgotten owner password | The recovery key shown once at setup (100 bits, stored as an Argon2id hash); using it signs the owner out everywhere, ends a lockout, is audited and replaces the key. | `src/lib/services/local-setup.ts` |
 | Two-step sign-in | TOTP, offline; secrets sealed with BIOMETRIC_KEY. | `src/lib/services/two-step.ts` |
+| WhatsApp connector key | The master key a gym enters under Settings › WhatsApp › Connector is sealed with BIOMETRIC_KEY, never shown again, left out of the audit entry, backups and cloud sync (`whatsapp_connector` is a computer-only setting). The address must be http(s) with nothing but host, port and path. | `src/lib/services/wa-connector-store.ts`, `wa-connector-local.db.test.ts` |
 | Authorization | Every page and every server action calls `requirePermission(...)` for the signed-in user's role; branch scope is applied in the services. | `src/lib/auth/permissions.ts`, `src/lib/auth/current.ts` |
 | Input validation | Every form and action input is parsed with a zod schema before any service runs; amounts are whole paise; the database refuses deletes of financial rows. | `src/lib/validation/*`, the services' tests |
 | Online sign-in | Google, emailed links and codes, and fitron.in sign-up are not offered and their routes redirect. | `src/proxy.ts` |

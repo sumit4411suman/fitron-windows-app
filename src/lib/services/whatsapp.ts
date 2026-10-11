@@ -21,7 +21,8 @@ import { getTax } from "./tax";
 import { todayIso } from "./time";
 import { log } from "@/lib/log";
 import { ci } from "@/lib/db-dialect";
-import { gymAccountingOnly } from "@/lib/runtime/edition";
+import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
+import { getConnectorSite, saveConnectorSite } from "./wa-connector-store";
 
 export type { ReminderSettings };
 export { DEFAULT_REMINDERS };
@@ -61,6 +62,39 @@ export async function setLinked(u: CurrentUser, linked: WaLinked | null, mode: W
     await putSettingIn(tx, u, "whatsapp", { linked, mode });
     await audit(tx, { orgId: u.orgId, userId: u.id, action: linked ? "whatsapp.link" : "whatsapp.unlink", entity: "Setting", entityId: "whatsapp", after: linked });
   });
+}
+
+/**
+ * FITRON for Windows, Settings › WhatsApp › Connector: where the gym's WhatsApp connector runs (an always-on computer or
+ * server on the gym's network, or the internet) and its master key. The key is sealed on this computer and never shown
+ * again; a blank key keeps the saved one. Audited without the key. Not on fitron.in, whose connector is the server's.
+ */
+export async function saveConnectorAddress(u: CurrentUser, input: { url: string; key: string }) {
+  if (!isLocal()) throw new UserError("On fitron.in the connector is set on the server.");
+  const raw = String(input.url ?? "").trim().replace(/\/+$/, "");
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new UserError("Enter the connector's address, for example http://192.168.1.20:3000.", "url");
+  }
+  if (!/^https?:$/.test(url.protocol) || raw.length > 200) throw new UserError("The address must start with http:// or https://.", "url");
+  if (url.username || url.password || url.search || url.hash) throw new UserError("Enter only the address, without a name, password or anything after it.", "url");
+  const typed = String(input.key ?? "").trim();
+  const key = typed || (await getConnectorSite(u.orgId))?.key || "";
+  if (!key) throw new UserError("Enter the connector's key (its WA_CONNECTOR_MASTER_KEY).", "key");
+  if (key.length < 16 || key.length > 200 || /\s/.test(key)) throw new UserError("That does not look like the connector's key: it is one long word of 16 or more characters.", "key");
+  const address = `${url.protocol}//${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+  await saveConnectorSite(u.orgId, { url: address, key });
+  await db.$transaction((tx) => audit(tx, { orgId: u.orgId, userId: u.id, action: "whatsapp.connector", entity: "Setting", entityId: "whatsapp_connector", after: { url: address, keyChanged: !!typed } }));
+  return address;
+}
+
+/** Forgets where the connector is; messages are then saved and not sent until it is entered again. */
+export async function forgetConnectorAddress(u: CurrentUser) {
+  if (!isLocal()) throw new UserError("On fitron.in the connector is set on the server.");
+  await saveConnectorSite(u.orgId, null);
+  await db.$transaction((tx) => audit(tx, { orgId: u.orgId, userId: u.id, action: "whatsapp.connector", entity: "Setting", entityId: "whatsapp_connector", after: { url: null } }));
 }
 
 /** The gym's templates, creating the defaults the first time. */

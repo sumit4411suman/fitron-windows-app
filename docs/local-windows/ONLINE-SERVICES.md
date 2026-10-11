@@ -30,7 +30,7 @@ name: the S3 file bucket and the AI Trainer's push reminders.
 
 | Service | Off until | Sends when on |
 | --- | --- | --- |
-| WhatsApp | A gym user links WhatsApp (Settings › WhatsApp). Messages nobody pressed send for need a second switch, "Send automatic messages" (off). | Each message's text and the member's WhatsApp number, through WhatsApp's servers. Automatic renewal messages attach the invoice PDF (the member's address, your GSTIN), as the switch says. |
+| WhatsApp | A gym user links WhatsApp (Settings › WhatsApp). Messages nobody pressed send for need a second switch, "Send automatic messages" (off). | Each message's text and the member's WhatsApp number, through WhatsApp's servers. Automatic renewal messages attach the invoice PDF (the member's address, your GSTIN), as the switch says. With a linked phone, messages go first to the gym's own WhatsApp connector, at the address the gym entered under Settings › WhatsApp › Connector (its key sealed on this computer). |
 | Email | FITRON sets up a mail server for the installation (SMTP_HOST); the monthly profit and loss also needs its tick in Settings › Reminders (off). | Support tickets a user raises (the message, the user's name, email and role, the System details); the monthly profit and loss to the Super Admins. |
 | Fitron AI | FITRON sets an Anthropic key, and a gym user ticks "Use Claude for fuller answers" (off). | The question, the chat so far, the gym's name, the staff member's name and role, and the records looked up to answer it (named in full next to the tick). |
 | UPI autopay | A gym user picks Live mode, with Razorpay keys set. | Per mandate: the plan name, amount, first debit date and the member's FITRON code. Not the member's name or phone. |

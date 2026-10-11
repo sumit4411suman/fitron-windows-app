@@ -6,7 +6,10 @@ import type { AddressInfo } from "node:net";
 // A stand-in for whatsapp-connector/: the same routes and answers, with gyms, keys and a per-gym session state in memory.
 // The sealed key store is replaced by a map so no database is needed.
 const store = new Map<string, { gymId: string; apiKey: string }>();
+// Where the connector is as FITRON for Windows keeps it (entered in Settings › WhatsApp); fitron.in reads its environment.
+let site: { url: string; key: string } | null = null;
 vi.mock("@/lib/services/wa-connector-store", () => ({
+  getConnectorSite: async () => site,
   getConnectorGym: async (orgId: string) => store.get(orgId) ?? null,
   saveConnectorGym: async (orgId: string, g: { gymId: string; apiKey: string }) => void store.set(orgId, g),
   removeConnectorGym: async (orgId: string) => void store.delete(orgId),
@@ -110,38 +113,49 @@ afterEach(() => {
   gyms = [];
   sessions = {};
   store.clear();
+  site = null;
   sent.length = 0;
   calls.length = 0;
   workerRunning = true;
 });
 
 const load = () => import(".");
-const configure = (key = MASTER) => {
-  vi.stubEnv("WA_CONNECTOR_URL", `http://127.0.0.1:${port}/`);
+/** Points both editions at a connector: the server's settings (fitron.in) and the gym's saved address (Windows). */
+const setBoth = (url: string, key: string) => {
+  vi.stubEnv("WA_CONNECTOR_URL", url);
   vi.stubEnv("WA_CONNECTOR_KEY", key);
+  site = url && key ? { url, key } : null;
 };
+const configure = (key = MASTER) => setBoth(`http://127.0.0.1:${port}/`, key);
 
 describe("self-hosted WhatsApp connector", () => {
-  it("needs both WA_CONNECTOR_URL and WA_CONNECTOR_KEY before a gym can link", async () => {
-    vi.stubEnv("WA_CONNECTOR_URL", "");
-    vi.stubEnv("WA_CONNECTOR_KEY", "");
+  it("needs both an address and a key before a gym can link", async () => {
+    setBoth("", "");
     const wa = await load();
     // FITRON for Windows has no server settings, so it says what to do there instead of naming them.
     const notSetUp = isLocal() ? wa.LOCAL_NEEDS_CONNECTOR : wa.HOSTED_NEEDS_CONNECTOR;
-    expect(wa.providerReady("connector")).toBe(notSetUp);
+    expect(await wa.connectorReady("org_a")).toBe(notSetUp);
     expect(wa.HOSTED_NEEDS_CONNECTOR).toMatch(/WA_CONNECTOR_URL/);
     expect(wa.LOCAL_NEEDS_CONNECTOR).not.toMatch(/WA_CONNECTOR/);
-    vi.stubEnv("WA_CONNECTOR_URL", "https://wa-api.fitron.in");
-    expect((await load()).providerReady("connector")).toBe(notSetUp);
-    vi.stubEnv("WA_CONNECTOR_KEY", "x");
-    expect((await load()).providerReady("connector")).toBeNull();
-    expect((await load()).connectorAddress()).toBe("https://wa-api.fitron.in");
+    expect(wa.LOCAL_NEEDS_CONNECTOR).toMatch(/Settings › WhatsApp/);
+    setBoth("https://wa-api.fitron.in", "");
+    expect(await wa.connectorReady("org_a")).toBe(notSetUp);
+    setBoth("https://wa-api.fitron.in", "x");
+    expect(await wa.connectorReady("org_a")).toBeNull();
+    expect(wa.connectorAddress(await wa.connectorSite("org_a"))).toBe("https://wa-api.fitron.in");
+  });
+
+  it("FITRON for Windows reads only the gym's saved address, never the server's settings; fitron.in the other way round", async () => {
+    const wa = await load();
+    vi.stubEnv("WA_CONNECTOR_URL", "https://from-the-environment.example");
+    vi.stubEnv("WA_CONNECTOR_KEY", "env-key");
+    site = { url: "http://192.168.1.20:3000/", key: "saved-key" };
+    expect(await wa.connectorSite("org_a")).toEqual(isLocal() ? { url: "http://192.168.1.20:3000", key: "saved-key" } : { url: "https://from-the-environment.example", key: "env-key" });
   });
 
   it("rejects an address that is not http(s)", async () => {
-    vi.stubEnv("WA_CONNECTOR_URL", "wa-api.fitron.in");
-    vi.stubEnv("WA_CONNECTOR_KEY", "x");
-    expect((await load()).providerReady("connector")).toMatch(/http/);
+    setBoth("wa-api.fitron.in", "x");
+    expect(await (await load()).connectorReady("org_a")).toMatch(/http/);
   });
 
   it("creates the gym on the connector the first time, keeps its key, and never uses the master key for the gym's calls", async () => {
@@ -219,14 +233,15 @@ describe("self-hosted WhatsApp connector", () => {
     const wa = await load();
     const st = await wa.providerStatus("connector", "org_a");
     expect(st.ok).toBe(false);
-    expect(st.text).toMatch(/WA_CONNECTOR_KEY/);
+    // Where the key is set: the server's WA_CONNECTOR_KEY on fitron.in, the Connector panel on Windows.
+    const where = isLocal() ? /Connector in Settings › WhatsApp/ : /WA_CONNECTOR_KEY/;
+    expect(st.text).toMatch(where);
     const r = await wa.sendWhatsApp("connector", { orgId: "org_a", localId: "x", to: "919876543210", body: "hi" });
-    expect(r).toMatchObject({ status: "Failed", error: expect.stringMatching(/WA_CONNECTOR_KEY/) });
+    expect(r).toMatchObject({ status: "Failed", error: expect.stringMatching(where) });
   });
 
   it("says the connector is not running when nothing answers", async () => {
-    vi.stubEnv("WA_CONNECTOR_URL", "http://127.0.0.1:1");
-    vi.stubEnv("WA_CONNECTOR_KEY", MASTER);
+    setBoth("http://127.0.0.1:1", MASTER);
     const wa = await load();
     const st = await wa.providerStatus("connector", "org_a");
     expect(st).toMatchObject({ ok: false, text: expect.stringContaining("Nothing is answering at http://127.0.0.1:1") });

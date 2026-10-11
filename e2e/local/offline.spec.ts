@@ -164,8 +164,8 @@ test("online-only features say they need the internet or WhatsApp, and never pre
     await expect(page.locator('select[name="mode"]')).toHaveValue(value);
   };
 
-  // A linked phone needs the WhatsApp connector, which FITRON for Windows cannot use yet: the reminder is not sent, the
-  // desk is told why, in red, and nothing tries to reach a connector.
+  // A linked phone needs the WhatsApp connector, and none is entered yet: the reminder is not sent, the desk is told
+  // why, in red, and nothing tries to reach a connector.
   await mode("connector");
   await page.goto(`/members/${memberId}`);
   await page.getByRole("button", { name: "Send payment reminder" }).click();
@@ -179,6 +179,21 @@ test("online-only features say they need the internet or WhatsApp, and never pre
   // Linking WhatsApp sends nothing on its own: the reminders wait for "Send automatic messages" (Phase 12).
   await expect(page.getByText(/note automatic messages are off: nothing sent/).first()).toBeVisible();
   await expect(page.getByText("Churn risk for every member")).toBeVisible();
+
+  // Settings › WhatsApp › Connector: once an address is entered, FITRON goes there, and says when nothing answers.
+  await page.goto("/settings?tab=wa");
+  const connector = page.getByTestId("wa-connector");
+  await connector.getByLabel("Connector address").fill("http://127.0.0.1:9");
+  await connector.getByLabel("Connector key").fill("a-master-key-for-the-connector-0001");
+  await connector.getByRole("button", { name: "Save connector" }).click();
+  await expect(page.getByText(/^Connector saved: http:\/\/127\.0\.0\.1:9\./)).toBeVisible();
+  await expect(page.getByTestId("wa-connector").getByLabel("Connector key")).toHaveValue("");
+  await page.goto(`/members/${memberId}`);
+  await page.getByRole("button", { name: "Send payment reminder" }).click();
+  await expect(page.getByText(/^Payment reminder not sent: Nothing is answering at http:\/\/127\.0\.0\.1:9/)).toBeVisible();
+  await page.goto("/settings?tab=wa");
+  await page.getByTestId("wa-connector").getByRole("button", { name: "Forget it" }).click();
+  await expect(page.getByText(/^Connector address forgotten/)).toBeVisible();
 
   // Not linked (demo): the reminder is saved, and called "not sent".
   await mode("demo");

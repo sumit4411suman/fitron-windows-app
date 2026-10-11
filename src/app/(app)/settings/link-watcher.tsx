@@ -11,7 +11,7 @@ type View = LinkStatus["state"] | "checking";
  * The Link WhatsApp dialog's live part: asks the server for the connector's state every few seconds
  * (a bit slower while it is offline), shows the QR code, and moves on once the phone is linked.
  */
-/** `onAComputer`: FITRON for Windows, which does not ship the connector yet (it needs Node.js, which customers must not install). */
+/** `onAComputer`: FITRON for Windows, which does not run the connector itself; the gym enters where one runs (Settings › WhatsApp › Connector). */
 export function LinkWatcher({ envMessage, address, hosted, onAComputer = false }: { envMessage: string | null; address: string; hosted: boolean; onAComputer?: boolean }) {
   const router = useRouter();
   const [st, setSt] = useState<{ state: View; qr?: string; text: string; problem?: string }>({ state: "checking", text: "" });
@@ -65,11 +65,18 @@ export function LinkWatcher({ envMessage, address, hosted, onAComputer = false }
       <div className="flex items-start gap-3.5">
         <PlugsIcon size={30} weight="duotone" className="flex-none text-accent" />
         <div className="flex flex-col gap-1.5 text-sm leading-relaxed">
-          <strong>Linking the gym phone is not in FITRON for Windows yet</strong>
+          <strong>{envMessage ? "Tell FITRON where the WhatsApp connector is" : "The WhatsApp connector is not answering"}</strong>
           <span>
-            Until it is, choose <strong>Not linked</strong> as the sending mode: every message is saved in FITRON and nothing is sent. Or use <strong>WhatsApp Business (official, Meta)</strong>, which sends when the computer is online. Messages to members never need the internet for the rest of FITRON to work.
+            A linked gym phone sends through the FITRON WhatsApp connector, which runs on another always-on computer or server (its setup is in <code>whatsapp-connector/README.md</code>). Enter its address and key under <strong>Connector</strong> on this page; the QR code then appears here by itself.
           </span>
-          <span className="text-xs text-muted">If a FITRON connector is already running at <code>{address}</code>, the QR code appears here by itself.</span>
+          {!envMessage && (
+            <span>
+              FITRON looks for it at <code>{address}</code>. Check that it is running and that this computer can reach it.
+            </span>
+          )}
+          <span className="text-xs text-muted">
+            Without a connector, choose <strong>Not linked</strong> (every message is saved in FITRON, nothing is sent) or <strong>WhatsApp Business (official, Meta)</strong>, which sends when the computer is online.
+          </span>
           {(envMessage || st.text) && <span className="text-xs text-alert">{envMessage ?? st.text}</span>}
         </div>
       </div>
