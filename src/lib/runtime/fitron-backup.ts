@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -9,7 +9,7 @@ import Database from "better-sqlite3";
 import { encryptionHeader, fileKind, openEncrypted } from "./backup-crypto";
 import { integrityCheck, listMigrations, migrateLocal, MIGRATIONS_TABLE } from "./local-migrate";
 import { dataDirs, type DataDirs } from "./paths";
-import { secretsFile } from "./local-secrets";
+import { readLocalSecrets, writeRestoredSecrets } from "./local-secrets";
 import { readTar, safeEntryPath, TarWriter } from "./tar";
 
 // FITRON Local Edition backups: one .fitronbackup file holds the whole installation.
@@ -128,14 +128,10 @@ export async function createLocalBackup(o: CreateOptions): Promise<CreatedBackup
     // 2. What goes in, with each entry's size and hash.
     const entries: { path: string; abs?: string; body?: Buffer }[] = [{ path: "data/fitron.db", abs: snapshot }];
     for (const f of await walk(dirs.documents)) entries.push({ path: `documents/${f.rel}`, abs: f.abs });
-    let installationId = o.installationId ?? "";
-    try {
-      const secrets = JSON.parse(await readFile(secretsFile(dirs.root), "utf8")) as { installationId?: string; BIOMETRIC_KEY?: string };
-      installationId ||= secrets.installationId ?? "";
-      if (secrets.BIOMETRIC_KEY) entries.push({ path: "keys/biometric.key", body: Buffer.from(secrets.BIOMETRIC_KEY, "utf8") });
-    } catch {
-      // No key file yet (a brand-new installation): nothing to carry.
-    }
+    // The installation id and the two-step key go with the backup (a replacement laptop needs the key).
+    const secrets = readLocalSecrets(dirs.root);
+    const installationId = o.installationId || secrets.installationId || "";
+    if (secrets.BIOMETRIC_KEY) entries.push({ path: "keys/biometric.key", body: Buffer.from(secrets.BIOMETRIC_KEY, "utf8") });
     const files: ManifestFile[] = [];
     for (const e of entries) {
       if (!safeEntryPath(e.path)) throw new BackupError(`A file name cannot go into a backup: ${e.path}`);
@@ -350,15 +346,7 @@ export async function restoreLocalBackup(o: RestoreOptions): Promise<RestoreResu
     await rm(aside, { recursive: true, force: true });
     // Two-step key: the restored staff secrets were sealed with the backup's key.
     const key = path.join(work, "keys", "biometric.key");
-    if (existsSync(key)) {
-      const value = (await readFile(key, "utf8")).trim();
-      const sf = secretsFile(dirs.root);
-      const secrets = existsSync(sf) ? (JSON.parse(await readFile(sf, "utf8")) as Record<string, string>) : {};
-      secrets.BIOMETRIC_KEY = value;
-      await writeFile(`${sf}.tmp`, JSON.stringify(secrets, null, 2), { mode: 0o600 });
-      await rename(`${sf}.tmp`, sf);
-      process.env.BIOMETRIC_KEY = value;
-    }
+    if (existsSync(key)) writeRestoredSecrets(dirs.root, process.env, { BIOMETRIC_KEY: (await readFile(key, "utf8")).trim() });
 
     // 6–7. Everyone was signed out inside the copy (the sessions in a backup are old); check what is now live.
     const after = integrityCheck(liveDb);

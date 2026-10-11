@@ -13,6 +13,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod nav;
+mod secrets;
 mod server;
 mod shell_log;
 mod update;
@@ -44,6 +45,8 @@ pub(crate) struct Shell {
     data_root: PathBuf,
     /// The secret for the shell's own requests to its server (server::new_token).
     pub(crate) token: String,
+    /// The installation's secrets, unsealed for this start (src/secrets.rs).
+    secrets: secrets::Secrets,
     /// Held while FITRON is open (see setup).
     _lock: std::fs::File,
 }
@@ -154,7 +157,7 @@ fn start(app: AppHandle, window: WebviewWindow) {
             Err(e) => return failed(format!("No free port on this computer ({e}).")),
         };
         let instance = server::new_instance_id();
-        let srv = match server::spawn(&l, port, &instance, &shell.token) {
+        let srv = match server::spawn(&l, port, &instance, &shell.token, &shell.secrets.env()) {
             Ok(s) => s,
             Err(e) => return failed(format!("The FITRON server could not be started ({e}).")),
         };
@@ -250,7 +253,10 @@ fn main() {
             }
             let log = ShellLog::open(&root.join("logs").join("shell.log"));
             log.line(&format!("FITRON {} starting; data folder {}", handle.package_info().version, root.display()));
-            app.manage(Shell { server: Mutex::new(None), port: port.clone(), log, data_root: root, token: server::new_token(), _lock: lock });
+            let now = shell_log::utc(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
+            let (secrets, how) = secrets::load_or_create(&root, &now)?;
+            log.line(&format!("secrets: {how:?}"));
+            app.manage(Shell { server: Mutex::new(None), port: port.clone(), log, data_root: root, token: server::new_token(), secrets, _lock: lock });
             let b = WebviewWindowBuilder::new(&handle, "main", WebviewUrl::App("index.html".into()))
                 .title(TITLE)
                 .inner_size(1280.0, 800.0)
@@ -268,4 +274,38 @@ fn main() {
             app.state::<Shell>().log.line("FITRON closed");
         }
     });
+}
+
+#[cfg(test)]
+mod hardening {
+    //! What the window may do is decided by src-tauri/tauri.conf.json (Phase 19, docs/local-windows/SECURITY.md).
+
+    fn config() -> serde_json::Value {
+        serde_json::from_str(include_str!("../tauri.conf.json")).expect("tauri.conf.json is JSON")
+    }
+
+    #[test]
+    fn pages_get_no_capabilities_and_no_global_tauri() {
+        let c = config();
+        assert_eq!(c["app"]["security"]["capabilities"], serde_json::json!([]), "no page may call into the shell");
+        assert_eq!(c["app"]["withGlobalTauri"], serde_json::json!(false));
+        assert!(!std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/capabilities")).exists(), "a capabilities folder would grant permissions");
+    }
+
+    #[test]
+    fn the_start_up_page_is_locked_down() {
+        let csp = config()["app"]["security"]["csp"].as_str().expect("a CSP for the shell's own page").to_string();
+        for must in ["default-src 'self'", "connect-src 'none'", "object-src 'none'", "base-uri 'none'", "form-action 'none'"] {
+            assert!(csp.contains(must), "{must}");
+        }
+        assert!(!csp.contains("unsafe-inline") && !csp.contains("unsafe-eval"));
+    }
+
+    #[test]
+    fn the_installer_asks_for_no_administrator_and_no_downgrade() {
+        let c = config();
+        assert_eq!(c["bundle"]["windows"]["nsis"]["installMode"], serde_json::json!("currentUser"));
+        assert_eq!(c["bundle"]["windows"]["allowDowngrades"], serde_json::json!(false));
+        assert_eq!(c["plugins"]["updater"]["requireSignedVersion"], serde_json::json!(true));
+    }
 }

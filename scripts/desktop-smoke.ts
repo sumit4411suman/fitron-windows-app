@@ -121,6 +121,13 @@ async function main() {
     for (const d of ["data", "backups", "documents", "logs"]) if (!existsSync(path.join(dataDir, d))) throw new Error(`no ${d} folder`);
     if (!existsSync(path.join(dataDir, "data", "fitron.db"))) throw new Error("no database");
     ok("data folder resolved and made, database created");
+    // The installation's secrets: sealed with DPAPI on Windows, never in clear there (Phase 19).
+    if (win) {
+      if (!existsSync(path.join(dataDir, "secrets.dpapi"))) throw new Error("no secrets.dpapi: the secrets were not sealed");
+      if (existsSync(path.join(dataDir, "secrets.json"))) throw new Error("secrets.json in clear beside the sealed secrets");
+      if (readFileSync(path.join(dataDir, "secrets.dpapi")).includes("BIOMETRIC_KEY")) throw new Error("secrets.dpapi holds the secrets in clear");
+      ok("secrets sealed with DPAPI (secrets.dpapi), no secrets.json in clear");
+    } else if (!existsSync(path.join(dataDir, "secrets.json"))) throw new Error("no secrets.json");
     for (const a of networkAddresses()) if (await answers(port, a)) throw new Error(`answers on the network address ${a}`);
     ok(`listens on 127.0.0.1 only (not on ${networkAddresses().join(", ") || "any network address"})`);
     await until("FITRON's window", 30_000, () => windowShown(first.child.pid!));
