@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
+import { isLocal } from "@/lib/runtime/edition";
 import type { AddressInfo } from "node:net";
 
 // A stand-in for whatsapp-connector/: the same routes and answers, with gyms, keys and a per-gym session state in memory.
@@ -125,10 +126,13 @@ describe("self-hosted WhatsApp connector", () => {
     vi.stubEnv("WA_CONNECTOR_URL", "");
     vi.stubEnv("WA_CONNECTOR_KEY", "");
     const wa = await load();
-    expect(wa.providerReady("connector")).toBe(wa.HOSTED_NEEDS_CONNECTOR);
+    // FITRON for Windows has no server settings, so it says what to do there instead of naming them.
+    const notSetUp = isLocal() ? wa.LOCAL_NEEDS_CONNECTOR : wa.HOSTED_NEEDS_CONNECTOR;
+    expect(wa.providerReady("connector")).toBe(notSetUp);
     expect(wa.HOSTED_NEEDS_CONNECTOR).toMatch(/WA_CONNECTOR_URL/);
+    expect(wa.LOCAL_NEEDS_CONNECTOR).not.toMatch(/WA_CONNECTOR/);
     vi.stubEnv("WA_CONNECTOR_URL", "https://wa-api.fitron.in");
-    expect((await load()).providerReady("connector")).toBe(wa.HOSTED_NEEDS_CONNECTOR);
+    expect((await load()).providerReady("connector")).toBe(notSetUp);
     vi.stubEnv("WA_CONNECTOR_KEY", "x");
     expect((await load()).providerReady("connector")).toBeNull();
     expect((await load()).connectorAddress()).toBe("https://wa-api.fitron.in");

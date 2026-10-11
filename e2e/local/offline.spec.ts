@@ -164,17 +164,18 @@ test("online-only features say they need the internet or WhatsApp, and never pre
     await expect(page.locator('select[name="mode"]')).toHaveValue(value);
   };
 
-  // The linked phone's connector is not running: the reminder is not sent, and the desk is told why, in red.
+  // A linked phone needs the WhatsApp connector, which FITRON for Windows cannot use yet: the reminder is not sent, the
+  // desk is told why, in red, and nothing tries to reach a connector.
   await mode("connector");
   await page.goto(`/members/${memberId}`);
   await page.getByRole("button", { name: "Send payment reminder" }).click();
-  await expect(page.getByText(/^Payment reminder not sent: Nothing is answering at http:\/\/127\.0\.0\.1:3131/)).toBeVisible();
+  await expect(page.getByText(/^Payment reminder not sent: WhatsApp through a linked phone needs the FITRON WhatsApp connector/)).toBeVisible();
 
   // The daily jobs that send on WhatsApp wait for it, without failing or alerting; the rest run.
   await page.goto("/settings/jobs");
   await page.getByRole("button", { name: /Run (today's jobs now|anything left for today)/ }).click();
   await expect(page.getByText("Waiting, and tried again within the hour:")).toBeVisible();
-  await expect(page.getByText(/^Send messages held by quiet hours: Nothing is answering at/)).toBeVisible();
+  await expect(page.getByText(/^Send messages held by quiet hours: WhatsApp through a linked phone needs the FITRON WhatsApp connector/)).toBeVisible();
   // Linking WhatsApp sends nothing on its own: the reminders wait for "Send automatic messages" (Phase 12).
   await expect(page.getByText(/note automatic messages are off: nothing sent/).first()).toBeVisible();
   await expect(page.getByText("Churn risk for every member")).toBeVisible();

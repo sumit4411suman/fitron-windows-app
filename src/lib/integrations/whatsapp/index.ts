@@ -40,9 +40,16 @@ const sharedCloud = (): CloudCreds | null => (!gymAccountingOnly() && env("WHATS
 /** The connector is a separate deployment (whatsapp-connector/); until the Fitron server knows where it is, linking cannot start. */
 export const HOSTED_NEEDS_CONNECTOR = "The WhatsApp connector is not set up yet. Deploy whatsapp-connector/ on an always-on server, then set WA_CONNECTOR_URL (its https address, e.g. https://wa-api.fitron.in) and WA_CONNECTOR_KEY (its WA_CONNECTOR_MASTER_KEY) on the Fitron server (whatsapp-connector/README.md).";
 
+/**
+ * FITRON for Windows has no server settings to point at a connector (the desktop program starts its server with a clean
+ * environment), so a linked phone cannot be used from it yet; it says so, and never tries to reach one.
+ */
+export const LOCAL_NEEDS_CONNECTOR =
+  "WhatsApp through a linked phone needs the FITRON WhatsApp connector, which FITRON for Windows cannot use yet. Connect a WhatsApp Business number through Meta instead (Settings › WhatsApp), or leave WhatsApp not linked so messages are saved here.";
+
 export const providerReady = (mode: WaMode, cloud?: CloudCreds | null): string | null => {
   if (mode === "cloud" && !cloud && !sharedCloud()) return "This gym has not connected its WhatsApp Business number yet. Press Connect WhatsApp in Settings › WhatsApp.";
-  if (mode === "connector" && (!env("WA_CONNECTOR_URL") || !env("WA_CONNECTOR_KEY"))) return HOSTED_NEEDS_CONNECTOR;
+  if (mode === "connector" && (!env("WA_CONNECTOR_URL") || !env("WA_CONNECTOR_KEY"))) return isLocal() ? LOCAL_NEEDS_CONNECTOR : HOSTED_NEEDS_CONNECTOR;
   if (mode === "connector" && env("WA_CONNECTOR_URL") && !/^https?:\/\//i.test(env("WA_CONNECTOR_URL"))) return "WA_CONNECTOR_URL must start with http:// or https://.";
   return null;
 };
