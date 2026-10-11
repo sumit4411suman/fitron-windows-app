@@ -1712,3 +1712,129 @@ model StoredFile {
   size        Int
   createdAt   DateTime @default(now()) @db.Timestamptz
 }
+
+// ── Cloud sync between fitron.in and FITRON for Windows (docs/local-windows/SYNC.md) ──────────────────────────────────
+// Both databases carry every sync table; each side uses the ones it needs (noted per model).
+
+/// One change to a synced record, written by the table's trigger in the same transaction as the change (the outbox).
+/// fitron.in: every change of every gym, with the record's data; `seq` orders them and is the record's version.
+/// The computer: its own changes waiting to go up (status PENDING), without data (it is read when uploaded).
+model SyncChange {
+  seq       BigInt   @id @default(autoincrement())
+  /// Random per change; the idempotency key of an upload
+  changeId  String   @unique
+  orgId     String
+  entity    String
+  /// The record's key: its id, or a composite key joined by "|"
+  entityId  String
+  /// upsert | delete
+  op        String
+  /// fitron.in: the record as it is after the change (fields that never sync left out); null for a delete
+  data      Json?
+  /// cloud | device:<SyncDevice.id> on fitron.in; local on the computer
+  origin    String   @default("cloud")
+  /// The computer: PENDING | DONE | REJECTED | CONFLICT. fitron.in: DONE
+  status    String   @default("DONE")
+  /// Why an upload was refused, in words for the owner
+  error     String?
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([orgId, seq])
+  @@index([orgId, entity, entityId, seq])
+  @@index([status, seq])
+}
+
+/// fitron.in: a computer linked to a gym. The device token is shown once, at linking; only its hash is kept.
+model SyncDevice {
+  id             String    @id @default(cuid())
+  orgId          String
+  name           String
+  /// The computer's number within the gym (1, 2…): its invoices and payments use their own number range
+  deviceNo       Int
+  tokenHash      String    @unique
+  /// The Super Admin who linked it; the computer's uploads are checked against that person's role
+  linkedById     String
+  installationId String?
+  linkedAt       DateTime  @default(now()) @db.Timestamptz
+  lastSeenAt     DateTime? @db.Timestamptz
+  /// The last change the computer confirmed it has
+  pulledSeq      BigInt    @default(0)
+  /// Set when the gym's records were replaced wholesale (a restore): the computer downloads the gym again
+  resyncAt       DateTime? @db.Timestamptz
+  revokedAt      DateTime? @db.Timestamptz
+
+  @@unique([orgId, deviceNo])
+  @@index([orgId])
+}
+
+/// fitron.in: an upload already applied, by its change id, with the answer given, so a retry is answered, never applied twice.
+model SyncApplied {
+  changeId  String   @id
+  orgId     String
+  deviceId  String
+  result    Json
+  appliedAt DateTime @default(now()) @db.Timestamptz
+
+  @@index([orgId, appliedAt])
+}
+
+/// The computer: its link to fitron.in (one row, id 1). The device token is sealed with the installation's key.
+model SyncState {
+  id            Int       @id @default(1)
+  /// 1 once linked: the change-capture triggers record nothing before
+  linked        Boolean   @default(false)
+  cloudUrl      String    @default("")
+  orgId         String    @default("")
+  deviceId      String    @default("")
+  deviceNo      Int       @default(0)
+  token         Bytes?
+  linkedEmail   String    @default("")
+  linkedAt      DateTime? @db.Timestamptz
+  /// The last fitron.in change applied here
+  pulledSeq     BigInt    @default(0)
+  /// Download the whole gym again before the next incremental pull (after a restore on either side)
+  needsSnapshot Boolean   @default(false)
+  lastPushAt    DateTime? @db.Timestamptz
+  lastPullAt    DateTime? @db.Timestamptz
+  lastOkAt      DateTime? @db.Timestamptz
+  lastError     String?
+  failures      Int       @default(0)
+  /// The highest fitron.in change applied here, for the screen to know new data arrived
+  appliedSeq    BigInt    @default(0)
+}
+
+/// The computer: the fitron.in version (SyncChange.seq) of each record it last received, sent back with an upload so
+/// the server can tell whether the website changed the record meanwhile. A record without a row is at version 0.
+model SyncVersion {
+  entity   String
+  entityId String
+  version  BigInt
+
+  @@id([entity, entityId])
+}
+
+/// A change that met a different change to the same record: both versions kept for the owner (SYNC.md §6).
+model SyncConflict {
+  id           String    @id @default(cuid())
+  orgId        String
+  entity       String
+  entityId     String
+  /// merged | kept-website | kept-computer | deleted
+  kind         String
+  /// The computer's version of the record
+  ours         Json?
+  /// fitron.in's version of the record
+  theirs       Json?
+  /// The fields both sides changed
+  fields       String    @default("")
+  deviceId     String    @default("")
+  changeId     String    @default("")
+  openedAt     DateTime  @default(now()) @db.Timestamptz
+  resolvedAt   DateTime? @db.Timestamptz
+  resolvedById String?
+  resolution   String?
+
+  @@index([orgId, resolvedAt])
+  @@index([entity, entityId])
+}
