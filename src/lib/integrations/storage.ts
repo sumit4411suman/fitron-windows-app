@@ -2,6 +2,8 @@ import "server-only";
 import { createHash, createHmac } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isLocal } from "@/lib/runtime/edition";
+import { localStorageDir } from "@/lib/runtime/paths";
 
 // Private file storage. With S3_* set it uses any S3-compatible bucket (AWS S3, Cloudflare R2,
 // DigitalOcean Spaces, MinIO); otherwise files go to a folder on the server (STORAGE_DIR, default
@@ -13,6 +15,8 @@ const env = (k: string) => process.env[k]?.trim() || "";
 export type S3Config = { endpoint: string; bucket: string; region: string; accessKeyId: string; secretAccessKey: string };
 
 function s3Config(): S3Config | null {
+  // The Local Edition never sends a gym's files to a bucket, whatever the environment says.
+  if (isLocal()) return null;
   const c = { endpoint: env("S3_ENDPOINT"), bucket: env("S3_BUCKET"), region: env("S3_REGION") || "auto", accessKeyId: env("S3_ACCESS_KEY_ID"), secretAccessKey: env("S3_SECRET_ACCESS_KEY") };
   return c.endpoint && c.bucket && c.accessKeyId && c.secretAccessKey ? c : null;
 }
@@ -60,8 +64,10 @@ async function s3(c: S3Config, method: "PUT" | "GET" | "DELETE", key: string, bo
 // The folder is only known at run time (STORAGE_DIR) and is only used on a server with a disk. The ignore comments tell the
 // bundler so: without them it warns, and treats every file in the project as one this code might read, so on Vercel each
 // function would carry the whole project.
+const diskRoot = () => (isLocal() ? localStorageDir() : env("STORAGE_DIR") || "storage");
 const diskPath = (key: string) => {
-  const root = path.resolve(/*turbopackIgnore: true*/ env("STORAGE_DIR") || "storage");
+  // The Local Edition keeps files in the customer's data folder (…\\FITRON\\documents), never beside the program.
+  const root = path.resolve(/*turbopackIgnore: true*/ diskRoot());
   const p = path.resolve(root, key);
   if (!p.startsWith(root + path.sep)) throw new Error("Bad storage key");
   return p;

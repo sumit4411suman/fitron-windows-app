@@ -69,7 +69,7 @@ test.describe("the plan chosen on the site is the plan the gym gets", () => {
         [gym.email],
       );
       expect(org?.plan).toBe(plan);
-      expect(org?.trial, "a free trial is running").toBe(true);
+      expect(Boolean(org?.trial), "a free trial is running").toBe(true);
       // The account menu says the trial is running, and the billing page says until when.
       await page.getByRole("button", { name: "Account menu" }).click();
       await expect(page.getByRole("menuitem", { name: /Plan & billing/ })).toContainText("Free trial");

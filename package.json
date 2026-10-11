@@ -17,7 +17,8 @@
     "db:seed": "prisma db seed",
     "setup": "tsx scripts/setup.ts",
     "test:local": "tsx scripts/test-local.ts",
-    "db:local-schema": "tsx scripts/local-schema.ts && prisma generate --schema prisma/schema.local.prisma"
+    "db:local-schema": "tsx scripts/local-schema.ts && prisma generate --schema prisma/schema.local.prisma",
+    "e2e:local": "tsx scripts/e2e-local.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",

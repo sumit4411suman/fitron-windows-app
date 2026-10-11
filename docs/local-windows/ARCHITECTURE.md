@@ -260,3 +260,47 @@ No existing failures were found in any check; the two lint warnings pre-date thi
    never sets.
 5. **Concurrency.** SQLite serialises writers. The app's transactions are short except
    restore and import (minutes); those are explicitly single-user operations already.
+
+## 6. The owner's architecture diagram, mapped to this code
+
+The FITRON owner's diagram "FITRON Gym Accounting: Complete System Architecture" (Cloud + Windows Desktop)
+is the target. Each of its boxes, and where it lives here:
+
+| Diagram box | Implementation | Status |
+| --- | --- | --- |
+| Shared Code & Business Logic (UI components, domain logic, types, business rules, tests) | `src/components`, `src/lib/domain`, `src/lib/services`, `src/lib/validation`; one copy, used by both editions | Done: the whole test suite runs on both databases |
+| Cloud Edition: Next.js + PostgreSQL | unchanged; `FITRON_EDITION` unset | Unchanged, all tests pass |
+| Windows Desktop Edition: Tauri 2 shell | `desktop/src-tauri` | Phase 14 |
+| Local Application Layer: business logic, data access (Prisma), local file and backup management | the same Next.js server run by the shell on 127.0.0.1; `src/lib/runtime`, `src/lib/db.ts`, `src/lib/integrations/storage.ts` | Data access and files done; backup Phase 10 |
+| Local Database: SQLite on the PC | `prisma/schema.local.prisma`, `prisma/local-migrations`, `%LOCALAPPDATA%\FITRON\data\fitron.db` | Done |
+| Database Schemas, separate but compatible | `prisma/schema.prisma` and the generated `prisma/schema.local.prisma` | Done |
+| Local Integrations (optional): WhatsApp, email, printer, export files | `src/lib/integrations/*` behind an availability check; printing and PDF/Excel exports work offline | Exports done; printer Phase 17; online services Phase 12 |
+| Optional Cloud Sync (two-way, user controlled, can be disabled) | not in the source today; designed after the Local Edition ships (section 7) | Planned, off by default |
+| Encrypted database (optional) | SQLCipher build of SQLite, key in Windows DPAPI | Planned with Phase 19 |
+| Local Backup & Restore: `.fitronbackup`, encrypted file, manual or scheduled | Phase 10 | Planned |
+| Security: local data, signed updates, no mandatory internet | Phases 13, 18, 19 | Planned |
+| Multi-Gym Support: single or multiple gyms, switch between gyms | already multi-tenant (`orgId` on every table); one file holds several gyms, sign-in picks the gym. Separate files per gym (optional) is a later switch in the shell | Single file: done. Separate files: planned |
+| Application Updates: check, download signed, install, keep user data | Phase 18 (Tauri updater + pre-update backup) | Planned |
+| Deployment: Windows installer, auto updates, no data loss, uninstall keeps data | Phases 15, 16, 18 | Planned |
+
+### The one deliberate difference: where the business logic runs
+
+The diagram's Local Application Layer reads "Rust Commands (Tauri)". In this build the business logic stays
+in TypeScript and runs in a bundled Node.js process (the Tauri sidecar); Rust is used only for the shell's own
+jobs (start and stop the server, printing, file dialogs, updates, single-instance lock). Reasons:
+
+- The business rules are 134 TypeScript service modules and 1,348 tests. Porting them to Rust would be the
+  "rebuild from scratch" the brief rules out, and would leave two copies of every GST and invoice rule to keep
+  equal.
+- With the sidecar, the Cloud and Desktop editions run the same code, so a fix to an invoice rule reaches both.
+- The customer still installs nothing else: `node.exe` ships inside the installer, listens on 127.0.0.1 only,
+  and stops when FITRON closes.
+
+## 7. Optional Cloud Sync (later)
+
+Not part of 1.0. When built, it will be off by default and switched on by the owner, sending only the gym's
+own records to the gym's own FITRON Cloud account. It needs, per table, a change log (row id, version,
+updated-at) and a conflict rule. Money records are append-only (invoices are cancelled, payments reversed,
+never edited), which makes them conflict-free to merge; settings and member details need last-writer-wins
+with an audit entry. Numbering (invoice numbers) must stay gap-free per branch, so each device would get its
+own invoice prefix before sync is enabled.

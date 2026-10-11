@@ -45,11 +45,11 @@ describe.skipIf(!hasDb || !isLocal())("Local Edition vertical slice (SQLite)", (
     expect(sale.payment).toMatchObject({ amount: 100000, method: "UPI", status: "SUCCESS" });
     expect(toIso(sale.membership.startDate)).toBe(today);
 
-    let inv = await getInvoice(admin, sale.invoice.id);
+    let inv = (await getInvoice(admin, sale.invoice.id))!;
     expect(invoiceState({ total: inv.total, cancelled: false, dueDate: toIso(inv.dueDate) }, inv.payments.map((p) => ({ amount: p.amount, status: p.status as "SUCCESS" })), today)).toMatchObject({ paid: 100000, balance: 76882, status: "PARTIALLY_PAID" });
 
     await collectPayment(admin, sale.invoice.id, { amount: 76882, method: "Cash", date: today });
-    inv = await getInvoice(admin, sale.invoice.id);
+    inv = (await getInvoice(admin, sale.invoice.id))!;
     expect(invoiceState({ total: inv.total, cancelled: false, dueDate: toIso(inv.dueDate) }, inv.payments.map((p) => ({ amount: p.amount, status: p.status as "SUCCESS" })), today)).toMatchObject({ paid: 176882, balance: 0, status: "PAID" });
 
     const h = await memberHistory(admin, member.id);
