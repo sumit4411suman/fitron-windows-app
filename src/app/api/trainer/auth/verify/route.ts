@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { appUrl } from "@/lib/services/accounts";
 import { redeemTrainerLink } from "@/lib/services/trainer";
 import { createTrainerSession } from "@/lib/services/trainer-session";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 // The link from the sign-in email. Opening it (GET) only shows a "Sign in" button: mail scanners
 // that open every link would otherwise use up the one-time token before the member taps it.
@@ -11,6 +12,8 @@ const TOKEN = /^[A-Za-z0-9_-]{20,100}$/;
 const to = (path: string) => NextResponse.redirect(new URL(path, appUrl()), 303);
 
 export function GET(req: NextRequest) {
+  const off = notInLocal();
+  if (off) return off;
   const token = req.nextUrl.searchParams.get("token") ?? "";
   if (!TOKEN.test(token)) return to("/trainer?link=expired");
   const html = `<!doctype html>
@@ -37,6 +40,8 @@ export function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const off = notInLocal();
+  if (off) return off;
   // Only our own page may use a token, so another site can't sign a visitor into someone else's account.
   const sameSite = req.headers.get("origin") === new URL(appUrl()).origin || req.headers.get("sec-fetch-site") === "same-origin";
   if (!sameSite) return to("/trainer?link=expired");

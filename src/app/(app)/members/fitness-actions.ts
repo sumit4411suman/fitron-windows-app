@@ -11,6 +11,7 @@ import { getMember } from "@/lib/services/members";
 import { sendTemplate } from "@/lib/services/whatsapp";
 import { planMessage } from "@/lib/domain/programs";
 import { UserError } from "@/lib/services/errors";
+import { outcomeTone, sendOutcome } from "@/lib/domain/wa-outcome";
 
 export async function assignAction(memberId: string, _: FormState, fd: FormData): Promise<FormState> {
   const u = await requirePermission("members.view");
@@ -34,7 +35,7 @@ export async function sendPlanAction(memberId: string) {
   if (!workout && !diet) return back(memberId, { msg: "Assign a workout or diet plan first." });
   const sent = await sendTemplate({ orgId: u.orgId, memberId, key: "campaign", userId: u.id, force: true, body: planMessage({ workout, dietName: diet?.name ?? null }) });
   revalidatePath(`/members/${memberId}`);
-  back(memberId, { msg: !sent ? "Plan could not be sent." : sent.status === "Failed" ? `Plan could not be sent: ${sent.error}` : "Plan sent on WhatsApp." });
+  back(memberId, { msg: sendOutcome("Plan", sent, "Plan not sent: this member has no WhatsApp on file."), tone: outcomeTone(sent) });
 }
 
 export async function measureAction(memberId: string, fd: FormData) {

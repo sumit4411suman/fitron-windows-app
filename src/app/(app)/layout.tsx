@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser, upgradePath } from "@/lib/auth/current";
 import { NAV } from "@/lib/nav";
-import { isLocal } from "@/lib/runtime/edition";
+import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
 import { NavLinks } from "@/components/nav-links";
 import { MobileNav } from "@/components/mobile-nav";
 import { MobileTabBar } from "@/components/mobile-tabbar";
@@ -118,7 +118,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
                 branch: u.branch === "ALL" ? "All branches" : (u.branches.find((b) => b.id === u.branch)?.name ?? ""),
                 photo: photoUrl(u.id, u.photoKey),
                 canSettings: canPay,
-                plan: s.kind === "PAID" ? "Active" : s.kind === "TRIAL" ? "Free trial" : "Locked",
+                plan: gymAccountingOnly() ? null : s.kind === "PAID" ? "Active" : s.kind === "TRIAL" ? "Free trial" : "Locked",
               }}
             />
           </div>
@@ -134,7 +134,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         email={u.email}
         sections={Object.fromEntries(groups.flatMap((g) => g.items.filter((i) => !i.locked).map((i) => [i.icon, i.href])))}
       />
-      <CookieBanner />
+      {/* FITRON for Windows sets no analytics or website cookies, so it asks nothing about them. */}
+      {!local && <CookieBanner />}
     </div>
   );
 }

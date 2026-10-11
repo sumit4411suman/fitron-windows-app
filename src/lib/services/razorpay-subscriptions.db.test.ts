@@ -614,14 +614,15 @@ describe.skipIf(!hasDb)("Razorpay subscriptions for AI Trainer members (database
     const owner = await gym.user("Super Admin");
     const month = new Date().toISOString().slice(0, 7);
     const paidAt = new Date();
-    const make = async (gstIncluded: boolean) => {
+    // The list is in payment order, so the two are paid a millisecond apart: at the same instant their order is the database's choice.
+    const make = async (gstIncluded: boolean, at: Date) => {
       const m = await findOrCreateTrainer(`t-${uid()}@test.local`, "EMAIL");
       await db.trainerMember.update({ where: { id: m.id }, data: { orgId: gym.org.id } });
       const money = gstIncluded ? { base: 25_339, gst: 4_561, total: 29_900 } : { base: 29_900, gst: 5_382, total: 35_282 };
-      await db.trainerPayment.create({ data: { memberId: m.id, plan: "ai-pro", cycle: "MONTHLY", kind: "purchase", ...money, gstIncluded, mode: "UPI", status: "PAID", paidAt } });
+      await db.trainerPayment.create({ data: { memberId: m.id, plan: "ai-pro", cycle: "MONTHLY", kind: "purchase", ...money, gstIncluded, mode: "UPI", status: "PAID", paidAt: at } });
     };
-    await make(true);
-    await make(false);
+    await make(true, paidAt);
+    await make(false, new Date(paidAt.getTime() + 1));
     const p = await partnership(owner, month);
     // 70% of ₹253.39 is ₹177.37; the older payment's before-GST price was the full ₹299, so 70% of it is ₹209.30.
     expect(p.paid.map((x) => [x.base, x.share])).toEqual([[25_339, 17_737], [29_900, 20_930]]);

@@ -39,7 +39,8 @@ describe.skipIf(!hasDb)("daily reminder jobs follow Settings › Reminders (data
 
     await saveReminderSettings(admin, { expiryDays: [15], dedupDays: 3, dueEveryDays: 3, defaultMonths: 1, graceDays, birthdays: true });
     const out = await runDailyJobs(gym.org.id, today, istInstant(today, "10:00"));
-    expect(result(out, "reminders.expiry")).toMatchObject({ status: "ran", result: { sent: 1 } });
+    // Demo mode: the reminder is saved, and counted as not sent.
+    expect(result(out, "reminders.expiry")).toMatchObject({ status: "ran", result: { sent: 0, "saved, not sent (WhatsApp not linked)": 1 } });
     expect(result(out, "reminders.dues")).toMatchObject({ status: "ran", result: { sent: 0 } });
     expect(result(out, "reminders.birthday")).toMatchObject({ status: "ran", result: { sent: 0 } });
     const msgs = await db.whatsAppMessage.findMany({ where: { memberId } });

@@ -7,6 +7,7 @@ import { coachAnswer } from "@/lib/services/trainer-coach";
 import { currentTrainer } from "@/lib/services/trainer-session";
 import { readCapped } from "../trainer/_lib/http";
 import { log } from "@/lib/log";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 // The AI Trainer app's coach: POST { messages: [{ role, text }], profile } → { text }.
 // 503 without ANTHROPIC_API_KEY and 429 over the plan's daily limit; the app then uses its built-in replies.
@@ -18,6 +19,8 @@ const schema = z.object({
 });
 
 export async function POST(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   const m = await currentTrainer();
   if (!m) return Response.json({ error: "Sign in again." }, { status: 401 });
   if (!aiReady()) return Response.json({ error: "The coach isn't switched on yet. The server needs an ANTHROPIC_API_KEY." }, { status: 503 });

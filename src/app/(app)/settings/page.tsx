@@ -28,7 +28,9 @@ import { PaperPlaneTiltIcon, PlugsIcon, QrCodeIcon, WhatsappLogoIcon } from "@ph
 import { fmtClock, fmtDate, fmtShort, fmtStamp, fmtTime } from "@/lib/format";
 import { connectorAddress, HOSTED_NEEDS_CONNECTOR, providerReady } from "@/lib/integrations/whatsapp";
 import { getAccessRules } from "@/lib/services/attendance";
-import { JOBS, recentRuns } from "@/lib/services/jobs";
+import { JOBS, LOCAL_JOBS, recentRuns } from "@/lib/services/jobs";
+import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
+import { emailReady } from "@/lib/integrations/email";
 import { todayIso } from "@/lib/services/time";
 import { EXPIRY_CHIPS, expiryChipLabel, scheduledJobRows } from "@/lib/domain/reminders";
 import { getAutopaySettings } from "@/lib/services/autopay";
@@ -41,6 +43,7 @@ import { appUrl } from "@/lib/services/accounts";
 import { HelpTab } from "./help-tab";
 import { BranchesTab } from "./branches-tab";
 import { PARTNER_SHARE } from "@/lib/domain/pricing";
+import { aiReady } from "@/lib/integrations/anthropic";
 
 export const metadata = { title: "Settings · Fitron" };
 
@@ -65,6 +68,9 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           } as Record<string, string>
         )[section ?? ""];
   const tab = ["gym", "billing", "reminders", "wa", "int", "branches", "privacy", "help"].includes(asked ?? "") ? asked! : "gym";
+  // FITRON for Windows: `local` words what works differently on a computer; `closed` hides what is not part of it.
+  const local = isLocal();
+  const closed = gymAccountingOnly();
   const [gym, tax, nextInvoice, numbering, branches, wa, autopay] = await Promise.all([
     getGymProfile(u.orgId),
     getTax(u.orgId),
@@ -82,7 +88,8 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
     getAutopaySettings(u.orgId),
   ]);
   const [cloudInfo, cloudCreds] = await Promise.all([getCloudInfo(u.orgId), getCloudCreds(u.orgId)]);
-  const waStatus = await providerStatus(wa.mode, u.orgId, cloudCreds);
+  // Asks the connector or Meta, so only for the tabs that show it: the other tabs never wait on WhatsApp.
+  const waStatus = tab === "wa" || tab === "help" ? await providerStatus(wa.mode, u.orgId, cloudCreds) : { ok: false, text: "" };
   const templateStatus = tab === "wa" && wa.mode === "cloud" && cloudInfo ? await cloudTemplateStatus(u.orgId) : null;
   const meta = signupConfig();
   const reminders =
@@ -98,7 +105,8 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             graceDays: access.graceDays,
             jobs: scheduledJobRows(settings, {
               winbackOn: templates.find((t) => t.key === "winback")?.autoSend ?? false,
-              jobs: JOBS.map((j) => ({ name: j.name, label: j.label })),
+              jobs: (local ? LOCAL_JOBS : JOBS).map((j) => ({ name: j.name, label: j.label })),
+              onAComputer: local,
               runs: runs.filter((r) => r.day === today).map((r) => ({ name: r.name, startedAt: r.startedAt, result: r.result as Record<string, unknown> | null, error: r.error, finishedAt: r.finishedAt })),
             }),
           };
@@ -111,7 +119,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           return { settings, consent, requests, options, notice: renderNotice(settings, gym.name) };
         })()
       : null;
-  const trainerCode = tab === "gym" ? (await db.organization.findUniqueOrThrow({ where: { id: u.orgId }, select: { trainerCode: true } })).trainerCode : null;
+  const trainerCode = tab === "gym" && !closed ? (await db.organization.findUniqueOrThrow({ where: { id: u.orgId }, select: { trainerCode: true } })).trainerCode : null;
   const integrations =
     tab === "int"
       ? await (async () => {
@@ -121,7 +129,8 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           return {
             ai,
             devices: devices.map((d) => ({ id: d.id, name: `${d.name ?? d.serial} · ${branchName(d.branchId)}`, status: deviceStatusText(d, now) })),
-            posters: branches.filter((b) => u.branchIds.includes(b.id)).map((b) => ({ id: b.id, name: `Front desk QR poster · ${b.name}`, status: "Active" })),
+            // No poster on FITRON for Windows: members' phones cannot reach the computer (attendance/page.tsx).
+            posters: closed ? [] : branches.filter((b) => u.branchIds.includes(b.id)).map((b) => ({ id: b.id, name: `Front desk QR poster · ${b.name}`, status: "Active" })),
           };
         })()
       : null;
@@ -196,29 +205,31 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
               </div>
             </form>
           </Panel>
-          <Panel title="AI Trainer · Gym Partnership">
-            {trainerCode ? (
-              <>
-                <p className="text-sm">
-                  Your gym&apos;s trainer code is <strong className="font-mono text-lg tracking-wider">{trainerCode}</strong>. Members type it into the FITRON AI Trainer (or open{" "}
-                  <a className="underline" href={`${appUrl()}/trainer?gym=${trainerCode}`} target="_blank" rel="noopener">
-                    {appUrl()}/trainer?gym={trainerCode}
-                  </a>
-                  ) to link to your gym.
-                </p>
-                <p className="text-xs text-muted">
-                  You see their training next to their membership and earn {Math.round(PARTNER_SHARE * 100)}% of what they pay FITRON for the AI Trainer, before GST. <Link className="underline" href="/partnership">Open Gym Partnership</Link>.
-                </p>
-              </>
-            ) : (
-              <form action={makeTrainerCode} className="flex flex-col gap-3">
-                <p className="text-sm text-muted">Make a code your members type into the FITRON AI Trainer to link to your gym. You then see their training here and earn {Math.round(PARTNER_SHARE * 100)}% of what they pay FITRON for it, before GST.</p>
-                <div>
-                  <Button variant="primary">Make our trainer code</Button>
-                </div>
-              </form>
-            )}
-          </Panel>
+          {!closed && (
+            <Panel title="AI Trainer · Gym Partnership">
+              {trainerCode ? (
+                <>
+                  <p className="text-sm">
+                    Your gym&apos;s trainer code is <strong className="font-mono text-lg tracking-wider">{trainerCode}</strong>. Members type it into the FITRON AI Trainer (or open{" "}
+                    <a className="underline" href={`${appUrl()}/trainer?gym=${trainerCode}`} target="_blank" rel="noopener">
+                      {appUrl()}/trainer?gym={trainerCode}
+                    </a>
+                    ) to link to your gym.
+                  </p>
+                  <p className="text-xs text-muted">
+                    You see their training next to their membership and earn {Math.round(PARTNER_SHARE * 100)}% of what they pay FITRON for the AI Trainer, before GST. <Link className="underline" href="/partnership">Open Gym Partnership</Link>.
+                  </p>
+                </>
+              ) : (
+                <form action={makeTrainerCode} className="flex flex-col gap-3">
+                  <p className="text-sm text-muted">Make a code your members type into the FITRON AI Trainer to link to your gym. You then see their training here and earn {Math.round(PARTNER_SHARE * 100)}% of what they pay FITRON for it, before GST.</p>
+                  <div>
+                    <Button variant="primary">Make our trainer code</Button>
+                  </div>
+                </form>
+              )}
+            </Panel>
+          )}
         </div>
       )}
       {tab === "billing" && (
@@ -282,6 +293,13 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
               Email last month’s profit and loss to the Super Admins on the 1st
             </label>
             <p className="m-0 pl-7 text-xs text-muted">Revenue, expenses and the net result, with the statement attached as an Excel file. Goes to every active Super Admin who has an email address.</p>
+            {local && (
+              <p className="m-0 pl-7 text-xs text-muted">
+                {emailReady()
+                  ? "Sent from this computer when it is online; a 1st spent offline is sent once the internet is back, by the 3rd."
+                  : "Email is not set up on this computer, so nothing is sent. Download the profit and loss from Accounting instead."}
+              </p>
+            )}
             {u.has("accounting") && (
               <div>
                 <Button variant="primary">Save</Button>
@@ -316,9 +334,10 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           <Panel id="whatsapp">
             <form action={saveWhatsApp} className="flex flex-col gap-3 text-sm">
               <Field label="Sending mode" className="max-w-[420px]">
-                <Select name="mode" key={wa.mode} defaultValue={wa.mode === "demo" ? "connector" : wa.mode}>
-                  <option value="cloud">WhatsApp Business (official, Meta)</option>
-                  <option value="connector">Linked gym phone (connector)</option>
+                <Select name="mode" key={wa.mode} defaultValue={wa.mode}>
+                  <option value="demo">Not linked: save messages, send nothing</option>
+                  <option value="cloud">WhatsApp Business (official, Meta){local ? ": needs the internet" : ""}</option>
+                  <option value="connector">Linked gym phone (connector){local ? ": needs the internet" : ""}</option>
                 </Select>
               </Field>
               <p className={waStatus.ok ? "text-ok" : "text-alert"}>{waStatus.text}</p>
@@ -364,7 +383,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           </Panel>
           {sp.link === "1" && u.has("whatsapp") && (
             <Dialog kicker="WhatsApp" title="Link WhatsApp" close="/settings?tab=wa" width={600}>
-              {meta ? <CloudConnect appId={meta.appId} configId={meta.configId} version={meta.version} /> : <LinkWatcher envMessage={providerReady("connector")} address={connectorAddress()} hosted={providerReady("connector") === HOSTED_NEEDS_CONNECTOR} />}
+              {meta ? <CloudConnect appId={meta.appId} configId={meta.configId} version={meta.version} /> : <LinkWatcher envMessage={providerReady("connector")} address={connectorAddress()} hosted={providerReady("connector") === HOSTED_NEEDS_CONNECTOR} onAComputer={closed} />}
               <div className="flex flex-wrap justify-end gap-2.5">
                 <LinkButton href="/settings?tab=wa" scroll={false}>
                   Cancel
@@ -414,10 +433,17 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
                 {autopayStatusText(autopay, autopay.mode)}
               </span>
             </div>
-            <p className="max-w-[720px] text-[13px] leading-[1.6] text-muted">
-              Live mode uses your own Razorpay account: set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET on the server and add /api/webhooks/razorpay as a webhook in the Razorpay dashboard. Members approve once in any UPI
-              app; Razorpay sends the NPCI pre-debit notice, charges on the renewal date and retries; Fitron records each renewal automatically.
-            </p>
+            {local ? (
+              <p className="max-w-[720px] text-[13px] leading-[1.6] text-muted">
+                Live mode uses your own Razorpay account and needs the internet. Members approve once in any UPI app; Razorpay sends the NPCI pre-debit notice, charges on the renewal date and retries. Razorpay cannot reach this computer, so each renewal, invoice and payment is recorded
+                when you press Sync with Razorpay on the Autopay page while the computer is online. FITRON also syncs on its own once a day when it is online.
+              </p>
+            ) : (
+              <p className="max-w-[720px] text-[13px] leading-[1.6] text-muted">
+                Live mode uses your own Razorpay account: set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET on the server and add /api/webhooks/razorpay as a webhook in the Razorpay dashboard. Members approve once in any UPI
+                app; Razorpay sends the NPCI pre-debit notice, charges on the renewal date and retries; Fitron records each renewal automatically.
+              </p>
+            )}
           </Panel>
           <Panel title="Check-in devices" id="devices" small>
             <div className="flex flex-col text-sm">
@@ -463,6 +489,13 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
                 <p className="m-0 mt-1 pl-7 text-xs text-muted">Drafts a win-back message for staff to confirm. Automatic sending is set per template in WhatsApp › Templates.</p>
               </div>
               <p className="m-0 text-[13px] text-muted">Fitron AI reads data only for the branch and role you are signed in with. It never sends a message or records money without a staff member confirming.</p>
+              {local && (
+                <p className="m-0 text-[13px] text-muted">
+                  {aiReady()
+                    ? "On this computer, a question and the figures needed to answer it go to Anthropic's Claude over the internet. With no internet, Fitron AI answers from the books on this computer."
+                    : "On this computer, Fitron AI answers from the books on this computer. Nothing is sent over the internet."}
+                </p>
+              )}
               {u.has("ai") && (
                 <div>
                   <Button variant="primary">Save</Button>

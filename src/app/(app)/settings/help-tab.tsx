@@ -6,7 +6,8 @@ import { Button } from "@/components/ui";
 import { Tag } from "@/components/tag";
 import { FAQ, SUPPORT, supportContacts, systemDetailsText } from "@/lib/domain/support";
 import { hasPrioritySupport } from "@/lib/domain/features";
-import { gymNameOf, listTickets, supportEnv, systemDetails } from "@/lib/services/support";
+import { gymNameOf, listTickets, supportEnv, systemDetails, ticketsCanReachSupport } from "@/lib/services/support";
+import { isLocal } from "@/lib/runtime/edition";
 import { istClock, todayIso } from "@/lib/services/time";
 import { fmtDate } from "@/lib/format";
 import { HelpFaq } from "./help-faq";
@@ -49,7 +50,14 @@ export async function HelpTab({ u, waStatus, waMode }: { u: CurrentUser; waStatu
 
       <section className="flex flex-col gap-3 rounded-lg bg-surface p-[18px_20px]">
         <h3 className="text-lg">Raise a ticket</h3>
-        <TicketForm />
+        {ticketsCanReachSupport() ? (
+          <>
+            {isLocal() && <p className="text-[13px] text-muted">Sent to FITRON support by email. This needs an internet connection.</p>}
+            <TicketForm />
+          </>
+        ) : (
+          <p className="text-[13px]">FITRON for Windows sends tickets by email, which is not set up on this computer. Contact FITRON support with the details above instead, and paste the System details below into your message.</p>
+        )}
       </section>
 
       {tickets.length > 0 && (

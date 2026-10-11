@@ -22,8 +22,16 @@ vi.mock("@/lib/integrations/razorpay", () => ({
   verifyWebhook: vi.fn(),
 }));
 
+// Whether the computer is online, for FITRON for Windows (npm run test:local); the test machine may have no DNS at all.
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("@/lib/integrations/online", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/integrations/online")>()),
+  probablyOnline: vi.fn(async () => net.up),
+}));
+
 import { db } from "@/lib/db";
 import { hasDb, makeGym, pick } from "@/test/db";
+import { isLocal } from "@/lib/runtime/edition";
 import { addDays } from "@/lib/domain/dates";
 import { createMember } from "./members";
 import { createPlan } from "./plans";
@@ -49,6 +57,7 @@ describe.skipIf(!hasDb)("autopay sync and demo simulation (database)", () => {
     planId = (await createPlan(admin, { name: "Monthly", kind: "Membership", months: 1, price: 100000, regFee: 0, discount: 0, gstApplicable: true, features: [] })).id;
   });
   beforeEach(() => {
+    net.up = true;
     rzp.ready = null;
     Object.values(rzp).forEach((f) => typeof f === "function" && "mockReset" in f && f.mockReset());
   });
@@ -181,5 +190,25 @@ describe.skipIf(!hasDb)("autopay sync and demo simulation (database)", () => {
     expect(j).toBeTruthy();
     expect(JSON.stringify(j)).toContain("skipped");
     expect(rzp.getSubscription).not.toHaveBeenCalled();
+  });
+
+  it.skipIf(!isLocal())("on a computer with no internet, live actions say so before calling Razorpay, and the sync waits", async () => {
+    await live();
+    await putSetting(admin, "autopay", { mode: "live" });
+    net.up = false;
+    const m = await newMember();
+    await expect(createMandate(admin, { memberId: m.id, planId })).rejects.toThrow("Creating a live UPI autopay mandate requires an internet connection. Nothing was saved.");
+    expect(await db.autopayMandate.count({ where: { memberId: m.id } })).toBe(0);
+    const before = (await db.setting.findUnique({ where: { orgId_key: { orgId: gym.org.id, key: "autopay" } } }))?.value as { lastSyncAt?: string } | undefined;
+    const mandates = await db.autopayMandate.count({ where: { orgId: gym.org.id, mode: "live", subscriptionId: { not: null }, status: { not: "Cancelled" } } });
+    if (mandates) await expect(syncWithRazorpay(admin)).rejects.toThrow("Syncing with Razorpay requires an internet connection.");
+    const job = (await runDailyJobs(gym.org.id, addDays(today, 41))).find((x) => x.name === "autopay.sync")!;
+    expect(job).toMatchObject({ status: "waiting", error: expect.stringContaining("Syncing with Razorpay requires an internet connection.") });
+    expect(await db.jobRun.count({ where: { orgId: gym.org.id, name: "autopay.sync", day: addDays(today, 41) } })).toBe(0);
+    const after = (await db.setting.findUnique({ where: { orgId_key: { orgId: gym.org.id, key: "autopay" } } }))?.value as { lastSyncAt?: string } | undefined;
+    expect(after?.lastSyncAt).toBe(before?.lastSyncAt);
+    expect(rzp.getSubscription).not.toHaveBeenCalled();
+    expect(rzp.createSubscription).not.toHaveBeenCalled();
+    await putSetting(admin, "autopay", { mode: "demo" });
   });
 });

@@ -88,6 +88,17 @@ describe("linked-phone connector", () => {
     expect(st.text).toContain("web.whatsapp.com");
   });
 
+  it("is ready to send only when its WhatsApp is linked and online, and says why not otherwise", async () => {
+    vi.stubEnv("WA_CONNECTOR_URL", `http://127.0.0.1:${port}`);
+    vi.stubEnv("WA_CONNECTOR_KEY", KEY);
+    const wa = await load();
+    expect(await wa.connectorAnswers("gymA")).toMatch(/^WhatsApp on the linked phone is not ready \(qr\)/);
+    state = { state: "error", error: "This computer cannot reach web.whatsapp.com." };
+    expect(await wa.connectorAnswers("gymA")).toBe("The connector is running but WhatsApp has not started: This computer cannot reach web.whatsapp.com.");
+    state = { state: "ready", number: "919876543210" };
+    expect(await wa.connectorAnswers("gymA")).toBeNull();
+  });
+
   it("says the key is wrong instead of failing silently", async () => {
     vi.stubEnv("WA_CONNECTOR_URL", `http://127.0.0.1:${port}`);
     vi.stubEnv("WA_CONNECTOR_KEY", "not-the-key");

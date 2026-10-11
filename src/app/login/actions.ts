@@ -17,7 +17,7 @@ import { verifySecondFactor } from "@/lib/services/two-step";
 import { safeNext } from "@/lib/auth/next";
 import { rateLimit } from "@/lib/rate-limit";
 import { clearFailures, lockedMinutes, recordFailure } from "@/lib/auth/lockout";
-import { isLocal } from "@/lib/runtime/edition";
+import { isLocal, localSignupAllowed } from "@/lib/runtime/edition";
 import { fieldErrors, type FormState } from "@/lib/validation/common";
 import { emailOnlySchema, signInCodeSchema, signupStep1Schema } from "@/lib/validation/site";
 
@@ -88,6 +88,7 @@ export async function sendSignInEmail(_: EmailState, formData: FormData): Promis
   if (!parsed.success) return { email, errors: z.flattenError(parsed.error).fieldErrors };
   // Per address as well, so nobody can fill a stranger's inbox from many places.
   if (!rateLimit(`email-signin-to:${parsed.data.email}`, 3, 10 * 60_000)) return { email, sent: true, message: "We already sent a code a moment ago. Check your inbox and spam, or wait a few minutes to ask again." };
+  if (isLocal() && !localSignupAllowed()) return { email, message: "Email sign-in is not part of FITRON for Windows. Use your password instead." };
   if (!emailReady() && process.env.NODE_ENV === "production") return { email, message: "Email sign-in is not set up on this server. Use your password instead." };
   await requestSignInLink(parsed.data.email);
   return { email: parsed.data.email, sent: true, message: "If there is an account with that email, we sent a six-digit code and a sign-in link. Check spam too." };

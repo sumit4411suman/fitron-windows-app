@@ -6,15 +6,22 @@ import { nextNumber } from "./sequence";
 import { getSetting } from "./settings";
 import { UserError } from "./errors";
 import { recentRuns } from "./jobs";
-import { sendEmail, emailReady } from "@/lib/integrations/email";
+import { sendEmail, emailReachable, emailReady } from "@/lib/integrations/email";
 import { storageMode } from "@/lib/integrations/storage";
 import { ackText, appVersion, deviceLabel, ticketEmail } from "@/lib/domain/support";
 import { hasPrioritySupport } from "@/lib/domain/features";
 import type { TicketInput } from "@/lib/validation/support";
 import { fmtDate, fmtTime } from "@/lib/format";
 import { log } from "@/lib/log";
+import { isLocal } from "@/lib/runtime/edition";
+import { offlineMessage } from "@/lib/integrations/online";
 
 // Settings › Help & support: tickets are saved first, then emailed to support. A mail failure never loses the ticket.
+// FITRON for Windows keeps its database on the gym's computer, where FITRON support cannot see it: there a ticket reaches
+// support only by email, so it needs email set up and the internet, and it is never acknowledged before it was sent.
+
+/** Whether this server can get a ticket to FITRON support: always on the Cloud Edition, by email only on a computer. */
+export const ticketsCanReachSupport = () => !isLocal() || emailReady();
 
 export const supportTo = () => process.env.SUPPORT_TO?.trim() || "support@fitron.in";
 
@@ -24,6 +31,9 @@ export const supportEnv = () => ({ whatsapp: tenDigits(process.env.SUPPORT_WHATS
 export const gymNameOf = async (u: CurrentUser) => (await getSetting<{ name?: string }>(u.orgId, "gym"))?.name || u.orgName;
 
 export async function raiseTicket(u: CurrentUser, v: TicketInput, ctx: { userAgent?: string | null; ip?: string | null }) {
+  const local = isLocal();
+  if (!ticketsCanReachSupport()) throw new UserError("FITRON for Windows sends tickets by email, which is not set up on this computer. Contact FITRON support with the details above instead, and paste the System details below.");
+  if (local && !(await emailReachable())) throw new UserError(offlineMessage("Sending a ticket to FITRON support", "Contact FITRON support with the details above instead, or send it when the computer is online."));
   const branchId = writeBranch(u) ?? null;
   const browser = deviceLabel(ctx.userAgent);
   const version = appVersion();
@@ -34,7 +44,7 @@ export async function raiseTicket(u: CurrentUser, v: TicketInput, ctx: { userAge
     const t = await tx.supportTicket.create({
       data: { orgId: u.orgId, number, userId: u.id, branchId, topic: v.topic, priority: v.priority, subject: v.subject, message: v.message, status: "Open", appVersion: version, browser, ip },
     });
-    await tx.supportTicketReply.create({ data: { ticketId: t.id, by: "Fitron Support", kind: "AUTO", text: ackText(number, v.priority, prioritySupport) } });
+    if (!local) await tx.supportTicketReply.create({ data: { ticketId: t.id, by: "Fitron Support", kind: "AUTO", text: ackText(number, v.priority, prioritySupport) } });
     await audit(tx, { orgId: u.orgId, userId: u.id, action: "support.ticket.create", entity: "SupportTicket", entityId: number, after: { number, topic: v.topic, priority: v.priority, subject: v.subject, branchId } });
     return t;
   });
@@ -55,11 +65,15 @@ export async function raiseTicket(u: CurrentUser, v: TicketInput, ctx: { userAge
       message: v.message,
     });
     const r = await sendEmail({ to: supportTo(), subject: mail.subject, text: mail.text, replyTo: u.email });
-    if (r.sent) await db.supportTicket.update({ where: { id: ticket.id }, data: { emailedAt: new Date() } });
+    if (r.sent) {
+      await db.supportTicket.update({ where: { id: ticket.id }, data: { emailedAt: new Date() } });
+      if (local) await db.supportTicketReply.create({ data: { ticketId: ticket.id, by: "Fitron Support", kind: "AUTO", text: ackText(ticket.number, v.priority, prioritySupport) } });
+      return { ...ticket, emailed: true };
+    }
   } catch (e) {
     log.error("support.notify_failed", e);
   }
-  return ticket;
+  return { ...ticket, emailed: false };
 }
 
 export async function listTickets(orgId: string, take = 50) {

@@ -26,6 +26,8 @@ type Job = { name: string; label: string };
 type Run = { name: string; startedAt: Date; result: Record<string, unknown> | null; error: string | null; finishedAt: Date | null };
 
 const MORNING = "Every morning, about 6:30";
+/** FITRON for Windows has no server scheduler: its own timer runs the day's jobs while it is open (local-scheduler.ts). */
+const ON_A_COMPUTER = "Daily, while FITRON is open";
 /** The reminder jobs the tab describes in its own words, in the prototype's order; the rest of JOBS follow with their labels. */
 const REMINDER_JOBS = ["reminders.expiry", "reminders.dues", "reminders.birthday", "reminders.winback", "autopay"] as const;
 
@@ -48,7 +50,7 @@ export function runStatus(run: Run | undefined) {
 }
 
 /** The "Scheduled jobs" rows: what each morning's run does with these settings, and how today's went. */
-export function scheduledJobRows(s: ReminderSettings, opts: { winbackOn: boolean; jobs: Job[]; runs: Run[] }): { k: string; v: string }[] {
+export function scheduledJobRows(s: ReminderSettings, opts: { winbackOn: boolean; jobs: Job[]; runs: Run[]; onAComputer?: boolean }): { k: string; v: string }[] {
   const latest = new Map<string, Run>();
   for (const r of opts.runs) if (!latest.has(r.name) || r.startedAt > latest.get(r.name)!.startedAt) latest.set(r.name, r);
   const text: Record<(typeof REMINDER_JOBS)[number], string> = {
@@ -60,5 +62,5 @@ export function scheduledJobRows(s: ReminderSettings, opts: { winbackOn: boolean
   };
   const rows: { name: string; v: string }[] = REMINDER_JOBS.map((name) => ({ name, v: text[name] }));
   for (const j of opts.jobs) if (!(j.name in text)) rows.push({ name: j.name, v: j.label });
-  return rows.map(({ name, v }) => ({ k: MORNING, v: `${v} · ${runStatus(latest.get(name))}` }));
+  return rows.map(({ name, v }) => ({ k: opts.onAComputer ? ON_A_COMPUTER : MORNING, v: `${v} · ${runStatus(latest.get(name))}` }));
 }

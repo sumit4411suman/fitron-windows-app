@@ -4,6 +4,7 @@ import { aiReady, claude, type Block, type Msg } from "@/lib/integrations/anthro
 import { log } from "@/lib/log";
 import { rateLimit } from "@/lib/rate-limit";
 import { readCapped } from "../../trainer/_lib/http";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 // Fitron AI in the Gym Accounting live demo on the website (public/site/gym-demo.html, built by scripts/build-gym-demo.py).
 // The demo is the prototype, which keeps its made-up gym in the visitor's browser, so its tools run there: the demo sends
@@ -138,6 +139,8 @@ const BILL_ASK =
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "cache-control": "no-store" } });
 
 export async function POST(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   if (!aiReady()) return json({ error: "Fitron AI isn't switched on in this demo." }, 503);
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   const body = await readCapped(req, 4_500_000);

@@ -18,6 +18,7 @@ import { Tag } from "@/components/tag";
 import { fmtStamp, fmtTime } from "@/lib/format";
 import { assignCardAction, enrolAction, eraseAction, openDoorAction, removeDeviceAction, saveDeviceAction, saveRulesAction, syncDeviceAction, testScanAction } from "./actions";
 import { ci } from "@/lib/db-dialect";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 
 export const metadata = { title: "Biometric & doors · Fitron" };
 
@@ -183,9 +184,15 @@ export default async function DevicesPage({ searchParams }: PageProps<"/settings
           ))}
           <div className="flex items-start gap-2.5 rounded-md border border-dashed border-fg/30 px-3.5 py-3 text-[13px] leading-relaxed">
             <InfoIcon size={18} weight="duotone" className="flex-none text-accent" />
-            <span>
-              On the device open <strong>Menu › Comm › Cloud Server</strong>. Server <strong>{host}</strong>, port 443, HTTPS on. Save and restart; it shows Online within a minute. Members with an active plan are loaded onto it, and anyone who expires is removed each morning.
-            </span>
+            {gymAccountingOnly() ? (
+              <span>
+                Biometric and door devices connect to FITRON over the network, and FITRON for Windows answers only this computer, so they cannot connect to it. They work with the FITRON Cloud Edition; ask FITRON support about connecting them to this computer. Check-in at the desk works as usual.
+              </span>
+            ) : (
+              <span>
+                On the device open <strong>Menu › Comm › Cloud Server</strong>. Server <strong>{host}</strong>, port 443, HTTPS on. Save and restart; it shows Online within a minute. Members with an active plan are loaded onto it, and anyone who expires is removed each morning.
+              </span>
+            )}
           </div>
         </section>
         <section className={box}>

@@ -1,9 +1,12 @@
 import { memberWithRenewal, setTrainerRenewal } from "@/lib/services/trainer";
 import { UserError } from "@/lib/services/errors";
 import { body, json, withTrainer } from "../_lib/http";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 /** Stop (or resume) renewal. For a plan that renews itself this stops the charges at Razorpay; a stopped one can't be resumed. */
 export async function POST(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   return withTrainer(async (m) => {
     const { cancelled } = await body<{ cancelled?: unknown }>(req);
     // A stray "false" or 0 once read as "stop renewing"; only a real boolean is taken.

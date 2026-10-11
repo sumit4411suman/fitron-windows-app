@@ -15,7 +15,8 @@ export function proxy(req: NextRequest) {
   // sign-in handles signing in. (FITRON_LOCAL_ALLOW_SIGNUP is the end-to-end suite's switch, never set when shipped.)
   if (process.env.FITRON_EDITION === "local" && process.env.FITRON_LOCAL_ALLOW_SIGNUP !== "1") {
     if (isOnlineOnlyAuthPath(pathname)) return NextResponse.redirect(new URL("/login", req.url));
-    if (isNotInLocal(pathname)) return pathname.startsWith("/api/") ? new NextResponse("Not part of FITRON for Windows.", { status: 404 }) : NextResponse.redirect(new URL("/dashboard", req.url));
+    // The website's contact page (an error screen's "Contact support") becomes the console's own Help & support.
+    if (isNotInLocal(pathname)) return pathname.startsWith("/api/") ? new NextResponse("Not part of FITRON for Windows.", { status: 404 }) : NextResponse.redirect(new URL(pathname === "/contact" ? "/settings?tab=help" : "/dashboard", req.url));
   }
   const guarded = isGuardedPath(pathname);
   if (guarded && !req.cookies.has("fitron_session")) {

@@ -15,6 +15,7 @@ import { rupeesText } from "@/lib/domain/whatsapp";
 import { fmtDate } from "@/lib/format";
 import { enrol, eraseBiometrics } from "@/lib/services/biometric";
 import { DOC_KINDS, deleteDocument, replaceDocument, uploadDocument } from "@/lib/services/documents";
+import { outcomeTone, sendOutcome } from "@/lib/domain/wa-outcome";
 
 const read = (fd: FormData) => Object.fromEntries([...fd.entries()].filter(([, v]) => typeof v === "string"));
 
@@ -142,21 +143,23 @@ export async function deleteDocumentAction(memberId: string, docId: string, fd: 
 }
 
 /** After a profile action: back to the profile with the result shown at the top. */
-function backToProfile(id: string, msg: string, tab?: string): never {
+function backToProfile(id: string, msg: string, tab?: string, tone?: string): never {
   revalidatePath(`/members/${id}`);
-  redirect(`/members/${id}?${new URLSearchParams({ ...(tab ? { tab } : {}), msg })}`);
+  redirect(`/members/${id}?${new URLSearchParams({ ...(tab ? { tab } : {}), msg, ...(tone && tone !== "ok" ? { tone } : {}) })}`);
 }
 
-async function profileAction(id: string, fn: () => Promise<string>, failTo?: string) {
-  let msg: string;
+/** Runs a profile button's action and shows its message: in red when it was refused, or for `{ msg, tone }` it returns. */
+async function profileAction(id: string, fn: () => Promise<string | { msg: string; tone: string }>, failTo?: string) {
+  let r: string | { msg: string; tone: string };
   try {
-    msg = await fn();
+    r = await fn();
   } catch (e) {
     if (!(e instanceof UserError)) throw e;
     if (failTo) redirect(`/members/${id}?${new URLSearchParams({ do: failTo, err: e.message })}`);
-    msg = e.message;
+    r = { msg: e.message, tone: "alert" };
   }
-  backToProfile(id, msg);
+  if (typeof r === "string") backToProfile(id, r);
+  backToProfile(id, r.msg, undefined, r.tone);
 }
 
 export async function freezeAction(id: string, fd: FormData) {
@@ -196,6 +199,6 @@ export async function sendInvoiceWaAction(id: string, invoiceId: string, number:
   const u = await requirePermission("whatsapp.send");
   await profileAction(id, async () => {
     const sent = await sendTemplate({ orgId: u.orgId, memberId: id, key: "invoice", userId: u.id, invoiceId, vars: { invoice_number: number, amount: rupeesText(total) } });
-    return sent?.status === "Failed" ? `Invoice ${number} could not be sent: ${sent.error}` : `Invoice ${number} sent on WhatsApp.`;
+    return { msg: sendOutcome(`Invoice ${number}`, sent, `Invoice ${number} not sent: this member has no WhatsApp on file.`), tone: outcomeTone(sent) };
   });
 }

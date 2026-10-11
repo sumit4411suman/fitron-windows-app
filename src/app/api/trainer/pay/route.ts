@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { memberWithRenewal, startTrainerCouponPayment, startTrainerPayment } from "@/lib/services/trainer";
 import { body, json, withTrainer } from "../_lib/http";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 /**
  * Start a payment to FITRON: returns what Razorpay Checkout needs. A plan with no coupon is a subscription that renews itself
@@ -8,6 +9,8 @@ import { body, json, withTrainer } from "../_lib/http";
  * it free (mode FREE, with the member). Without Razorpay set up it answers that payments are not switched on.
  */
 export async function POST(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   return withTrainer(async (m) => {
     const b = await body<{ plan?: string; cycle?: string; kind?: string; coupon?: string }>(req);
     const what = { plan: String(b.plan ?? ""), cycle: String(b.cycle ?? ""), kind: String(b.kind ?? "") };

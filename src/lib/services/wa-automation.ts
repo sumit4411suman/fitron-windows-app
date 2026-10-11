@@ -25,7 +25,8 @@ export type Cand = { memberId: string; name: string; code: string; planName: str
 export type Skip = { cand: Cand; why: string };
 export type Match = { send: Cand[]; skipped: Skip[] };
 export type PreviewRow = { key: string; name: string; time: string; send: Cand[]; skipped: Skip[] };
-export type Run = { ts: string; key: string; name: string; matched: number; sent: number; skipped: number; held: number; by: string | null };
+/** `sent` counts every message that went through; `logged` (demo mode) and `queued` (linked phone) are the part of it not on WhatsApp yet. */
+export type Run = { ts: string; key: string; name: string; matched: number; sent: number; skipped: number; held: number; by: string | null; logged?: number; queued?: number };
 
 /** The reminder jobs whose finish counts as an automation run. */
 export const REMINDER_JOBS = ["reminders.expiry", "reminders.dues", "reminders.birthday", "reminders.winback", "reminders.autopay"];
@@ -151,7 +152,7 @@ export async function previewTemplate(u: CurrentUser, key: string, today = today
   return { template: t, rule: templateRule(t), ...match, sample };
 }
 
-export type RunResult = { sent: number; skipped: number; held: number; failed: number; heldUntil: Date | null; runs: Run[] };
+export type RunResult = { sent: number; skipped: number; held: number; failed: number; logged: number; queued: number; heldUntil: Date | null; runs: Run[] };
 
 /**
  * Runs the rules of the given templates: matches, sends (or holds for quiet hours and the rule's
@@ -159,7 +160,7 @@ export type RunResult = { sent: number; skipped: number; held: number; failed: n
  */
 export async function runRules(orgId: string, branchIds: string[] | null, keys: string[], today = todayIso(), now = new Date(), by: { userId: string } | null = null): Promise<RunResult> {
   const ctx = await loadFacts(orgId, branchIds, today, now);
-  const result: RunResult = { sent: 0, skipped: 0, held: 0, failed: 0, heldUntil: null, runs: [] };
+  const result: RunResult = { sent: 0, skipped: 0, held: 0, failed: 0, logged: 0, queued: 0, heldUntil: null, runs: [] };
   for (const t of ctx.templates.filter((x) => keys.includes(x.key))) {
     const { send, skipped } = matchIn(ctx, t);
     const run: Run = { ts: now.toISOString(), key: t.key, name: t.name, matched: send.length + skipped.length, sent: 0, skipped: skipped.length, held: 0, by: by?.userId ?? null };
@@ -170,11 +171,17 @@ export async function runRules(orgId: string, branchIds: string[] | null, keys: 
         run.held++;
         if (r.scheduledFor && (!result.heldUntil || r.scheduledFor < result.heldUntil)) result.heldUntil = r.scheduledFor;
       } else if (r.status === "Failed") result.failed++;
-      else run.sent++;
+      else {
+        run.sent++;
+        if (r.status === "Logged") run.logged = (run.logged ?? 0) + 1;
+        if (r.status === "Queued") run.queued = (run.queued ?? 0) + 1;
+      }
       // The next template sees this send in its weekly count.
       ctx.recent.push({ memberId: c.memberId, templateKey: t.key, sentAt: now, sentById: by?.userId ?? null });
     }
     result.sent += run.sent;
+    result.logged += run.logged ?? 0;
+    result.queued += run.queued ?? 0;
     result.skipped += run.skipped;
     result.held += run.held;
     if (run.matched) result.runs.push(run);

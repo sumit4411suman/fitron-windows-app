@@ -1,6 +1,7 @@
 import { emailReady, sendEmail } from "@/lib/integrations/email";
 import { errorFields, log, type Fields } from "@/lib/log";
 import { UserError } from "@/lib/services/errors";
+import { isLocal } from "@/lib/runtime/edition";
 
 // What happens to an error nobody caught: Next.js hands it to onRequestError (src/instrumentation.ts), which lands
 // here. It is written to the log with the error's digest (the reference the visitor sees on the error page) and the
@@ -96,6 +97,8 @@ export function alertText(f: Fields, skipped: number, now = new Date()): string 
 }
 
 async function alert(f: Fields) {
+  // FITRON for Windows has no operations inbox: its log file is the record, and an error page must never wait on SMTP.
+  if (isLocal()) return;
   const to = process.env.ERROR_ALERT_TO?.split(",").map((s) => s.trim()).filter(Boolean).join(",");
   if (!to || process.env.NODE_ENV !== "production" || !emailReady()) return;
   const kind = `${f.routePath}|${f.errorName}|${scrub(String(f.errorMessage ?? "")).slice(0, 80)}`;

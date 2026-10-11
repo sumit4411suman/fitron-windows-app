@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useTransition } from "react";
 import { PhoneIcon, WhatsappLogoIcon, XIcon } from "@phosphor-icons/react";
 import type { LeadStage } from "@/lib/validation/frontdesk";
+import { offlineMessage } from "@/lib/domain/offline";
 import { advanceLeadAction, loseLeadAction, touchLeadAction } from "./actions";
 
 const NEXT_LABEL: Partial<Record<LeadStage, string>> = { New: "Mark contacted", Contacted: "Book trial", "Trial booked": "Trial done" };
@@ -40,6 +41,8 @@ export function LeadActions({ id, stage, phone, message, showLose = true, card =
         aria-label="WhatsApp"
         disabled={pending}
         onClick={() => {
+          // WhatsApp opens on the internet: with no connection the chat cannot open, so the lead is not marked contacted.
+          if (!navigator.onLine) return window.alert(offlineMessage("Opening WhatsApp", "The lead is not marked as contacted. Call instead, or try again when the computer is online."));
           window.open(`https://wa.me/91${digits}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
           start(() => touchLeadAction(id, "whatsapp"));
         }}

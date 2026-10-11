@@ -13,6 +13,7 @@ import { runAutomationNow, runOne, type RunResult } from "@/lib/services/wa-auto
 import { fmtTime } from "@/lib/format";
 import { audienceIds, type Audience } from "@/lib/services/audience";
 import { UserError } from "@/lib/services/errors";
+import { runCountsText, sendOutcome } from "@/lib/domain/wa-outcome";
 
 const templateInput = z.object({
   body: z.string().trim().min(5, { error: "Write the message." }).max(1000),
@@ -86,7 +87,7 @@ export async function toggleAutoSendAction(key: string, on: boolean) {
 
 /** The prototype's toast after a run: "2 automated messages sent · 1 skipped by rules". */
 const runSummary = (r: RunResult) =>
-  `${r.sent} automated message${r.sent === 1 ? "" : "s"} sent${r.skipped ? ` · ${r.skipped} skipped by rules` : ""}${r.held ? ` · ${r.held} held until ${fmtTime(r.heldUntil)}` : ""}`;
+  `${runCountsText(r, `automated message${r.sent - r.logged - r.queued === 1 ? "" : "s"} sent`)}${r.failed ? ` · ${r.failed} failed` : ""}${r.skipped ? ` · ${r.skipped} skipped by rules` : ""}${r.held ? ` · ${r.held} held until ${fmtTime(r.heldUntil)}` : ""}`;
 
 /** "Send N due now" in Today's automation. Inside quiet hours nothing goes out and the page says why. */
 export async function runAutomationAction() {
@@ -146,7 +147,7 @@ export async function retryMessageAction(id: string) {
   let msg = "Message not found.";
   if (m?.memberId) {
     const again = await sendTemplate({ orgId: u.orgId, memberId: m.memberId, key: m.templateKey, userId: u.id, force: true, body: m.body });
-    msg = !again ? "Nothing was sent." : again.status === "Failed" ? `Still failing: ${again.error}` : "Sent again.";
+    msg = !again ? "Nothing was sent." : again.status === "Failed" ? `Still failing: ${again.error}` : sendOutcome("Message", again);
   }
   revalidatePath("/whatsapp");
   redirect(`/whatsapp?tab=log&msg=${encodeURIComponent(msg)}`);

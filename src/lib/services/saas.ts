@@ -22,6 +22,7 @@ import { completeTrainerPayment, recordTrainerCharge, trainerRenewalTrouble } fr
 import { sendGymWhatsApp } from "./whatsapp";
 import { fromIso, toIso, todayIso } from "./time";
 import { log } from "@/lib/log";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 
 type Tx = Prisma.TransactionClient | typeof db;
 
@@ -130,6 +131,8 @@ export async function claimSlot(tx: Prisma.TransactionClient, orgId: string, bra
   const claimed = slot ? await tx.branchSubscription.updateMany({ where: { id: slot.id, branchId: null }, data: { branchId } }) : { count: 0 };
   // A slot paid for by a renewing subscription: its renewals now pay for this branch.
   if (claimed.count && slot?.razorpaySubscriptionId) await tx.razorpaySubscription.updateMany({ where: { id: slot.razorpaySubscriptionId, branchId: null }, data: { branchId } });
+  // FITRON for Windows has no plan billing: more branches are a licence term (Phase 13), arranged with FITRON support.
+  if (!claimed.count && gymAccountingOnly()) throw new UserError(`This computer's FITRON includes ${terms.includedBranches} active branches. Contact FITRON support (Settings › Help & support) to add more.`);
   if (!claimed.count) throw new UserError(`Your plan includes ${terms.includedBranches} branches. Pay for an extra branch in Settings › Plan & billing, then add it here.`);
 }
 

@@ -16,9 +16,14 @@ vi.stubGlobal(
     return new Response(JSON.stringify(r.json), { status: r.status ?? 200 });
   }),
 );
+// Whether this computer is online, for FITRON for Windows (npm run test:local); the test machine may have no internet.
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("./online", async (importOriginal) => ({ ...(await importOriginal<typeof import("./online")>()), probablyOnline: vi.fn(async () => net.up) }));
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
+  net.up = true;
   calls = [];
   respond = () => ({ json: {} });
 });
@@ -39,6 +44,21 @@ describe("WhatsApp Business, one connection per gym", () => {
       ["222222/messages", "Bearer TOKEN-B"],
     ]);
     expect(calls[0]!.body).toMatchObject({ to: "919876543210", type: "template", template: { name: "fitron_exp7", language: { code: "en" } } });
+  });
+
+  it("on a computer with no internet, says so and keeps the message to send again, without calling Meta", async () => {
+    vi.stubEnv("FITRON_EDITION", "local");
+    net.up = false;
+    const { wa } = await load();
+    const r = await wa.sendWhatsApp("cloud", { orgId: "a", cloud: gymA, localId: "m1", to: "919876543210", body: "Hi" });
+    expect(r).toEqual({ status: "Failed", error: "Sending WhatsApp messages through Meta requires an internet connection. The message is kept as Failed: send it again when the computer is online." });
+    expect(calls).toEqual([]);
+    // Online by the check, but the connection drops on the way: the same plain words, not "fetch failed".
+    net.up = true;
+    respond = () => {
+      throw Object.assign(new TypeError("fetch failed"), { cause: Object.assign(new Error("getaddrinfo ENOTFOUND graph.facebook.com"), { code: "ENOTFOUND" }) });
+    };
+    expect((await wa.sendWhatsApp("cloud", { orgId: "a", cloud: gymA, localId: "m2", to: "919876543210", body: "Hi" })).error).toMatch(/^Sending WhatsApp messages through Meta requires an internet connection\./);
   });
 
   it("puts an invoice in the template's document header only when the template has one", async () => {

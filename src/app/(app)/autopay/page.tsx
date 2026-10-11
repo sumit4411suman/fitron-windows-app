@@ -10,10 +10,11 @@ import { razorpayReady } from "@/lib/integrations/razorpay";
 import { addDays } from "@/lib/domain/dates";
 import { invoiceTotals } from "@/lib/domain/billing";
 import { Dialog } from "@/components/dialog";
-import { LinkButton, ListHeader, Notice, TABLE, TD, TH, cx, ScrollRegion } from "@/components/ui";
+import { LinkButton, ListHeader, Notice, toneOf, TABLE, TD, TH, cx, ScrollRegion } from "@/components/ui";
 import { fmtDate, fmtStamp, fmtTime, formatRupees, initials } from "@/lib/format";
 import { MandateForm } from "./autopay-forms";
 import { retryAction, rowAction, runDueAction, syncAction } from "./actions";
+import { isLocal } from "@/lib/runtime/edition";
 
 export const metadata = { title: "UPI autopay · Fitron" };
 
@@ -71,13 +72,17 @@ export default async function AutopayPage({ searchParams }: PageProps<"/autopay"
     ? [
         "Member approves the mandate once in any UPI app from the WhatsApp link.",
         "Razorpay sends the NPCI pre-debit notice 24 hours before and charges on the renewal date.",
-        "Fitron records the renewal, invoice and payment from the Razorpay webhook and sends the invoice on WhatsApp.",
+        isLocal()
+          ? "Razorpay cannot reach this computer, so Fitron records each renewal, invoice and payment when you press Sync with Razorpay while the computer is online."
+          : "Fitron records the renewal, invoice and payment from the Razorpay webhook and sends the invoice on WhatsApp.",
         "Failures are retried by Razorpay; halted mandates show here for manual collection.",
       ]
     : [
         "Member approves the mandate once in their UPI app (use Approve now in demo mode).",
         "A pre-debit notice goes out on WhatsApp 24 hours before each debit.",
-        "Debits run automatically at 6:30 am on the renewal date and create the renewal, invoice and payment.",
+        isLocal()
+          ? "Debits are simulated when you press Run today’s debits: each creates the renewal, invoice and payment. They never run on their own on this computer."
+          : "Debits run automatically at 6:30 am on the renewal date and create the renewal, invoice and payment.",
         `Failed debits retry ${settings.retries} times, ${settings.retryGap} days apart, then halt for manual collection.`,
       ];
   const missing = live ? razorpayReady() : null;
@@ -139,7 +144,10 @@ export default async function AutopayPage({ searchParams }: PageProps<"/autopay"
           </span>
         </Notice>
       )}
-      {str("msg") && <Notice tone="ok">{str("msg")}</Notice>}
+      {live && isLocal() && (
+        <Notice>Live autopay on this computer: Razorpay debits members on its own, but the renewals, invoices and payments reach FITRON only when you press Sync with Razorpay with the internet on. Sync at least once a day.</Notice>
+      )}
+      {str("msg") && <Notice tone={toneOf(str("tone"))}>{str("msg")}</Notice>}
 
       <div className="grid items-start gap-x-12 gap-y-6 [grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))]">
         <div>

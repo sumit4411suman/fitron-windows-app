@@ -15,6 +15,7 @@ import { ListHeader, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui
 import { fmtClock, fmtDate, fmtStamp, fmtTime, formatRupees } from "@/lib/format";
 import { CheckInDesk, GuestForm } from "./attendance-forms";
 import { checkOutAction, closeDayAction, removeAction } from "./actions";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 
 export const metadata = { title: "Attendance · Fitron" };
 
@@ -49,8 +50,10 @@ export default async function AttendancePage({ searchParams }: PageProps<"/atten
   const inside = isToday ? day.inside : (insideNow ?? 0);
   const gymName = gym?.name || u.orgName;
   const branchName = u.branches.find((b) => b.id === branchId)?.name ?? "";
-  const qrText = `${appUrl()}/c/${encodeURIComponent(gymName.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}/${branchId ?? ""}`;
-  const qr = await QRCode.toDataURL(qrText, { margin: 0, width: 220 });
+  // The poster's QR opens the member's own check-in page on their phone, which needs FITRON on the internet. FITRON for
+  // Windows answers only this computer, so it has no poster; the desk still scans members' card QR codes.
+  const qrText = gymAccountingOnly() ? "" : `${appUrl()}/c/${encodeURIComponent(gymName.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}/${branchId ?? ""}`;
+  const qr = qrText ? await QRCode.toDataURL(qrText, { margin: 0, width: 220 }) : null;
   const rulesText = [
     rules.blockExpired ? `expired blocked after ${rules.graceDays} grace days` : "expired allowed",
     rules.blockDues ? `dues above ${formatRupees(rules.duesLimit)} blocked` : "dues not blocked",

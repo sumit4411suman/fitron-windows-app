@@ -2,10 +2,13 @@ import { NextResponse, type NextRequest } from "next/server";
 import { GOOGLE_FLOWS, GOOGLE_FLOW_COOKIE, authUrl, googleBackUrl, googleReady, newPkce, sign, type GoogleFlow } from "@/lib/integrations/google";
 import { appUrl } from "@/lib/services/accounts";
 import { safeNext } from "@/lib/auth/next";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 // Starts "Continue with Google". ?for=staff (console login), signup (new gym) or trainer (AI Trainer member).
 
 export function GET(req: NextRequest) {
+  // FITRON for Windows signs in with the password on this computer: back to its own sign-in page, never to fitron.in.
+  if (notInLocal()) return NextResponse.redirect(new URL("/login", req.url));
   const q = req.nextUrl.searchParams;
   // No redirect to APP_URL's host here: the host may itself redirect to another one (fitron.in → www.fitron.in on
   // Vercel), and the two redirects then loop forever. Such a redirect keeps the path and query, so Google's return to

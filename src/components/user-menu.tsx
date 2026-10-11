@@ -8,7 +8,8 @@ import { flipTheme } from "./theme-toggle";
 import { TOUR_EVENT } from "./product-tour";
 import { Avatar } from "./avatar";
 
-type MenuUser = { name: string; email: string; role: string; branch: string; photo: string | null; canSettings: boolean; plan: string };
+/** `plan`: the FITRON plan's standing for "Plan & billing", or null where there is no FITRON billing (FITRON for Windows). */
+type MenuUser = { name: string; email: string; role: string; branch: string; photo: string | null; canSettings: boolean; plan: string | null };
 
 const item = "flex w-full items-center gap-2.5 rounded-md px-2.5 py-[9px] text-left text-sm hover:bg-accent-soft";
 
@@ -81,7 +82,7 @@ export function UserMenu({ user }: { user: MenuUser }) {
           <div className="my-1 h-px bg-line" />
           <Item href="/profile" icon={UserCircleIcon} label="My profile" onClick={close} />
           <Item href="/profile?tab=password" icon={LockKeyIcon} label="Change password" onClick={close} />
-          {user.canSettings && <Item href="/settings/billing" icon={CrownSimpleIcon} label="Plan & billing" onClick={close} badge={user.plan} />}
+          {user.canSettings && user.plan !== null && <Item href="/settings/billing" icon={CrownSimpleIcon} label="Plan & billing" onClick={close} badge={user.plan} />}
           {user.canSettings && <Item href="/settings?tab=help" icon={ChatCircleDotsIcon} label="Contact Fitron support" onClick={close} />}
           <Action
             icon={CompassIcon}

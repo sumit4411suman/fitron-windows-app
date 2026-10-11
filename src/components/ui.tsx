@@ -94,6 +94,9 @@ export function PageHeader({ title, kicker, subtitle, actions }: { title: string
   );
 }
 
+/** A notice tone carried in a redirect's query (?tone=alert): "ok" unless it says otherwise. */
+export const toneOf = (v: unknown): Tone => (v === "alert" || v === "neutral" ? v : "ok");
+
 export function Notice({ tone = "accent", children }: { tone?: Tone; children: ReactNode }) {
   return <div className={cx("rounded-md px-3.5 py-2.5 text-sm", tones[tone])}>{children}</div>;
 }

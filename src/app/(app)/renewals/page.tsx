@@ -8,7 +8,7 @@ import { getWaSettings } from "@/lib/services/whatsapp";
 import { todayIso } from "@/lib/services/time";
 import { daysBetween } from "@/lib/domain/dates";
 import { Tag } from "@/components/tag";
-import { ListHeader, Notice, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
+import { ListHeader, Notice, toneOf, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
 import { fmtDate, fmtShort, formatRupees } from "@/lib/format";
 import { remindRenewalAction, remindRenewalsAction } from "../reminder-actions";
 
@@ -60,7 +60,7 @@ export default async function RenewalsPage({ searchParams }: PageProps<"/renewal
           )
         }
       />
-      {msg && <Notice tone="ok">{msg}</Notice>}
+      {msg && <Notice tone={toneOf(sp.tone)}>{msg}</Notice>}
       <div className="grid auto-cols-[minmax(104px,1fr)] grid-flow-col gap-2.5 overflow-x-auto">
         {BUCKETS.map(([k, label, test]) => (
           <Link key={k} href={`/renewals?w=${k}`} className={cx("rounded-md px-3.5 py-3 text-left leading-[normal]", k === cur[0] ? "bg-accent text-accent-ink" : "bg-surface text-fg hover:bg-surface-2")}>

@@ -40,7 +40,7 @@ Classes:
 | Payments: record, partial, reverse with reason, receipts | `/payments`, member/invoice actions | LOCAL-SAFE | |
 | Receivables | `/receivables` | LOCAL-SAFE | |
 | POS & inventory: counter sale, products, stock movements, low-stock notices | `/pos`, `/products`, `/products/[id]`, `/products/new` | LOCAL-SAFE | Walk-in member per branch. |
-| UPI Autopay (Razorpay mandates, demo mode) | `/autopay`, `/autopay/[id]` | ONLINE-REQUIRED | Live mode needs Razorpay. Demo mode is local-safe and stays available for training. |
+| UPI Autopay (Razorpay mandates, demo mode) | `/autopay`, `/autopay/[id]` | ONLINE-REQUIRED (done, Phase 11) | Live mode needs Razorpay and the internet; every live action checks first. Razorpay's webhooks cannot reach a computer, so charges are recorded by Sync with Razorpay (by hand, and once a day when online). Demo mode is local-safe; its simulated debits run only from "Run today's debits", never on the timer. |
 | Offers (gym's own promo codes) | `/plans/offers/new` | LOCAL-SAFE | |
 
 ## Accounts
@@ -61,8 +61,8 @@ Classes:
 
 | Feature | Route | Class | Notes |
 | --- | --- | --- | --- |
-| Fitron AI (chat, tools over the books, drafted actions, daily brief, churn risk) | `/ai`, `/api/ai/chat` | ONLINE-REQUIRED | Anthropic API. Off by default in Local; when the gym turns it on, Settings says what is sent. Churn risk scoring (`computeRisk`) is pure code and stays local. |
-| WhatsApp: templates, send, automation rules, quiet hours, campaign | `/whatsapp`, `/whatsapp/send`, `/whatsapp/templates` | ONLINE-REQUIRED | Meta Cloud API or the connector. "Demo" provider (logs the message) is local-safe and is the Local default. |
+| Fitron AI (chat, tools over the books, drafted actions, daily brief, churn risk) | `/ai`, `/api/ai/chat` | LOCAL-SAFE without a model key / ONLINE-REQUIRED with one (done, Phase 11) | Without an Anthropic key (the Windows default) it answers from the books on the computer and nothing leaves it. With a key, a question and the figures needed go to Anthropic; offline it answers from the books and says so. Settings › Integrations & AI says which. Churn risk (`computeRisk`) is pure code, run by the daily jobs. |
+| WhatsApp: templates, send, automation rules, quiet hours, campaign | `/whatsapp`, `/whatsapp/send`, `/whatsapp/templates` | ONLINE-REQUIRED (done, Phase 11) | "Not linked" (demo) saves messages and every screen says "saved, not sent". Meta Cloud API checks the internet first. The phone connector is not shipped in the Windows app yet (it needs Node.js). Results are worded by what really happened (OFFLINE.md). |
 | Workouts & diet programs, progress logs, personal records | `/programs` and member profile | LOCAL-SAFE | `WorkoutPlan.days` / `DietPlan.meals` JSON, supported. |
 | Gym Partnership (AI Trainer linking, payouts) | `/partnership` | NOT-SUPPORTED-IN-LOCAL | Depends on the hosted AI Trainer service. |
 | Notifications (in-app) | `/notifications` | LOCAL-SAFE | |
@@ -85,8 +85,8 @@ Classes:
 | Settings › Subscription (FITRON plan, Razorpay checkout, coupons) | `/settings/billing` | NOT-SUPPORTED-IN-LOCAL | Replaced by Settings › Licence (Phase 13). |
 | Settings › Branches | `/settings?tab=branches` | NEEDS-ADAPTER | Extra-branch billing to FITRON is removed from the flow; branch count is a licence term. |
 | Settings › Privacy & DPDP (officer, member rights export, retention job) | `/settings?tab=privacy`, `/settings/privacy/export` | LOCAL-SAFE | |
-| Settings › Help & support (tickets, system details) | `/settings?tab=help` | ONLINE-REQUIRED | Ticket email needs SMTP; system details are local. Offline the form says so and shows the support phone/WhatsApp cards. |
-| Biometric & door devices (ZKTeco/eSSL ADMS push) | `/settings/devices`, `/iclock/*` | NEEDS-ADAPTER | Devices push over HTTP to the server. On localhost only they cannot reach it; a LAN opt-in (bind to the LAN address) is a later phase and not in scope for 1.0. Shown as "available in the Cloud Edition or on request". |
+| Settings › Help & support (tickets, system details) | `/settings?tab=help` | ONLINE-REQUIRED (done, Phase 11) | A ticket reaches FITRON only by email. Without email set up there is no form, only the support cards and the copyable System details; offline it says so and saves nothing. See OFFLINE.md. |
+| Biometric & door devices (ZKTeco/eSSL ADMS push) | `/settings/devices`, `/iclock/*` | NEEDS-ADAPTER | Devices push over HTTP to the server. On localhost only they cannot reach it; a LAN opt-in (bind to the LAN address) is a later phase and not in scope for 1.0. Phase 11: the devices page says so instead of the setup steps, and `/iclock/*` answers 404. |
 | Product tour, theme | client components | LOCAL-SAFE | `localStorage` for preferences only, never data. |
 | Global search | `/api/search` | NEEDS-ADAPTER | Case-insensitive search helper. |
 
@@ -105,13 +105,11 @@ Classes:
 
 | Job | Class | Local behaviour |
 | --- | --- | --- |
-| members.risk, attendance.close, leads.followup, privacy.retention, backup.auto, backup.nudge | LOCAL-SAFE | Run by the in-process scheduler on start-up and daily. |
-| ai.brief | ONLINE-REQUIRED | Only when AI is on. |
-| reminders.* , whatsapp.refresh, whatsapp.dispatch | ONLINE-REQUIRED | Only when WhatsApp is on; demo provider logs. |
-| autopay, autopay.sync | ONLINE-REQUIRED | Live mode only. |
-| devices.sync | NEEDS-ADAPTER | No-op without devices. |
-| billing.branches | NOT-SUPPORTED-IN-LOCAL | FITRON billing. |
-| reports.monthly (P&L email) | ONLINE-REQUIRED | Needs SMTP; the same statement is available as a download. |
+| members.risk, attendance.close, leads.followup, privacy.retention, ai.brief, autopay (demo) | LOCAL-SAFE (done, Phase 11) | Run by FITRON's own timer: a few minutes after it opens, then hourly, each once a day (`LOCAL_JOBS`, OFFLINE.md). |
+| reminders.*, whatsapp.refresh, whatsapp.dispatch | ONLINE-REQUIRED (done, Phase 11) | "Not linked" (demo) saves the messages. Linked: they wait while WhatsApp cannot take messages, and run when it can. |
+| autopay.sync | ONLINE-REQUIRED (done, Phase 11) | Live mode only; waits for the internet. |
+| reports.monthly (P&L email) | ONLINE-REQUIRED (done, Phase 11) | Needs SMTP; waits for the internet within the first three days. The same statement is a download. |
+| devices.sync, billing.branches, backup.auto, backup.nudge | NOT-SUPPORTED-IN-LOCAL | Door devices cannot reach a computer; branch billing is a licence term; the computer makes `.fitronbackup` files instead. |
 | backup.test (weekly restore test) | NEEDS-ADAPTER | Re-implemented over the `.fitronbackup` format. |
 
 ## Hosted-only parts (never in Local)

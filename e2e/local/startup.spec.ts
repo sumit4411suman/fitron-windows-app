@@ -98,10 +98,13 @@ test("first-run setup checks the form, creates the gym and owner, and shows the 
 
   // FITRON for Windows is Gym Accounting only: the website, the AI Trainer, FITRON's own billing, the Gym Partnership
   // and the FITRON team console lead back to the console, and the menus do not offer them.
-  for (const p of ["/", "/trainer", "/contact", "/gym-accounting", "/fitron-admin", "/settings/billing", "/partnership", "/plan-ended"]) {
+  for (const p of ["/", "/trainer", "/gym-accounting", "/fitron-admin", "/settings/billing", "/partnership", "/plan-ended"]) {
     await page.goto(p);
     await expect(page, p).toHaveURL(/\/dashboard$/);
   }
+  // The website's contact page (an error screen's "Contact support") is the console's own Help & support.
+  await page.goto("/contact?topic=support");
+  await expect(page).toHaveURL(/\/settings\?tab=help$/);
   await expect(page.getByRole("link", { name: "Gym Partnership" })).toHaveCount(0);
   await page.goto("/settings");
   await expect(page.getByRole("link", { name: "Subscription" })).toHaveCount(0);

@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { applyDeliveryStatus } from "@/lib/services/whatsapp";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 // Meta WhatsApp Business → Fitron delivery receipts, for every gym at once: in the Meta app (once, not per gym), set the
 // WhatsApp Business Account webhook callback URL to https://<your-domain>/api/webhooks/whatsapp, the verify token to
@@ -7,6 +8,8 @@ import { applyDeliveryStatus } from "@/lib/services/whatsapp";
 // signed with WHATSAPP_APP_SECRET; a receipt is matched to its message by the message id Meta returned when it was sent.
 
 export function GET(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   const u = new URL(req.url).searchParams;
   const token = process.env.WHATSAPP_VERIFY_TOKEN?.trim();
   if (u.get("hub.mode") === "subscribe" && token && u.get("hub.verify_token") === token) return new Response(u.get("hub.challenge") ?? "");
@@ -24,6 +27,8 @@ function signed(raw: string, header: string | null) {
 type Status = { id: string; status: string; timestamp?: string; errors?: { title?: string; message?: string; error_data?: { details?: string } }[] };
 
 export async function POST(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   const raw = await req.text();
   if (!signed(raw, req.headers.get("x-hub-signature-256"))) return Response.json({ error: "Bad signature" }, { status: 401 });
   const body = JSON.parse(raw) as { entry?: { changes?: { value?: { statuses?: Status[] } }[] }[] };

@@ -1,5 +1,7 @@
 import "server-only";
 import { graphCall, phoneInfo, type CloudCreds } from "./whatsapp-cloud";
+import { isLocal } from "@/lib/runtime/edition";
+import { isNetworkError, offlineMessage, probablyOnline, SERVICE } from "./online";
 
 // Sends one WhatsApp message through the configured provider. Secrets come from the server
 // environment only; the app stores which mode is on, never the keys.
@@ -108,14 +110,36 @@ async function sendConnector(m: Outgoing): Promise<SendResult> {
   return { status: "Queued", providerMessageId: m.localId };
 }
 
+/** Why Meta's WhatsApp Cloud API cannot be used right now on a computer with no internet; null when it can be tried. */
+export const cloudOffline = async (feature = "Sending WhatsApp messages through Meta", then?: string) => (isLocal() && !(await probablyOnline(SERVICE.meta)) ? offlineMessage(feature, then) : null);
+const KEPT = "The message is kept as Failed: send it again when the computer is online.";
+
 export async function sendWhatsApp(mode: WaMode, m: Outgoing): Promise<SendResult> {
   if (mode === "demo") return { status: "Logged" };
-  const missing = providerReady(mode, m.cloud);
+  const missing = providerReady(mode, m.cloud) ?? (mode === "cloud" ? await cloudOffline(undefined, KEPT) : null);
   if (missing) return { status: "Failed", error: missing };
   try {
     return mode === "cloud" ? await sendCloud(m) : await sendConnector(m);
   } catch (e) {
-    return { status: "Failed", error: mode === "connector" ? connectorProblem(e) : e instanceof Error ? e.message : String(e) };
+    if (mode === "connector") return { status: "Failed", error: connectorProblem(e) };
+    if (isLocal() && isNetworkError(e)) return { status: "Failed", error: offlineMessage("Sending WhatsApp messages through Meta", KEPT) };
+    return { status: "Failed", error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Whether the connector can send now: it answers, and its WhatsApp is linked and online. Null when it can, else why not.
+ * Quick. A message handed to a connector that is not ready waits in its memory, and is lost if it is closed first.
+ */
+export async function connectorAnswers(orgId: string): Promise<string | null> {
+  const missing = providerReady("connector");
+  if (missing) return missing;
+  try {
+    const st = (await connectorFetch(orgId, "/status", { method: "GET", timeout: 3_000 })) as ConnectorStatus;
+    if (st.state === "ready") return null;
+    return st.error ? `The connector is running but WhatsApp has not started: ${st.error}` : `WhatsApp on the linked phone is not ready (${st.state ?? "starting"}). Link it in Settings › WhatsApp.`;
+  } catch (e) {
+    return connectorProblem(e);
   }
 }
 
@@ -158,6 +182,10 @@ export async function providerStatus(mode: WaMode, orgId: string, cloud?: CloudC
   if (mode === "demo") return { ok: false, text: "WhatsApp is not linked yet. Messages are saved in Fitron but nothing is sent until you link it." };
   const missing = providerReady(mode, cloud);
   if (missing) return { ok: false, text: missing };
+  if (mode === "cloud") {
+    const off = await cloudOffline("Checking the WhatsApp Business number");
+    if (off) return { ok: false, text: off };
+  }
   try {
     if (mode === "cloud") {
       const j = await phoneInfo(credsOf({ cloud })!);
@@ -168,6 +196,8 @@ export async function providerStatus(mode: WaMode, orgId: string, cloud?: CloudC
     if (st.error) return { ok: false, text: `The connector is running but WhatsApp has not started: ${st.error}` };
     return { ok: false, text: `Not linked yet (${st.state}). Scan the QR from WhatsApp › Linked devices on the gym phone.`, qr: st.qr };
   } catch (e) {
-    return { ok: false, text: mode === "connector" ? connectorProblem(e) : `Couldn't reach the provider: ${e instanceof Error ? e.message : String(e)}` };
+    if (mode === "connector") return { ok: false, text: connectorProblem(e) };
+    if (isLocal() && isNetworkError(e)) return { ok: false, text: offlineMessage("Checking the WhatsApp Business number") };
+    return { ok: false, text: `Couldn't reach the provider: ${e instanceof Error ? e.message : String(e)}` };
   }
 }

@@ -5,7 +5,9 @@ import { getAutopayMode, runAutopayDay, syncWithRazorpay } from "./autopay";
 import { razorpayReady } from "@/lib/integrations/razorpay";
 import { alertRestoreTestFailed, backupNudge, createBackup, pruneBackups, testRestore } from "./backup";
 import { sizeText } from "@/lib/domain/backup";
-import { isUniqueViolation } from "./errors";
+import { isUniqueViolation, NotNow } from "./errors";
+import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
+import { offlineMessage, probablyOnline, SERVICE } from "@/lib/integrations/online";
 import { notify } from "./notifications";
 import { sendMonthlyPl } from "./pl-email";
 import { computeRisk, dailyBrief } from "./insights";
@@ -16,16 +18,38 @@ import { runRetention } from "./privacy";
 import { billingReminders } from "./saas";
 import { fromIso, istInstant, toIso, todayIso } from "./time";
 import { dispatchScheduled, runRules } from "./wa-automation";
-import { getWaSettings, listTemplates, refreshQueued } from "./whatsapp";
+import { getWaSettings, listTemplates, refreshQueued, whySendingFails } from "./whatsapp";
 
 type Result = Record<string, number | string>;
 type Job = { name: string; label: string; run: (orgId: string, today: string, now: Date) => Promise<Result> };
 
+/**
+ * On a computer (FITRON for Windows), a job that sends on WhatsApp waits until WhatsApp can take messages (the internet
+ * for Meta's API, the connector running) instead of recording a failure for every member and alerting every hour.
+ */
+async function whatsAppOrLater(orgId: string) {
+  if (!isLocal()) return;
+  const why = await whySendingFails(orgId);
+  if (why) throw new NotNow(why);
+}
+
 /** Runs the rules of the templates that are on and trigger on one of `whens`, reporting sent / skipped / held. */
 async function reminderRules(orgId: string, whens: string[], today: string, now: Date): Promise<Result> {
+  // On a computer with WhatsApp not linked, the timer saves nothing: saved-but-unsent reminders would only stop the
+  // real ones once WhatsApp is linked (a member reminded recently is skipped). The desk can still remind by hand.
+  if (gymAccountingOnly() && (await getWaSettings(orgId)).mode === "demo") return { sent: 0, skipped: 0, held: 0, note: "WhatsApp is not linked: nothing sent" };
+  await whatsAppOrLater(orgId);
   const keys = (await listTemplates(orgId)).filter((t) => t.autoSend && whens.includes(t.ruleWhen)).map((t) => t.key);
   const r = await runRules(orgId, null, keys, today, now, null);
-  return { sent: r.sent, skipped: r.skipped, held: r.held, ...(r.failed ? { failed: r.failed } : {}) };
+  // "sent" is only what reached WhatsApp: a message saved in demo mode or queued on the phone is counted apart.
+  return {
+    sent: r.sent - r.logged - r.queued,
+    skipped: r.skipped,
+    held: r.held,
+    ...(r.queued ? { "queued on the phone": r.queued } : {}),
+    ...(r.logged ? { "saved, not sent (WhatsApp not linked)": r.logged } : {}),
+    ...(r.failed ? { failed: r.failed } : {}),
+  };
 }
 
 export const JOBS: Job[] = [
@@ -102,7 +126,11 @@ export const JOBS: Job[] = [
   {
     name: "autopay.sync",
     label: "Sync live mandates with Razorpay",
-    run: async (orgId) => ((await getAutopayMode(orgId)) === "live" && !razorpayReady() ? syncWithRazorpay({ orgId }) : { skipped: 1 }),
+    async run(orgId) {
+      if ((await getAutopayMode(orgId)) !== "live" || razorpayReady()) return { skipped: 1 };
+      if (isLocal() && !(await probablyOnline(SERVICE.razorpay))) throw new NotNow(offlineMessage("Syncing with Razorpay"));
+      return syncWithRazorpay({ orgId });
+    },
   },
   {
     name: "leads.followup",
@@ -138,7 +166,10 @@ export const JOBS: Job[] = [
   {
     name: "whatsapp.dispatch",
     label: "Send messages held by quiet hours",
-    run: (orgId, _today, now) => dispatchScheduled(orgId, now),
+    async run(orgId, _today, now) {
+      await whatsAppOrLater(orgId);
+      return dispatchScheduled(orgId, now);
+    },
   },
   {
     name: "backup.auto",
@@ -185,7 +216,7 @@ export const WEEKLY_JOBS: Job[] = [
  * on org + job + day); a job that failed is retried on the next call.
  */
 async function runJobList(list: Job[], kind: string, orgId: string, today: string, now: Date) {
-  const out: { name: string; status: "ran" | "skipped" | "failed"; result?: Result; error?: string }[] = [];
+  const out: { name: string; status: "ran" | "skipped" | "failed" | "waiting"; result?: Result; error?: string }[] = [];
   for (const job of list) {
     let run;
     try {
@@ -204,6 +235,12 @@ async function runJobList(list: Job[], kind: string, orgId: string, today: strin
       await db.jobRun.update({ where: { id: run.id }, data: { finishedAt: new Date(), result: result as Prisma.InputJsonValue } });
       out.push({ name: job.name, status: "ran", result });
     } catch (e) {
+      // Waiting for the internet (or the connector): leave no run behind, so the next call tries again, and alert nobody.
+      if (e instanceof NotNow) {
+        await db.jobRun.delete({ where: { id: run.id } });
+        out.push({ name: job.name, status: "waiting", error: e.message });
+        continue;
+      }
       const error = e instanceof Error ? e.message : String(e);
       await db.jobRun.update({ where: { id: run.id }, data: { finishedAt: new Date(), error } });
       await db.$transaction((tx) => notify(tx, { orgId, type: "JOB_FAILED", text: `${kind} job "${job.label}" failed: ${error}`, link: "/settings/jobs" }));
@@ -214,6 +251,34 @@ async function runJobList(list: Job[], kind: string, orgId: string, today: strin
 }
 
 export const runDailyJobs = (orgId: string, today = todayIso(), now = new Date()) => runJobList(JOBS, "Daily", orgId, today, now);
+
+/**
+ * The daily jobs FITRON for Windows runs itself (src/lib/runtime/local-scheduler.ts): all but door devices (they cannot
+ * reach a computer), FITRON's branch billing (a licence term there), the server's own backups and their reminder (the
+ * computer makes .fitronbackup files on its own schedule), and the demo autopay debits: those book simulated UPI
+ * payments, which a gym's real books must never get unasked. On a computer they run only from "Run today's debits".
+ */
+const NOT_ON_A_COMPUTER = new Set(["autopay", "devices.sync", "billing.branches", "backup.auto", "backup.nudge"]);
+export const LOCAL_JOBS = JOBS.filter((j) => !NOT_ON_A_COMPUTER.has(j.name));
+export const runLocalDailyJobs = (orgId: string, today = todayIso(), now = new Date()) => runJobList(LOCAL_JOBS, "Daily", orgId, today, now);
+
+/**
+ * One pass of FITRON for Windows' timer, for every gym on the computer: today's jobs that are still due (each runs once
+ * a day; one that waited for the internet runs once it is back), then messages held by quiet hours whose time has come.
+ */
+export async function runDueOnThisComputer(now = new Date(), only?: string[]) {
+  const today = todayIso(now);
+  const orgs = await db.organization.findMany({ where: only ? { id: { in: only } } : undefined, select: { id: true } });
+  let ran = 0;
+  let waiting = 0;
+  for (const o of orgs) {
+    const jobs = await runLocalDailyJobs(o.id, today, now);
+    ran += jobs.filter((j) => j.status === "ran").length;
+    waiting += jobs.filter((j) => j.status === "waiting").length;
+    if (!(await whySendingFails(o.id))) await dispatchScheduled(o.id, now);
+  }
+  return { gyms: orgs.length, ran, waiting };
+}
 
 export const runWeeklyJobs = (orgId: string, today = todayIso(), now = new Date()) => runJobList(WEEKLY_JOBS, "Weekly", orgId, today, now);
 

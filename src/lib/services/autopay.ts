@@ -21,6 +21,8 @@ import { getSetting, putSetting } from "./settings";
 import { getTax } from "./tax";
 import { fromIso, toIso, todayIso } from "./time";
 import { sendTemplate } from "./whatsapp";
+import { isLocal } from "@/lib/runtime/edition";
+import { isNetworkError, OfflineError, offlineMessage, probablyOnline, SERVICE } from "@/lib/integrations/online";
 
 export type AutopayMode = "demo" | "live";
 export const getAutopayMode = async (orgId: string): Promise<AutopayMode> => ((await getSetting<{ mode?: AutopayMode }>(orgId, "autopay"))?.mode === "live" ? "live" : "demo");
@@ -29,6 +31,13 @@ export const getAutopayMode = async (orgId: string): Promise<AutopayMode> => ((a
 export const getAutopaySettings = async (orgId: string): Promise<AutopaySettings> => withAutopayDefaults(await getSetting<Partial<AutopaySettings>>(orgId, "autopay"));
 
 const webhookSet = () => !!process.env.RAZORPAY_WEBHOOK_SECRET?.trim();
+
+// Live autopay talks to Razorpay over the internet. On a computer with none (FITRON for Windows) each live action says
+// so before trying, and a call that loses the connection is reported as "no internet", never as "Razorpay refused".
+async function needRazorpay(feature: string, then?: string) {
+  if (isLocal() && !(await probablyOnline(SERVICE.razorpay))) throw new OfflineError(offlineMessage(feature, then));
+}
+const rzpProblem = (feature: string, e: unknown, then?: string) => (isLocal() && isNetworkError(e) ? offlineMessage(feature, then) : `Razorpay: ${e instanceof Error ? e.message : String(e)}`);
 
 /**
  * "Test connection": in live mode, one authenticated GET to Razorpay with the gym's server keys.
@@ -46,7 +55,7 @@ export async function checkAutopayConnection(u: CurrentUser) {
       await pingRazorpay();
       result = { connOk: true, keyId: process.env.RAZORPAY_KEY_ID?.trim(), webhookOk: webhookSet(), error: undefined, checkedAt };
     } catch (e) {
-      result = { connOk: false, error: e instanceof Error ? e.message : String(e), webhookOk: webhookSet(), checkedAt };
+      result = { connOk: false, error: isLocal() && isNetworkError(e) ? "No internet connection: Razorpay could not be reached." : e instanceof Error ? e.message : String(e), webhookOk: webhookSet(), checkedAt };
     }
   }
   // JSON drops undefined, so a cleared error really goes away.
@@ -107,6 +116,7 @@ export async function createMandate(u: CurrentUser, a: { memberId: string; planI
   if (open) throw new UserError(`${member.name} already has autopay (${open.code}). Cancel it first.`);
   const mode = await getAutopayMode(u.orgId);
   if (mode === "live" && razorpayReady()) throw new UserError(`Autopay is set to live but ${razorpayReady()}`);
+  if (mode === "live") await needRazorpay("Creating a live UPI autopay mandate", "Nothing was saved. Try again when the computer is online.");
   const amount = await cycleAmount(u.orgId, plan);
   const startOn = a.startOn ?? (await suggestedStart(member.id)).start;
   const branchId = member.branchId ?? writeBranch(u);
@@ -122,6 +132,10 @@ export async function createMandate(u: CurrentUser, a: { memberId: string; planI
     try {
       mandate.shortUrl = await createAtRazorpay(mandate, plan, startOn, member.code);
     } catch (e) {
+      if (isLocal() && isNetworkError(e)) {
+        await db.autopayMandate.update({ where: { id: mandate.id }, data: { status: "Failed", lastResult: "Not sent to Razorpay: the internet connection was lost. Press Retry now when the computer is online." } });
+        throw new UserError(offlineMessage("Creating a live UPI autopay mandate", `The mandate ${mandate.code} is saved as Failed: press Retry now when the computer is online.`));
+      }
       await db.autopayMandate.update({ where: { id: mandate.id }, data: { status: "Failed", lastResult: `Razorpay: ${e instanceof Error ? e.message : String(e)}` } });
       throw new UserError(`Razorpay refused the mandate: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -145,10 +159,13 @@ export async function changeMandate(u: CurrentUser, id: string, action: "pause" 
   if (!allowed[action].includes(m.status)) throw new UserError(`Can't ${action.replace("-demo", "")} a mandate that is ${m.status.toLowerCase()}.`);
   if (action === "approve-demo" && m.mode !== "demo") throw new UserError("Live mandates are approved by the member in their UPI app.");
   if (m.mode === "live" && m.subscriptionId && action !== "approve-demo") {
+    const feature = { pause: "Pausing", resume: "Resuming", cancel: "Cancelling" }[action] + " a live autopay";
+    const then = action === "cancel" ? "Razorpay keeps debiting the member until it is cancelled online. Try again when the computer is online." : undefined;
+    await needRazorpay(feature, then);
     try {
       await subscriptionAction(m.subscriptionId, action);
     } catch (e) {
-      throw new UserError(`Razorpay: ${e instanceof Error ? e.message : String(e)}`);
+      throw new UserError(rzpProblem(feature, e, then));
     }
   }
   const status = { pause: "Paused", resume: "Active", cancel: "Cancelled", "approve-demo": "Active" }[action];
@@ -327,6 +344,7 @@ export async function syncWithRazorpay(u: CurrentUser | { orgId: string }, opts?
     where: { orgId, mode: "live", subscriptionId: { not: null }, status: { not: "Cancelled" }, ...(user ? { branchId: { in: user.branchIds } } : {}), ...(opts?.mandateIds ? { id: { in: opts.mandateIds } } : {}) },
   });
   const sum: SyncSummary = { checked: 0, charged: 0, changed: 0, applied: 0, errors: 0 };
+  if (mandates.length) await needRazorpay("Syncing with Razorpay");
   for (const m of mandates) {
     sum.checked++;
     try {
@@ -369,6 +387,8 @@ export async function syncWithRazorpay(u: CurrentUser | { orgId: string }, opts?
       });
       sum.changed++;
     } catch (e) {
+      // Lost the internet part-way: stop, and leave the last good sync time as it was. What was applied stays applied.
+      if (isLocal() && isNetworkError(e)) throw new UserError(offlineMessage("Syncing with Razorpay", `${plural(sum.charged + sum.changed, "update")} applied before the connection was lost. Sync again when the computer is online.`));
       sum.errors++;
       sum.error ??= `${m.code}: ${e instanceof Error ? e.message : String(e)}`;
     }
@@ -410,6 +430,7 @@ export async function retryLiveDebit(u: CurrentUser, id: string) {
   if (!["Failed", "Halted"].includes(m.status)) throw new UserError("Only a failed debit can be retried.");
   const missing = razorpayReady();
   if (missing) throw new UserError(`Live mode, but ${missing}`);
+  await needRazorpay("Retrying a live autopay debit");
   const first = m.member.name.split(" ")[0]!;
   if (!m.subscriptionId) {
     const plan = await db.membershipPlan.findFirst({ where: { id: m.planId, orgId: m.orgId } });
@@ -418,7 +439,7 @@ export async function retryLiveDebit(u: CurrentUser, id: string) {
     try {
       link = await createAtRazorpay(m, plan, m.nextDebitOn ? toIso(m.nextDebitOn) : todayIso(), m.member.code);
     } catch (e) {
-      throw new UserError(`Razorpay refused the mandate: ${e instanceof Error ? e.message : String(e)}`);
+      throw new UserError(isLocal() && isNetworkError(e) ? offlineMessage("Retrying a live autopay debit") : `Razorpay refused the mandate: ${e instanceof Error ? e.message : String(e)}`);
     }
     await db.$transaction((tx) => update(tx, m.orgId, u.id, m.id, { status: "Pending", retries: 0, lastResult: "Approval link sent" }, "autopay.retry"));
     await sendTemplate({ orgId: m.orgId, memberId: m.memberId, key: "mandate", userId: u.id, auto: true, vars: { plan_name: plan.name, amount: rupeesText(m.amount), link: link ?? "(no link)" } }).catch(() => null);
@@ -430,7 +451,7 @@ export async function retryLiveDebit(u: CurrentUser, id: string) {
       await subscriptionAction(m.subscriptionId, "resume");
       resumed = true;
     } catch (e) {
-      throw new UserError(`Razorpay: ${e instanceof Error ? e.message : String(e)}`);
+      throw new UserError(rzpProblem("Retrying a live autopay debit", e));
     }
   }
   const r = await syncWithRazorpay(u, { mandateIds: [m.id] });

@@ -1,6 +1,7 @@
 // WhatsApp templates from the prototype, and how they're filled in.
 
 import { defaultRule, toColumns } from "./wa-rules";
+import { runCountsText } from "./wa-outcome";
 
 export const VARS = ["member_name", "member_id", "plan_name", "start_date", "expiry_date", "amount", "pending_amount", "invoice_number", "gym_name", "link", "class_name", "class_time", "grievance_officer", "grievance_email", "grievance_phone"] as const;
 export type TemplateVars = Partial<Record<(typeof VARS)[number], string>>;
@@ -46,7 +47,7 @@ export function waNumber(phone: string | null | undefined) {
 export const rupeesText = (paise: number) => (paise / 100).toLocaleString("en-IN", { minimumFractionDigits: paise % 100 ? 2 : 0, maximumFractionDigits: 2 });
 
 /** One line of the automation run log: "3 Oct, 7:02 am · All scheduled rules · 4 sent, 1 skipped" (older records had no name or skipped). */
-export function runLine(r: { ts: string; name?: string; sent: number; skipped?: number; held?: number }, fts: (ts: string) => string) {
+export function runLine(r: { ts: string; name?: string; sent: number; skipped?: number; held?: number; logged?: number; queued?: number }, fts: (ts: string) => string) {
   const extra = `${r.skipped ? `, ${r.skipped} skipped` : ""}${r.held ? `, ${r.held} held` : ""}`;
-  return `${fts(r.ts)} · ${r.name || "All scheduled rules"} · ${r.sent} sent${extra}`;
+  return `${fts(r.ts)} · ${r.name || "All scheduled rules"} · ${runCountsText(r)}${extra}`;
 }

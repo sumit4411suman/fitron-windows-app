@@ -16,5 +16,7 @@ export const SERVER_ENV = {
   NEXT_TELEMETRY_DISABLED: "1",
   // The suite makes a fresh gym per test through the fitron.in sign-up, which a shipped Local Edition never offers;
   // FITRON_LOCAL_ALLOW_SIGNUP opens it for the suite only. First-run setup has its own spec (e2e/local/startup.spec.ts).
-  ...(EDITION === "local" ? { FITRON_EDITION: "local", FITRON_DATA_DIR: "./.local-e2e", FITRON_LOCAL_ALLOW_SIGNUP: "1" } : {}),
+  // FITRON_LOCAL_SCHEDULER off: the Cloud server under test has no scheduler either, so no daily job or automatic backup
+  // changes a spec's data part-way (the timer has its own tests: src/lib/services/local-jobs.db.test.ts).
+  ...(EDITION === "local" ? { FITRON_EDITION: "local", FITRON_DATA_DIR: "./.local-e2e", FITRON_LOCAL_ALLOW_SIGNUP: "1", FITRON_LOCAL_SCHEDULER: "off" } : {}),
 };

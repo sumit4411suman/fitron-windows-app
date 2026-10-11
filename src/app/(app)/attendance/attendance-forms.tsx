@@ -18,7 +18,7 @@ const ghost = `${btn} border-transparent px-1.5 text-accent hover:bg-accent/10`;
 const inr = (p: number) => `₹${Math.round(p / 100).toLocaleString("en-IN")}`;
 
 /** The check-in panel (prototype ATTENDANCE): Front desk / QR code / Biometric, with the door rules applied. */
-export function CheckInDesk({ rulesText, qr, qrText, gymName, branchName, devices, canOverride }: { rulesText: string; qr: string; qrText: string; gymName: string; branchName: string; devices: Device[]; canOverride: boolean }) {
+export function CheckInDesk({ rulesText, qr, qrText, gymName, branchName, devices, canOverride }: { rulesText: string; qr: string | null; qrText: string; gymName: string; branchName: string; devices: Device[]; canOverride: boolean }) {
   const [mode, setMode] = useState<"Manual" | "QR" | "Biometric">("Manual");
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<DeskHit[]>([]);
@@ -138,30 +138,32 @@ export function CheckInDesk({ rulesText, qr, qrText, gymName, branchName, device
 
       {mode === "QR" && (
         <>
-          <div className="grid grid-cols-[auto_1fr] items-start gap-[18px] rounded-[14px] border border-line bg-surface p-[18px]">
-            <div id="qr-poster" className="rounded-[10px] bg-white p-3">
-              {/* eslint-disable-next-line @next/next/no-img-element -- generated data URL */}
-              <img src={qr} alt="Check-in QR code" width={150} height={150} />
-              <div className="mt-1.5 text-center text-[11px] font-semibold text-[#444]">
-                {gymName}
-                <br />
-                Scan to check in
+          {qr && (
+            <div className="grid grid-cols-[auto_1fr] items-start gap-[18px] rounded-[14px] border border-line bg-surface p-[18px]">
+              <div id="qr-poster" className="rounded-[10px] bg-white p-3">
+                {/* eslint-disable-next-line @next/next/no-img-element -- generated data URL */}
+                <img src={qr} alt="Check-in QR code" width={150} height={150} />
+                <div className="mt-1.5 text-center text-[11px] font-semibold text-[#444]">
+                  {gymName}
+                  <br />
+                  Scan to check in
+                </div>
+              </div>
+              <div className="flex min-w-0 flex-col gap-2.5">
+                <div className="text-base font-semibold">Front-desk QR poster</div>
+                <div className="text-[13.5px] leading-[1.55] text-muted">
+                  Members scan this with their phone camera; it opens their Fitron check-in page for {branchName}. Print it and keep it at the entrance.
+                </div>
+                <div className="text-xs break-all text-faint">{qrText}</div>
+                <div>
+                  <button type="button" onClick={() => window.print()} className={secondary}>
+                    <PrinterIcon weight="duotone" />
+                    Print poster
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="flex min-w-0 flex-col gap-2.5">
-              <div className="text-base font-semibold">Front-desk QR poster</div>
-              <div className="text-[13.5px] leading-[1.55] text-muted">
-                Members scan this with their phone camera; it opens their Fitron check-in page for {branchName}. Print it and keep it at the entrance.
-              </div>
-              <div className="text-xs break-all text-faint">{qrText}</div>
-              <div>
-                <button type="button" onClick={() => window.print()} className={secondary}>
-                  <PrinterIcon weight="duotone" />
-                  Print poster
-                </button>
-              </div>
-            </div>
-          </div>
+          )}
           <QrScanner
             onCode={(code) => {
               setQ(code);
