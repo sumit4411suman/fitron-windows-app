@@ -2,6 +2,7 @@ import "server-only";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
+import { isLocal } from "@/lib/runtime/edition";
 import { sealSecret, unsealSecret } from "@/lib/services/two-step";
 import { cloudCall, SyncHttpError } from "@/lib/integrations/sync";
 import { keyFields, keyOf, SyncDataError, type WireRow } from "./codec";
@@ -314,6 +315,16 @@ export async function retryFailed(ids?: bigint[]) {
 export async function dismissFailed(ids?: bigint[]) {
   const r = await db.syncChange.updateMany({ where: { status: "REJECTED", ...(ids ? { seq: { in: ids } } : {}) }, data: { status: "DONE", error: "Kept on this computer only (dismissed)." } });
   return r.count;
+}
+
+/** How long an uploaded change stays on the computer; waiting, refused and conflicting ones stay until settled. */
+export const KEEP_UPLOADED_DAYS = 30;
+
+/** Drops changes fitron.in confirmed more than KEEP_UPLOADED_DAYS ago: nothing on the computer reads them again. */
+export async function trimUploaded(now = new Date()) {
+  if (!isLocal()) return 0;
+  const before = new Date(now.getTime() - KEEP_UPLOADED_DAYS * 86_400_000);
+  return (await db.syncChange.deleteMany({ where: { status: "DONE", createdAt: { lt: before } } })).count;
 }
 
 export { keyFields };

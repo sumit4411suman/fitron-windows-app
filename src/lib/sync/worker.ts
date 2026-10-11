@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { cloudEvents, cloudUrl, SyncHttpError } from "@/lib/integrations/sync";
-import { readState, syncOnce, tokenOf, type RoundResult } from "./client";
+import { readState, syncOnce, tokenOf, trimUploaded, type RoundResult } from "./client";
 
 // Cloud sync's background worker on the computer, started with the server (src/lib/runtime/local-start.ts) and stopped
 // when FITRON closes. It never makes the desk wait:
@@ -20,6 +20,7 @@ type Worker = {
   revoked: boolean;
   events: AbortController | null;
   last: { at: Date; result?: RoundResult; error?: string } | null;
+  trimmedAt: number;
 };
 
 const g = globalThis as unknown as { fitronSync?: Worker; fitronStopping?: boolean };
@@ -27,10 +28,12 @@ const g = globalThis as unknown as { fitronSync?: Worker; fitronStopping?: boole
 const BUSY_MS = 10_000;
 const IDLE_MS = 60_000;
 const MAX_BACKOFF_MS = 600_000;
+/** Uploaded changes older than 30 days are dropped here at most once a day, after a round with nothing waiting. */
+const TRIM_EVERY_MS = 86_400_000;
 
 export const backoffMs = (failures: number, rand = Math.random()) => Math.round(Math.min(MAX_BACKOFF_MS, 5_000 * 2 ** Math.max(0, failures - 1)) * (0.8 + rand * 0.4));
 
-const w = (): Worker => (g.fitronSync ??= { timer: null, running: false, again: false, failures: 0, stopped: true, revoked: false, events: null, last: null });
+const w = (): Worker => (g.fitronSync ??= { timer: null, running: false, again: false, failures: 0, stopped: true, revoked: false, events: null, last: null, trimmedAt: 0 });
 
 function schedule(ms: number) {
   const s = w();
@@ -59,6 +62,10 @@ async function tick() {
     s.failures = 0;
     s.last = { at: new Date(), result: result ?? undefined };
     if ((await db.syncChange.count({ where: { status: "PENDING" } })) > 0) next = BUSY_MS;
+    else if (Date.now() - s.trimmedAt > TRIM_EVERY_MS) {
+      s.trimmedAt = Date.now();
+      await trimUploaded().catch((e) => log.warn("sync.trim_failed", e));
+    }
     ensureEvents();
   } catch (e) {
     s.failures++;

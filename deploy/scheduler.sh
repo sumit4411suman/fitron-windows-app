@@ -4,7 +4,7 @@
 #   20:30 UTC = 02:00 India time: backup of the database and member files, keeping KEEP_DAYS days
 #   every 15 minutes: WhatsApp messages held by quiet hours or a rule's send time go out once their time has come
 #   every hour: AI Trainer push reminders (each one goes once a day, in its own window)
-#   Saturday 21:00 UTC = Sunday 02:30 India time: restore test of every gym's latest backup (rolled back; holds the gym's rows briefly)
+#   Saturday 21:00 UTC = Sunday 02:30 India time: restore test of every gym's latest backup (rolled back; holds the gym's rows briefly), then trimming of the cloud sync log
 set -u
 mkdir -p /backups
 state=/backups/.state

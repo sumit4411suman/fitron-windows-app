@@ -30,7 +30,12 @@ was deployed.
    - The sync routes are outside the sign-in proxy (`src/lib/public-paths.ts`): they check the device token themselves.
 
 Storage: one `SyncChange` row per change to a synced record, with the record's data (about 0.5 to 2 KB). A busy gym
-writes a few hundred a day. Trimming old rows is not built yet (§7); until then the table only grows.
+writes a few hundred a day. The weekly job "sync.trim" (with the restore test, `/api/jobs/weekly`) keeps the table
+small: a change goes once it is older than 90 days, every linked computer has pulled past it, and a newer change of
+the same record exists, so each record's newest change always stays. A computer not heard from for 180 days no longer
+holds the log back; it is told to download the gym again when it is back. Upload receipts (`SyncApplied`) go after 90
+days once their computer has uploaded since. On the computer, uploaded changes go after 30 days; waiting, refused and
+conflicting ones stay until settled. Settings › Jobs shows each run's counts.
 
 ## 3. Releasing FITRON for Windows
 
@@ -86,8 +91,6 @@ Nothing in these logs holds record contents except `SyncConflict` (both versions
 
 - **Files**: member documents, photos and the gym logo sync as records (name, size, storage key), not as files; a
   computer that downloaded the gym does not have the website's files, and the website does not have the computer's.
-- **Outbox trimming** is not built: `SyncChange` keeps every change. The plan (SYNC.md §4): drop rows older than 90
-  days once every linked computer has pulled past them, keeping each record's latest row.
 - **Staff passwords** never sync: staff who arrive on the other side sign in once a Super Admin sets their password
   there.
 - **WhatsApp** transport settings (Meta keys, the connector) stay on each side; messages and templates sync.

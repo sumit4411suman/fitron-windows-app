@@ -5,7 +5,7 @@ name: Scheduled jobs
 #   01:00         daily jobs (reminders, autopay, risk scores…) = 06:30 India time
 #   every 15 min  WhatsApp messages held by quiet hours go out once their time has come
 #   every hour    AI Trainer push reminders
-#   Sat 21:00     restore test of every gym's latest backup = Sunday 02:30 India time
+#   Sat 21:00     restore test of every gym's latest backup, then trimming of the cloud sync log = Sunday 02:30 India time
 # GitHub starts a scheduled run a few minutes late at busy times. Every job is safe to run twice.
 #
 # Set up once, in the repository's Settings > Secrets and variables > Actions (deploy/VERCEL.md, step 3):

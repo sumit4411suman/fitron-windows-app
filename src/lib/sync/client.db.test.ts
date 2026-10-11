@@ -30,7 +30,7 @@ import { createMember, updateMember } from "@/lib/services/members";
 import { runLocalDailyJobs, ON_FITRON_IN } from "@/lib/services/jobs";
 import { todayIso } from "@/lib/services/time";
 import { readRecord } from "./records";
-import { dismissFailed, pullAll, pushPending, readState, retryFailed, sealToken, syncOnce } from "./client";
+import { dismissFailed, pullAll, pushPending, readState, retryFailed, sealToken, syncOnce, trimUploaded } from "./client";
 import type { ChangesPage, PushItem, PushResult, SnapshotPage } from "./protocol";
 
 type Gym = Awaited<ReturnType<typeof makeGym>>;
@@ -171,6 +171,21 @@ describe.skipIf(!isLocal())("cloud sync on the computer (database)", () => {
     expect(await db.member.count({ where: { id: "m_from_cloud_3" } })).toBe(0);
     expect(await db.syncConflict.findFirst({ where: { entityId: "m_from_cloud_3", kind: "not-applied" } })).toBeTruthy();
     expect(Number((await readState())!.pulledSeq)).toBe(from + 2);
+  });
+
+  it("drops uploaded changes after 30 days, and never one still waiting, refused or in conflict", async () => {
+    const old = new Date(Date.now() - 40 * 86_400_000);
+    const made = [];
+    for (const status of ["DONE", "PENDING", "REJECTED", "CONFLICT"]) {
+      made.push(await db.syncChange.create({ data: { changeId: `trim-${status}-${Date.now()}`, orgId: gym.org.id, entity: "Member", entityId: `trim-${status}`, op: "upsert", origin: "local", status, createdAt: old } }));
+    }
+    const recent = await db.syncChange.create({ data: { changeId: `trim-recent-${Date.now()}`, orgId: gym.org.id, entity: "Member", entityId: "trim-recent", op: "upsert", origin: "local", status: "DONE" } });
+    const removed = await trimUploaded();
+    expect(removed).toBeGreaterThanOrEqual(1);
+    const left = new Set((await db.syncChange.findMany({ where: { changeId: { in: [...made, recent].map((c) => c.changeId) } } })).map((c) => c.status + (c.entityId === "trim-recent" ? "-recent" : "")));
+    expect(left).toEqual(new Set(["PENDING", "REJECTED", "CONFLICT", "DONE-recent"]));
+    await db.syncChange.deleteMany({ where: { changeId: { in: made.map((c) => c.changeId) } } });
+    await db.syncChange.deleteMany({ where: { changeId: recent.changeId } });
   });
 
   it("leaves the daily jobs to fitron.in while linked", async () => {

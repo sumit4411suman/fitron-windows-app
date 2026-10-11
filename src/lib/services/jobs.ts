@@ -19,6 +19,7 @@ import { billingReminders } from "./saas";
 import { fromIso, istInstant, toIso, todayIso } from "./time";
 import { dispatchScheduled, runRules } from "./wa-automation";
 import { getWaSettings, listTemplates, refreshQueued, whySendingFails } from "./whatsapp";
+import { trimChanges } from "@/lib/sync/server";
 
 type Result = Record<string, number | string>;
 type Job = { name: string; label: string; run: (orgId: string, today: string, now: Date) => Promise<Result> };
@@ -213,6 +214,11 @@ export const WEEKLY_JOBS: Job[] = [
       if (!t) return { note: "no backup yet" };
       return { backup: t.backup.fileName, taken: t.backup.createdAt.toISOString(), rows: t.rows, tables: t.tables, ms: t.ms };
     },
+  },
+  {
+    name: "sync.trim",
+    label: "Trim the cloud sync change log",
+    run: (orgId, _today, now) => trimChanges(orgId, now),
   },
 ];
 

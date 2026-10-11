@@ -357,6 +357,64 @@ export async function pushBatch(dev: DeviceAuth, items: PushItem[]): Promise<Pus
 }
 
 /** The gym's linked computers, for Settings › Cloud sync on the website. */
+// ── Trimming the change log ─────────────────────────────────────────────────────────────────────────────────────────
+
+const DAY_MS = 86_400_000;
+/** Changes younger than this always stay. */
+export const KEEP_DAYS = 90;
+/** A computer not heard from for this long no longer holds the log back; it downloads the whole gym when it is back. */
+export const AWAY_DAYS = 180;
+const TRIM_BATCH = 5_000;
+
+/**
+ * Trims one gym's change log (the weekly job "sync.trim"; SYNC.md §4). A change goes once it is older than KEEP_DAYS,
+ * every linked computer has pulled past it, and a newer change of the same record exists: each record's newest change
+ * (a delete's tombstone included) always stays, so its version and the "changed meanwhile" check still hold. A computer
+ * away longer than AWAY_DAYS is told to download the gym again instead of holding the log back for ever. Upload
+ * receipts (SyncApplied) go once they are older than KEEP_DAYS and their computer has uploaded since (it uploads oldest
+ * first, so it had the answer), or was unlinked.
+ */
+export async function trimChanges(orgId: string, now = new Date()) {
+  const old = new Date(now.getTime() - KEEP_DAYS * DAY_MS);
+  const away = new Date(now.getTime() - AWAY_DAYS * DAY_MS);
+  const devices = await db.syncDevice.findMany({ where: { orgId }, select: { id: true, pulledSeq: true, lastSeenAt: true, linkedAt: true, revokedAt: true } });
+  const out = { removed: 0, receipts: 0, resync: 0, below: 0 };
+
+  const aged = await db.syncChange.findFirst({ where: { orgId, createdAt: { lt: old } }, orderBy: { seq: "desc" }, select: { seq: true } });
+  if (aged) {
+    const linked = devices.filter((d) => !d.revokedAt);
+    const present = linked.filter((d) => (d.lastSeenAt ?? d.linkedAt) >= away);
+    let cutoff = aged.seq;
+    for (const d of present) if (d.pulledSeq < cutoff) cutoff = d.pulledSeq;
+    // Told first, trimmed after: a computer that comes back in between downloads the gym either way.
+    const behind = linked.filter((d) => !present.includes(d) && d.pulledSeq < cutoff).map((d) => d.id);
+    if (behind.length) out.resync = (await db.syncDevice.updateMany({ where: { id: { in: behind } }, data: { resyncAt: now } })).count;
+    out.below = Number(cutoff);
+    for (;;) {
+      const n = await db.$executeRaw`
+        DELETE FROM "SyncChange" WHERE seq IN (
+          SELECT c.seq FROM "SyncChange" c
+          WHERE c."orgId" = ${orgId} AND c.seq <= ${cutoff}
+            AND EXISTS (SELECT 1 FROM "SyncChange" n WHERE n."orgId" = c."orgId" AND n.entity = c.entity AND n."entityId" = c."entityId" AND n.seq > c.seq)
+          LIMIT ${TRIM_BATCH})`;
+      out.removed += n;
+      if (n < TRIM_BATCH) break;
+    }
+  }
+
+  for (const d of devices) {
+    let before: Date | null = null;
+    if (d.revokedAt) before = old;
+    else {
+      const newest = await db.syncApplied.findFirst({ where: { deviceId: d.id }, orderBy: { appliedAt: "desc" }, select: { appliedAt: true } });
+      // Receipts of the same upload are written within moments of each other; an hour later is a later upload.
+      if (newest) before = new Date(Math.min(old.getTime(), newest.appliedAt.getTime() - 3_600_000));
+    }
+    if (before) out.receipts += (await db.syncApplied.deleteMany({ where: { orgId, deviceId: d.id, appliedAt: { lt: before } } })).count;
+  }
+  return out;
+}
+
 export async function listDevices(orgId: string) {
   return db.syncDevice.findMany({ where: { orgId }, orderBy: { linkedAt: "asc" } });
 }
