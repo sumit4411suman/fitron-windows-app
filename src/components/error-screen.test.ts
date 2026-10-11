@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { browserDetails, ErrorScreen } from "./error-screen";
+import { browserDetails, ErrorScreen, shouldAutoReload } from "./error-screen";
 
 const show = (error: Error & { digest?: string }, home = { href: "/dashboard", label: "Go to the dashboard" }) =>
   renderToStaticMarkup(createElement(ErrorScreen, { error, retry: () => {}, where: "app", home }));
@@ -33,5 +33,13 @@ describe("the error screen", () => {
     const e = new TypeError("i is not a function");
     e.stack = "TypeError: i is not a function\n    at a (https://fitron.in/_next/static/chunks/0f3c2a9e1b.js:1:48213)\n    at b (https://fitron.in/_next/static/chunks/main.js:2:10)";
     expect(browserDetails(e)).toBe("TypeError: i is not a function @ chunks/0f3c2a9e1b.js:1:48213");
+  });
+
+  it("reloads by itself once for a browser error, but not again within a minute, so a real bug can't loop", () => {
+    const now = 1_000_000;
+    expect(shouldAutoReload(0, now)).toBe(true);
+    expect(shouldAutoReload(Number.NaN, now)).toBe(true);
+    expect(shouldAutoReload(now - 5_000, now)).toBe(false);
+    expect(shouldAutoReload(now - 61_000, now)).toBe(true);
   });
 });

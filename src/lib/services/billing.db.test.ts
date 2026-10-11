@@ -5,8 +5,11 @@ import { createMember } from "./members";
 import { createPlan } from "./plans";
 import { cancelInvoice, collectPayment, createInvoice, getInvoice, listReceivables, reversePayment, sellMembership, suggestedStart } from "./billing";
 import { UserError } from "./errors";
+import { sellerOf } from "./invoice-seller";
+import { saveGymProfile, saveTax } from "./settings";
 import { todayIso } from "./time";
 import { addDays, membershipEndDate } from "@/lib/domain/dates";
+import { fmtDate } from "@/lib/format";
 
 describe.skipIf(!hasDb)("billing (database)", () => {
   let gym: Awaited<ReturnType<typeof makeGym>>;
@@ -106,11 +109,57 @@ describe.skipIf(!hasDb)("billing (database)", () => {
     expect(list.some((r) => r.id === inv.id)).toBe(true);
   });
 
+  it("keeps the seller details as they were when the invoice was made, whatever Settings say later", async () => {
+    const m = await newMember();
+    await saveGymProfile(admin, { name: "Snapshot Gym", tagline: "Old tagline", address: "1 Old Road", phone: "9000000001", email: "old@gym.test", instagram: "@old" });
+    await saveTax(admin, { enabled: true, rate: 18, type: "CGST+SGST", gstin: "20OLDGSTIN0001Z5", sac: "999723", invoicePrefix: "INV-" });
+    const inv = await createInvoice(admin, { memberId: m.id, date: today, dueDate: today, lines: [{ description: "PT", category: "Personal Training", qty: 1, rate: 100000, discount: 0, taxable: true }], payAmount: 0 });
+    const before = await sellerOf((await getInvoice(admin, inv.id))!);
+    expect(before).toMatchObject({ name: "Snapshot Gym", tagline: "Old tagline", address: "1 Old Road", gstin: "20OLDGSTIN0001Z5", sac: "999723" });
+    expect(inv.gstRate && Number(inv.gstRate)).toBe(18);
+
+    // The gym drops its GSTIN and changes its name and tagline.
+    await saveTax(admin, { enabled: false, rate: 18, type: "CGST+SGST", gstin: "", sac: "", invoicePrefix: "INV-" });
+    await saveGymProfile(admin, { name: "Renamed Gym", tagline: "New tagline", address: "2 New Road", phone: "9000000002", email: "", instagram: "" });
+    const after = (await getInvoice(admin, inv.id))!;
+    expect(after.seller).toEqual(inv.seller);
+    expect(await sellerOf(after)).toEqual(before);
+    expect(after.gstType).toBe("CGST+SGST");
+    expect(Number(after.gstRate)).toBe(18);
+
+    // A new invoice sees the new settings, and an invoice from before snapshots were kept falls back to them.
+    const fresh = await createInvoice(admin, { memberId: m.id, date: today, dueDate: today, lines: [{ description: "PT", category: "Personal Training", qty: 1, rate: 100000, discount: 0, taxable: true }], payAmount: 0 });
+    expect(await sellerOf((await getInvoice(admin, fresh.id))!)).toMatchObject({ name: "Renamed Gym", tagline: "New tagline", gstin: null });
+    expect(await sellerOf({ ...after, seller: null })).toMatchObject({ name: "Renamed Gym", gstin: null });
+  });
+
   it("numbers invoices without gaps", async () => {
     const m = await newMember();
     const a = await sellMembership(admin, m.id, sale());
-    const b = await sellMembership(admin, m.id, sale({ includeRegFee: false }));
+    const b = await sellMembership(admin, m.id, sale({ startDate: (await suggestedStart(m.id)).start, includeRegFee: false }));
     expect(Number(b.invoice.number.split("-")[1])).toBe(Number(a.invoice.number.split("-")[1]) + 1);
+  });
+
+  it("refuses a second plan over dates the member already has, and says when the next one can start", async () => {
+    const m = await newMember();
+    const first = await sellMembership(admin, m.id, sale());
+    const end = first.membership.endDate.toISOString().slice(0, 10);
+    const invoices = await db.invoice.count({ where: { memberId: m.id } });
+    // The same dates again, a start inside the plan, and a start before it that runs into it.
+    for (const startDate of [today, addDays(today, 10), addDays(today, -5)]) {
+      const err = await sellMembership(admin, m.id, sale({ startDate, includeRegFee: false })).catch((e: unknown) => e);
+      expect(err, startDate).toBeInstanceOf(UserError);
+      expect((err as UserError).message).toContain("already has Quarterly covering");
+      expect((err as UserError).message).toContain("would overlap it");
+      expect((err as UserError).message).toContain(`Start it on ${fmtDate(addDays(end, 1))}`);
+    }
+    expect(await db.invoice.count({ where: { memberId: m.id } })).toBe(invoices);
+    expect(await db.membership.count({ where: { memberId: m.id } })).toBe(1);
+    // A plan after it is fine, and a cancelled plan no longer blocks its dates.
+    await sellMembership(admin, m.id, sale({ startDate: addDays(end, 1), includeRegFee: false }));
+    await cancelInvoice(admin, first.invoice.id, "Sold by mistake");
+    const again = await sellMembership(admin, m.id, sale({ includeRegFee: false }));
+    expect(again.membership.startDate.toISOString().slice(0, 10)).toBe(today);
   });
 });
 

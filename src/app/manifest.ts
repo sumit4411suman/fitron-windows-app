@@ -11,6 +11,6 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#0e0d0a",
     theme_color: "#0e0d0a",
     lang: "en-IN",
-    icons: [{ src: "/fitron-mark.png", sizes: "any", type: "image/png" }],
+    icons: [{ src: "/fitron-mark-v2.png", sizes: "any", type: "image/png" }],
   };
 }

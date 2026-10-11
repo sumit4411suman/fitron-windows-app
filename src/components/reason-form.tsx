@@ -1,43 +1,45 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useCallback, useState } from "react";
+import { Modal } from "./confirm-dialog";
 import { Button, Field, Input, Notice } from "./ui";
 
 type Result = { ok?: boolean; message?: string; errors?: Record<string, string[] | undefined> } | undefined;
 
-/** A danger button that opens a "reason" field before running an irreversible-looking action. */
+/**
+ * A danger button that asks for a reason before running an irreversible-looking action. The question and the reason
+ * field open in the app's own modal over the page, so a button in the last column of a wide table never opens a
+ * field out of sight, and no browser box is needed to confirm.
+ */
 export function ReasonForm({ action: act, label, confirm, done, compact }: { action: (s: Result, fd: FormData) => Promise<Result>; label: string; confirm: string; done?: boolean; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [state, action, pending] = useActionState(act, undefined);
+  const close = useCallback(() => setOpen(false), []);
   if (state?.ok) return <Notice tone="ok">{state.message}</Notice>;
   if (done) return null;
-  if (!open)
-    return (
+  return (
+    <>
       <Button type="button" variant={compact ? "ghost" : "danger"} className={compact ? "text-alert-700 hover:bg-alert-soft" : undefined} onClick={() => setOpen(true)}>
         {label}
       </Button>
-    );
-  return (
-    <form
-      action={action}
-      onSubmit={(ev) => {
-        if (!window.confirm(confirm)) ev.preventDefault();
-      }}
-      className="flex flex-col gap-2 sm:flex-row sm:items-end"
-    >
-      <Field label="Reason" error={state?.errors?.reason} className="flex-1">
-        <Input name="reason" required minLength={3} autoFocus />
-      </Field>
-      {state?.message && <Notice tone="alert">{state.message}</Notice>}
-      <div className="flex gap-2">
-        <Button variant="danger" disabled={pending}>
-          {label}
-        </Button>
-        <Button type="button" onClick={() => setOpen(false)}>
-          Keep
-        </Button>
-      </div>
-    </form>
+      {open && (
+        <Modal title={confirm} onClose={close}>
+          <form action={action} className="flex flex-col gap-3">
+            <Field label="Reason" error={state?.errors?.reason}>
+              <Input name="reason" required minLength={3} />
+            </Field>
+            {state?.message && <Notice tone="alert">{state.message}</Notice>}
+            <div className="flex justify-end gap-2.5">
+              <Button type="button" onClick={close}>
+                Keep
+              </Button>
+              <Button variant="danger" disabled={pending}>
+                {pending ? "Working…" : label}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      )}
+    </>
   );
 }
-

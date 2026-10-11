@@ -184,7 +184,9 @@ export async function prepareMessage(o: SendOpts & { holdUntil?: Date | null }) 
   if (member.walkIn || member.erasedAt) return null;
   if (!o.force && REMINDER_KEYS.includes(o.key)) {
     const since = new Date(Date.now() - settings.dedupDays * 86_400_000);
-    const recent = await db.whatsAppMessage.findFirst({ where: { memberId: o.memberId, templateKey: o.key, sentAt: { gte: since }, status: { not: "Failed" } } });
+    // Once WhatsApp is linked, a reminder that was only logged while it was not (demo) doesn't count: it never reached the member.
+    const unsent = settings.mode === "demo" ? ["Failed"] : ["Failed", "Logged"];
+    const recent = await db.whatsAppMessage.findFirst({ where: { memberId: o.memberId, templateKey: o.key, sentAt: { gte: since }, status: { notIn: unsent } } });
     if (recent) return null;
   }
   const to = waNumber(member.whatsapp ?? member.phone);
@@ -347,7 +349,7 @@ export async function applyDeliveryStatus(providerMessageId: string, status: str
   }
 }
 
-/** How long the connector may keep a message queued (250 a day, 8 to 15 s apart) before the app stops waiting for it. */
+/** How long the connector may keep a message queued (paced per gym, up to a day while the phone is offline) before the app stops waiting for it. */
 const QUEUE_GIVE_UP_MS = 6 * 3_600_000;
 
 /**
@@ -370,7 +372,7 @@ export async function refreshQueued(orgId: string) {
       error = r.error ?? null;
     } else if (m.status === "Queued" && Date.now() - m.sentAt.getTime() > QUEUE_GIVE_UP_MS) {
       status = "Failed";
-      error = "The WhatsApp connector was restarted before this message was sent. Send it again.";
+      error = "The WhatsApp connector no longer knows this message. Send it again.";
     }
     if (!status || (rank[status] ?? 0) <= (rank[m.status] ?? 0)) continue;
     const at = new Date();

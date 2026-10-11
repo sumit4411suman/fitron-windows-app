@@ -2,6 +2,7 @@ import Link from "next/link";
 import { HandCoinsIcon } from "@phosphor-icons/react/dist/ssr";
 import { requirePermission } from "@/lib/auth/current";
 import { db } from "@/lib/db";
+import { limitSearch, TOO_MANY_SEARCHES } from "@/lib/rate-limit";
 import { listPayments } from "@/lib/services/billing";
 import { fromIso, todayIso } from "@/lib/services/time";
 import { AutoFilter } from "@/components/auto-filter";
@@ -24,11 +25,16 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/payment
   const page = Math.max(1, Number(s("page") ?? 1) || 1);
   const today = todayIso();
   const scope = { orgId: u.orgId, branchId: { in: u.branchIds }, status: "SUCCESS" };
-  const [rows, todaySum, month] = await Promise.all([
-    listPayments(u, f),
-    db.payment.aggregate({ where: { ...scope, date: fromIso(today) }, _sum: { amount: true } }),
-    db.payment.groupBy({ by: ["method"], where: { ...scope, date: { gte: fromIso(`${today.slice(0, 7)}-01`), lte: fromIso(today) } }, _sum: { amount: true } }),
-  ]);
+  const load = () =>
+    Promise.all([
+      listPayments(u, f),
+      db.payment.aggregate({ where: { ...scope, date: fromIso(today) }, _sum: { amount: true } }),
+      db.payment.groupBy({ by: ["method"], where: { ...scope, date: { gte: fromIso(`${today.slice(0, 7)}-01`), lte: fromIso(today) } }, _sum: { amount: true } }),
+    ]);
+  // A search counts against the person's search allowance; too many at once shows a note instead of touching the database.
+  const loaded = f.q ? await limitSearch(u.id, load) : await load();
+  const limited = loaded === null;
+  const [rows, todaySum, month] = loaded ?? [[], { _sum: { amount: 0 } }, []];
   const byMethod = (pick: (m: string) => boolean) => month.filter((m) => pick(m.method)).reduce((a, m) => a + (m._sum.amount ?? 0), 0);
   const users = await db.user.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.receivedById))] } }, select: { id: true, name: true } });
   const by = new Map(users.map((x) => [x.id, x.name]));
@@ -113,7 +119,13 @@ export default async function PaymentsPage({ searchParams }: PageProps<"/payment
           </tbody>
         </table>
       </ScrollRegion>
-      {rows.length === 0 && <p className="text-muted">{f.q || f.method ? "No payments match." : "No payments yet."}</p>}
+      {limited ? (
+        <p role="alert" className="text-muted">
+          {TOO_MANY_SEARCHES}
+        </p>
+      ) : (
+        rows.length === 0 && <p className="text-muted">{f.q || f.method ? "No payments match." : "No payments yet."}</p>
+      )}
       <Pager page={page} pageSize={PAGE} total={rows.length} href={link} />
     </div>
   );

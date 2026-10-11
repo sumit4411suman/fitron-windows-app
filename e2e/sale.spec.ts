@@ -68,11 +68,46 @@ test("a payment taken by mistake is reversed, never deleted: the record stays an
   await expect(page.getByText("PAID", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Reverse", exact: true }).click();
-  await page.getByLabel("Reason").fill("Entered against the wrong member");
-  page.once("dialog", (d) => void d.accept());
-  await page.getByRole("button", { name: "Reverse", exact: true }).click();
+  const ask = page.getByRole("dialog", { name: "Reverse this payment?" });
+  await ask.getByLabel("Reason").fill("Entered against the wrong member");
+  await ask.getByRole("button", { name: "Reverse", exact: true }).click();
   await expect(page.getByText("PAID", { exact: true })).toHaveCount(0);
 
   const rows = await sql<{ n: number; reversed: number }>(`select count(*)::int as n, count(*) filter (where status = 'REVERSED')::int as reversed from "Payment" where "invoiceId" = $1`, [invoiceId]);
   expect(rows[0], "the payment is kept, marked as reversed").toEqual({ n: 1, reversed: 1 });
+});
+
+test("recording ₹0 says what is wrong instead of hanging on Saving…", async ({ page }) => {
+  await gymWithPlan(page, { name: `Zero ${unique()}`, months: 1, price: 1000 });
+  const memberId = await addMember(page, `Zero ${unique()}`);
+  const invoiceId = await sell(page, memberId, { payNow: 0 });
+  await page.goto(`/invoices/${invoiceId}`);
+  const collect = page.locator("#collect");
+  await collect.getByLabel("Amount (₹)").fill("0");
+  await collect.getByRole("button", { name: "Record payment" }).click();
+  await expect(collect.getByText(/Enter an amount/).first()).toBeVisible();
+  await expect(collect.getByRole("button", { name: "Record payment" })).toBeEnabled();
+  expect((await sql(`select 1 from "Payment" where "invoiceId" = $1`, [invoiceId])).length).toBe(0);
+});
+
+test("a payment is reversed from the payments list in the app's own dialog, with the reason in view", async ({ page }) => {
+  await gymWithPlan(page, { name: `List ${unique()}`, months: 1, price: 900 });
+  const member = `Kiran ${unique()}`;
+  const memberId = await addMember(page, member);
+  const invoiceId = await sell(page, memberId);
+  await page.goto("/payments");
+  let browserBox = false;
+  page.on("dialog", (d) => {
+    browserBox = true;
+    void d.dismiss();
+  });
+  await page.getByRole("row").filter({ hasText: member }).getByRole("button", { name: "Reverse" }).click();
+  const ask = page.getByRole("dialog", { name: "Reverse this payment?" });
+  await expect(ask.getByLabel("Reason")).toBeInViewport();
+  await ask.getByLabel("Reason").fill("Wrong member");
+  await ask.getByRole("button", { name: "Reverse", exact: true }).click();
+  await expect(ask).toHaveCount(0);
+  await expect(page.getByRole("row").filter({ hasText: member })).toContainText("Reversed");
+  expect(browserBox, "no browser confirm box").toBe(false);
+  expect((await sql<{ status: string }>(`select status from "Payment" where "invoiceId" = $1`, [invoiceId]))[0]?.status).toBe("REVERSED");
 });

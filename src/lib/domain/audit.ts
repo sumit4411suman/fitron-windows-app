@@ -9,7 +9,12 @@ export const HIGH_WORDS = ["reverse", "cancel", "delete", "remove", "unlock", "v
 /** Edits to existing records, locks, settings and sign-ins. */
 export const MEDIUM_WORDS = ["update", "lock", "setting", "suspend", "price", "transfer", "payroll", "salary", "login"];
 
+/** Actions whose seriousness the words above would get wrong: opening a door from the app is a physical-security event. */
+export const SEVERITY_OF_ACTION: Record<string, Severity> = { "device.open-door": "High" };
+
 export function severityOf(action: string, entity = ""): Severity {
+  const fixed = SEVERITY_OF_ACTION[action];
+  if (fixed) return fixed;
   const a = `${action} ${entity}`.toLowerCase();
   if (HIGH_WORDS.some((w) => a.includes(w))) return "High";
   if (MEDIUM_WORDS.some((w) => a.includes(w))) return "Medium";
@@ -76,6 +81,80 @@ const withRef = (verb: string, noun: string) => (c: Ctx) => `${verb} ${noun} ${c
 const named = (verb: string, noun: string) => (c: Ctx) => `${verb} ${noun} ${c.name || c.ref || c.id}`.trim();
 const member = (verb: string) => (c: Ctx) => `${verb} member ${[str(c.a.name) || str(c.b.name), (c.ref && `(${c.ref})`) || ""].filter(Boolean).join(" ")}`.trim();
 const rupees = (v: unknown) => formatRupees(Number(v) || 0);
+
+// ── Field-by-field changes ("tagline 'A' → 'B', GSTIN removed") ─────────────
+
+const SKIP_FIELDS = ["updatedAt", "createdAt", "id", "orgId"];
+const ACRONYMS = new Set(["gstin", "gst", "pan", "upi", "ip", "url", "id", "api", "sms", "otp", "qr", "rfid", "utr", "hsn", "sac", "pin", "ai", "cin", "ifsc"]);
+const SECRET = /token|secret|key|password|passcode/i;
+
+/** camelCase or snake_case key → words: "idleMinutes" → "idle minutes", "gstin" → "GSTIN". */
+export function humaniseKey(key: string) {
+  return key
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(" ")
+    .filter(Boolean)
+    .map((w) => (ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w.toLowerCase()))
+    .join(" ");
+}
+
+const isPlain = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.isArray(v);
+const empty = (v: unknown) => v === undefined || v === null || v === "";
+
+function showValue(v: unknown): string {
+  if (empty(v)) return "—";
+  if (typeof v === "string") return `'${v.length > 60 ? `${v.slice(0, 57)}…` : v}'`;
+  if (typeof v === "boolean") return v ? "on" : "off";
+  if (typeof v === "number") return String(v);
+  if (Array.isArray(v)) return v.length <= 5 && v.every((x) => typeof x !== "object") ? `[${v.map((x) => (typeof x === "string" ? x : String(x))).join(", ")}]` : `${v.length} items`;
+  const s = JSON.stringify(v);
+  return s.length > 60 ? `${s.slice(0, 57)}…` : s;
+}
+
+export type Change = { path: string; label: string; text: string };
+
+/**
+ * The leaf fields that differ between before and after, as "old → new" lines. Secret-looking fields
+ * (tokens, keys, passwords) only say "updated"; nested objects are walked to their changed leaves.
+ */
+export function changedFields(before: unknown, after: unknown, prefix: string[] = [], depth = 0): Change[] {
+  const b = obj(before);
+  const a = obj(after);
+  const out: Change[] = [];
+  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((k) => depth > 0 || !SKIP_FIELDS.includes(k));
+  for (const k of keys) {
+    const bv = b[k];
+    const av = a[k];
+    if (JSON.stringify(bv ?? null) === JSON.stringify(av ?? null)) continue;
+    const path = [...prefix, k];
+    const label = path.map(humaniseKey).join(" › ");
+    if (SECRET.test(k)) {
+      out.push({ path: path.join("."), label, text: empty(av) ? "removed" : "updated" });
+      continue;
+    }
+    if (isPlain(av) && isPlain(bv) && depth < 3) {
+      out.push(...changedFields(bv, av, path, depth + 1));
+      continue;
+    }
+    if (isPlain(av) && empty(bv) && depth < 3) {
+      out.push(...changedFields({}, av, path, depth + 1));
+      continue;
+    }
+    const text = empty(av) && !empty(bv) ? "removed" : empty(bv) && !(k in b) ? `set to ${showValue(av)}` : `${showValue(bv)} → ${showValue(av)}`;
+    out.push({ path: path.join("."), label, text });
+  }
+  return out;
+}
+
+/** "tagline 'A' → 'B', GSTIN removed and 2 more", for a sentence. */
+export function changeSummary(before: unknown, after: unknown, max = 4) {
+  const all = changedFields(before, after);
+  const shown = all.slice(0, max).map((c) => `${c.label} ${c.text}`);
+  return shown.join(", ") + (all.length > max ? ` and ${all.length - max} more` : "");
+}
+
+const SETTING_NAMES: Record<string, string> = { gym: "Gym", tax: "Tax & GST", numbering: "Numbering", access: "Entry rules", whatsapp: "WhatsApp", reminders: "Reminders", autopay: "Autopay", ai: "Fitron AI", migration: "Migration", opening: "Opening balances", subscription: "Subscription", security: "Security", privacy: "Privacy", reports: "Reports", onboarding: "Onboarding" };
 
 const SENTENCES: Record<string, (c: Ctx) => string> = {
   "auth.login": (c) => `Signed in via ${c.a.via === "google" ? "Google" : c.a.via === "email-link" ? "an emailed link" : c.a.via === "email-code" ? "an emailed code" : "password"}`,
@@ -168,8 +247,12 @@ const SENTENCES: Record<string, (c: Ctx) => string> = {
   "device.add": (c) => `Added device ${c.name || c.id}`,
   "device.update": (c) => `Edited device ${c.name || c.id}`,
   "device.remove": (c) => `Removed device ${c.name || c.id}`,
-  "device.open-door": (c) => `Opened the door remotely on device ${c.id}`,
-  "setting.update": (c) => `Changed settings: ${c.id}`,
+  "device.open-door": (c) => `Opened the door remotely on device ${c.name || c.id}${str(c.a.branch) ? ` (${str(c.a.branch)})` : ""}`,
+  "device.sync": (c) => `Synced device ${c.name || c.id}${c.a.members != null ? `: ${str(c.a.allowed) || "0"} of ${str(c.a.members)} members loaded${Number(c.a.removed) ? `, ${str(c.a.removed)} removed` : ""} (${str(c.a.commands) || "0"} commands)` : ""}`,
+  "setting.update": (c) => {
+    const changes = changeSummary(c.b, c.a);
+    return `Changed settings › ${SETTING_NAMES[c.id] ?? (c.id.charAt(0).toUpperCase() + c.id.slice(1))}${changes ? `: ${changes}` : ""}`;
+  },
   "gym.logo": () => "Changed the gym logo",
   "gym.logo.remove": () => "Removed the gym logo",
   "branch.create": named("Added", "branch"),
@@ -231,8 +314,27 @@ export function describeAudit(e: DescribeInput): string {
   if (fn) return fn(c);
   if (e.action.startsWith("autopay.")) return `Updated autopay mandate ${c.ref || c.id}`;
   if (e.action.startsWith("export.")) return `Exported ${e.action.slice(7)}`;
-  if (e.action.startsWith("import.")) return `Imported ${str(a.rows) || "0"} ${e.action.slice(7)} from ${str(a.file) || "a file"}`;
+  if (e.action.startsWith("import.")) return importSentence(e.action.slice(7), a);
   return fallbackSentence(e.action, e.entity, c.ref || c.id);
+}
+
+const IMPORT_NOUNS: Record<string, [string, string]> = { members: ["member", "members"], payments: ["payment", "payments"], expenses: ["expense", "expenses"], products: ["product", "products"], assets: ["asset", "assets"] };
+
+/**
+ * "Imported 40 members from members.csv". A file sent in parts writes one entry per part: each says its own count and
+ * which part it was, and the last one also gives the total for the whole file. Older entries carry only `rows`.
+ */
+function importSentence(kind: string, a: Record<string, unknown>) {
+  const [one, many] = IMPORT_NOUNS[kind] ?? [kind, kind];
+  const n = (v: unknown) => Number(v ?? 0);
+  const count = (v: number) => `${v.toLocaleString("en-IN")} ${v === 1 ? one : many}`;
+  const file = str(a.file) || "a file";
+  const part = str(a.part).match(/^(\d+)\/(\d+)$/);
+  const made = a.imported != null ? n(a.imported) : n(a.rows);
+  const skipped = a.rows != null && a.total != null ? n(a.rows) - n(a.total) : 0;
+  if (!part || part[2] === "1") return `Imported ${count(a.total != null ? n(a.total) : made)} from ${file}${skipped > 0 ? ` (${skipped} skipped)` : ""}`;
+  const tail = a.total != null ? `; ${count(n(a.total))} from this file in all${skipped > 0 ? `, ${skipped} skipped` : ""}` : "";
+  return `Imported ${count(made)} from ${file} (part ${part[1]} of ${part[2]}${tail})`;
 }
 
 export function fallbackSentence(action: string, entity: string, ref: string) {

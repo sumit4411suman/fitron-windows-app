@@ -2,4 +2,4 @@
 export const gymLogoUrl = (logoKey: string | null | undefined) =>
   logoKey ? `/settings/logo?v=${encodeURIComponent(logoKey.split("/").pop() ?? "")}` : null;
 
-export const DEFAULT_LOGO = "/fitron-logo.png";
+export const DEFAULT_LOGO = "/fitron-logo-v2.png";

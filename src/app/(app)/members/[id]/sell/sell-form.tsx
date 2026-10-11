@@ -5,6 +5,7 @@ import { sell } from "../../../billing-actions";
 import { Button, Card, Field, Input, LinkButton, Notice, Select } from "@/components/ui";
 import { invoiceTotals } from "@/lib/domain/billing";
 import { membershipEndDate } from "@/lib/domain/dates";
+import { defaultPricingCategory, type PricingHints } from "@/lib/domain/membership";
 import { formatInr, fmtDate } from "@/lib/format";
 import { METHODS } from "@/lib/validation/billing";
 
@@ -17,6 +18,7 @@ const toPaise = (s: string) => {
 
 export function SellForm({
   memberId,
+  member,
   plans,
   defaultPlanId,
   defaultStart,
@@ -24,6 +26,8 @@ export function SellForm({
   taxRate,
 }: {
   memberId: string;
+  /** Gender, tags and occupation pick the plan price to start from (Female / Student / Male); staff can change it. */
+  member: PricingHints;
   plans: Plan[];
   defaultPlanId?: string;
   defaultStart: string;
@@ -35,7 +39,8 @@ export function SellForm({
   const [planId, setPlanId] = useState(sent?.planId ?? defaultPlanId ?? plans[0]?.id ?? "");
   const [start, setStart] = useState(sent?.startDate ?? defaultStart);
   const [discount, setDiscount] = useState(sent?.discount ?? "");
-  const [category, setCategory] = useState(sent?.pricingCategory ?? "Standard");
+  const pickCategory = (id: string) => defaultPricingCategory(member, plans.find((p) => p.id === id)?.prices.map((x) => x.category) ?? []);
+  const [category, setCategory] = useState(sent?.pricingCategory ?? pickCategory(sent?.planId ?? defaultPlanId ?? plans[0]?.id ?? ""));
   const [regFee, setRegFee] = useState(sent ? sent.includeRegFee === "on" : isNew);
   const [pay, setPay] = useState<string | null>(sent?.payAmount ?? null);
   const e = state?.errors ?? {};
@@ -43,14 +48,17 @@ export function SellForm({
   const plan = plans.find((p) => p.id === planId);
   const rate = plan?.gstApplicable ? taxRate : 0;
   const price = plan?.prices.find((x) => x.category === category)?.price ?? plan?.price ?? 0;
+  const discountPaise = toPaise(discount);
+  // A discount above the plan price is refused on save; show ₹0 and the error straight away rather than a minus total.
+  const discountTooBig = !!plan && discountPaise > price;
   const lines = plan
     ? [
-        { qty: 1, rate: price, discount: toPaise(discount), taxRate: rate },
+        { qty: 1, rate: price, discount: Math.min(discountPaise, price), taxRate: rate },
         ...(regFee && plan.regFee > 0 ? [{ qty: 1, rate: plan.regFee, discount: 0, taxRate: rate }] : []),
       ]
     : [];
   const t = invoiceTotals(lines);
-  const payValue = pay ?? String(t.total / 100);
+  const payValue = pay ?? String(Math.max(0, t.total) / 100);
 
   return (
     <form action={action} key={state?.nonce} className="flex flex-col gap-4">
@@ -63,7 +71,7 @@ export function SellForm({
               value={planId}
               onChange={(ev) => {
                 setPlanId(ev.target.value);
-                setCategory("Standard");
+                setCategory(pickCategory(ev.target.value));
               }}
               required
             >
@@ -89,7 +97,7 @@ export function SellForm({
           <Field label="Start date" error={e.startDate} hint={plan ? `Ends ${fmtDate(membershipEndDate(start, plan.months))}` : undefined}>
             <Input name="startDate" type="date" value={start} onChange={(ev) => setStart(ev.target.value)} required />
           </Field>
-          <Field label="Discount (₹)" error={e.discount}>
+          <Field label="Discount (₹)" error={e.discount ?? (discountTooBig ? ["Discount is more than the plan price"] : undefined)}>
             <Input name="discount" inputMode="decimal" value={discount} onChange={(ev) => setDiscount(ev.target.value)} placeholder="0" />
           </Field>
           <Field label="Offer code" error={e.offerCode} hint="Its discount is added when you save">
@@ -112,7 +120,7 @@ export function SellForm({
           <dt className="text-muted">GST {rate ? `(${rate}%)` : ""}</dt>
           <dd className="text-right">{formatInr(t.tax)}</dd>
           <dt className="font-semibold">Total</dt>
-          <dd className="text-right text-lg font-semibold">{formatInr(t.total)}</dd>
+          <dd className="text-right text-lg font-semibold">{formatInr(Math.max(0, t.total))}</dd>
         </dl>
       </Card>
       <Card title="Collect now">
@@ -133,7 +141,7 @@ export function SellForm({
         </div>
       </Card>
       <div className="flex gap-2">
-        <Button variant="primary" disabled={pending || !plan}>
+        <Button variant="primary" disabled={pending || !plan || discountTooBig}>
           {pending ? "Saving…" : isNew ? "Create membership" : "Renew and generate invoice"}
         </Button>
         <LinkButton href={`/members/${memberId}`}>Cancel</LinkButton>

@@ -169,16 +169,23 @@ export async function dailyCounts(u: CurrentUser, days = 14) {
 export const memberVisits = (u: CurrentUser, memberId: string, take = 30) =>
   db.attendance.findMany({ where: { ...attScope(u), memberId }, orderBy: { checkIn: "desc" }, take });
 
-/** Check-ins per hour (5 am – 10 pm, IST) over the last 30 days, for "Busy hours". */
+/** First and last hour shown in "Busy hours" (5 am – 10 pm, IST). */
+export const BUSY_HOURS_FROM = 5;
+export const BUSY_HOURS_TO = 22;
+
+/** Check-ins per hour over the last 30 days, for "Busy hours"; check-ins outside the shown hours are counted in `other`. */
 export async function busyHours(u: CurrentUser) {
   const today = todayIso();
   const rows = await db.attendance.findMany({ where: { ...attScope(u), date: { gte: fromIso(addDays(today, -29)) } }, select: { checkIn: true } });
   const by = new Map<number, number>();
+  let other = 0;
   for (const r of rows) {
     const h = Number(nowHHMM(r.checkIn).slice(0, 2));
-    by.set(h, (by.get(h) ?? 0) + 1);
+    if (h < BUSY_HOURS_FROM || h > BUSY_HOURS_TO) other++;
+    else by.set(h, (by.get(h) ?? 0) + 1);
   }
-  return Array.from({ length: 18 }, (_, i) => ({ hour: i + 5, count: by.get(i + 5) ?? 0 }));
+  const buckets = Array.from({ length: BUSY_HOURS_TO - BUSY_HOURS_FROM + 1 }, (_, i) => ({ hour: i + BUSY_HOURS_FROM, count: by.get(i + BUSY_HOURS_FROM) ?? 0 }));
+  return { buckets, other, total: rows.length };
 }
 
 /** Active members who haven't come in for 14 days or more, longest gap first (prototype: "Haven't visited"). */

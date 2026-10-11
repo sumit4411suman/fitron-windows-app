@@ -15,6 +15,7 @@ export default async function EditMember({ params }: PageProps<"/members/[id]/ed
   const values = {
     ...Object.fromEntries(Object.entries(m).map(([k, v]) => [k, typeof v === "string" ? v : null])),
     dob: m.dob ? m.dob.toISOString().slice(0, 10) : null,
+    consentAt: m.consentAt ? m.consentAt.toISOString() : null,
     tags: m.tags.join(", "),
   };
   return (

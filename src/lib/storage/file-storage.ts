@@ -2,18 +2,20 @@
 // implementations, picked once per process (src/lib/storage/index.ts).
 //
 //   FileStorage
-//   ├── S3FileStorage     Cloud Edition with S3_* set: a private S3-compatible bucket (AWS, R2, Supabase Storage)
-//   └── DiskFileStorage   Cloud Edition without S3 (STORAGE_DIR), and the Local Edition (…\FITRON\documents)
+//   ├── S3FileStorage        Cloud Edition with S3_* set: a private S3-compatible bucket (AWS, R2, Supabase Storage)
+//   ├── DiskFileStorage      Cloud Edition without S3 (STORAGE_DIR), and the Local Edition (…\FITRON\documents)
+//   └── DatabaseFileStorage  a hosted FITRON with no disk and no bucket (Vercel before one is connected): StoredFile rows
 //
 // Files are addressed by a key the app makes ("<orgId>/members/<memberId>/<uuid>.pdf"). What a file is, who it belongs
 // to, its name and size live in the database (MemberDocument, Member.photoKey, User.photoKey, the gym setting's logoKey,
-// Backup); storage only holds the bytes. Large files never go into the database.
+// Backup); storage only holds the bytes. Large files never go into the database (the database store takes files up to 50 MB,
+// and only where there is nothing else).
 
 export type StoredFileInfo = { key: string; size: number; modifiedAt: Date };
 
 export interface FileStorage {
-  /** "S3" or "DISK", shown in Settings › Help › System details. */
-  readonly mode: "S3" | "DISK";
+  /** "S3", "DISK" or "DATABASE", shown in Settings › Help › System details. */
+  readonly mode: "S3" | "DISK" | "DATABASE";
   /** Writes the whole file, or nothing: a crash mid-write never leaves half a file under the key. */
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
   /** The bytes, or FileMissingError when there is no such file. */

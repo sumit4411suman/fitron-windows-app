@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { CaretLeftIcon, CaretRightIcon, DoorOpenIcon, DownloadSimpleIcon, UserCirclePlusIcon } from "@phosphor-icons/react/dist/ssr";
 import { requirePermission } from "@/lib/auth/current";
 import { db } from "@/lib/db";
-import { busyHours, canOverrideEntry, dailyCounts, getAccessRules, idleMembers, listDay } from "@/lib/services/attendance";
+import { BUSY_HOURS_FROM, BUSY_HOURS_TO, busyHours, canOverrideEntry, dailyCounts, getAccessRules, idleMembers, listDay } from "@/lib/services/attendance";
 import { appUrl } from "@/lib/services/accounts";
 import { memberScope, summarize } from "@/lib/services/members";
 import { getSetting } from "@/lib/services/settings";
@@ -32,7 +32,7 @@ export default async function AttendancePage({ searchParams }: PageProps<"/atten
   const isToday = date === today;
   const branchId = u.branch !== "ALL" ? u.branch : u.branches[0]?.id;
 
-  const [day, insideNow, trend, hours, idle, rules, gym, devices, activeCount] = await Promise.all([
+  const [day, insideNow, trend, busy, idle, rules, gym, devices, activeCount] = await Promise.all([
     listDay(u, date),
     isToday ? null : db.attendance.count({ where: { branchId: { in: u.branchIds }, date: new Date(`${today}T00:00:00Z`), checkOut: null } }),
     dailyCounts(u, 14),
@@ -89,8 +89,9 @@ export default async function AttendancePage({ searchParams }: PageProps<"/atten
   ]);
   const planOf = new Map(plans.map((p) => [p.memberId, p.plan.name]));
   const maxTrend = Math.max(1, ...trend.map((t) => t.count));
-  const maxHour = Math.max(1, ...hours.map((h) => h.count));
-  const peakHour = hours.reduce((p, h) => (h.count > p.count ? h : p), hours[0]!);
+  const hours = busy.buckets;
+  const maxHour = Math.max(0, ...hours.map((h) => h.count));
+  const peakHour = maxHour > 0 ? hours.reduce((p, h) => (h.count > p.count ? h : p), hours[0]!) : null;
   const canUndo = isToday && ["Super Admin", "Admin", "Receptionist"].includes(u.role);
   const link = (d: string) => (d === today ? "/attendance" : `/attendance?date=${d}`);
 
@@ -157,12 +158,15 @@ export default async function AttendancePage({ searchParams }: PageProps<"/atten
           </div>
           <div>
             <h3 className="mb-0.5 text-lg">Busy hours</h3>
-            <div className="mb-3 text-xs text-muted">Busiest: {hourLabel(peakHour.hour, true)} · average check-ins per day by hour, last 30 days</div>
+            <div className="mb-3 text-xs text-muted">
+              {busy.total === 0 ? "No check-ins in the last 30 days yet" : `${peakHour ? `Busiest: ${hourLabel(peakHour.hour, true)} · ` : ""}check-ins by hour, last 30 days`}
+              {busy.other > 0 ? ` · ${busy.other} outside ${hourLabel(BUSY_HOURS_FROM, true)} – ${hourLabel(BUSY_HOURS_TO, true)}` : ""}
+            </div>
             <div className="flex h-[110px] items-end gap-1">
               {hours.map((h) => (
-                <div key={h.hour} title={`${hourLabel(h.hour, true)}: ${h.count} check-ins in 30 days`} className="flex h-full min-w-0 flex-1 flex-col justify-end gap-1">
-                  <div className="text-center text-[10px] font-semibold">{h.count ? Math.round((h.count / 30) * 10) / 10 : ""}</div>
-                  <div className={cx("rounded-t-[2px]", h.hour === peakHour.hour ? "bg-accent" : "bg-[#6b6355] light:bg-[#978c77]")} style={{ height: `${(h.count / maxHour) * 100}%` }} />
+                <div key={h.hour} title={`${hourLabel(h.hour, true)}: ${h.count} check-in${h.count === 1 ? "" : "s"} in the last 30 days`} className="flex h-full min-w-0 flex-1 flex-col justify-end gap-1">
+                  <div className="text-center text-[10px] font-semibold">{h.count || ""}</div>
+                  <div className={cx("rounded-t-[2px]", peakHour && h.hour === peakHour.hour ? "bg-accent" : "bg-[#6b6355] light:bg-[#978c77]")} style={{ height: `${maxHour ? (h.count / maxHour) * 100 : 0}%` }} />
                   <div className="truncate text-center text-[10px] text-muted">{hourLabel(h.hour)}</div>
                 </div>
               ))}

@@ -12,6 +12,7 @@ export function GlobalSearch() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [cursor, setCursor] = useState(0);
   const box = useRef<HTMLDivElement>(null);
 
@@ -22,8 +23,9 @@ export function GlobalSearch() {
     const t = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(term)}`, { signal: ctl.signal })
         .then((r) => r.json())
-        .then((d: { results: SearchHit[] }) => {
+        .then((d: { results: SearchHit[]; error?: string }) => {
           setHits(d.results);
+          setNote(d.error ?? null);
           setCursor(0);
         })
         .catch(() => {});
@@ -74,7 +76,11 @@ export function GlobalSearch() {
       />
       {shown && (
         <div className="absolute top-[42px] right-0 left-0 z-40 flex max-h-[420px] flex-col gap-0.5 overflow-auto rounded-lg bg-bg p-2 shadow-lg">
-          {hits.length === 0 ? (
+          {note ? (
+            <div role="alert" className="p-2.5 text-[13px] text-muted">
+              {note}
+            </div>
+          ) : hits.length === 0 ? (
             <div className="p-2.5 text-[13px] text-muted">Nothing matches “{q.trim()}”.</div>
           ) : (
             hits.map((h, i) => {

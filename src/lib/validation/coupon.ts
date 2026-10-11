@@ -1,5 +1,6 @@
 import * as z from "zod";
 import "@/lib/zod-config";
+import { todayIso } from "@/lib/services/time";
 
 const blankToNull = (v: unknown) => (v === "" || v == null ? null : v);
 
@@ -15,7 +16,7 @@ export const couponInput = z.object({
   /** Whole rupees the customer pays instead of a percentage off; blank for a percentage coupon. */
   payRupees: z.preprocess(blankToNull, z.coerce.number({ error: "Enter the amount in rupees." }).int({ error: "Use whole rupees." }).min(1, { error: "At least ₹1." }).max(1_000_000).nullable()),
   appliesTo: z.enum(["ALL", "GYM", "TRAINER"], { error: "Pick what it works on." }),
-  validTill: z.preprocess(blankToNull, z.iso.date({ error: "Use a valid date." }).nullable()),
+  validTill: z.preprocess(blankToNull, z.iso.date({ error: "Use a valid date." }).nullable()).refine((d) => d === null || d >= todayIso(), { error: "The end date is in the past." }),
   usageLimit: z.preprocess(blankToNull, z.coerce.number().int().min(1, { error: "At least 1 use." }).max(1_000_000).nullable()),
 });
 

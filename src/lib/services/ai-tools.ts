@@ -33,7 +33,7 @@ export const TOOL_DEFS = [
     input_schema: {
       type: "object",
       properties: {
-        filter: { type: "string", enum: ["active", "expiring", "expired", "dues", "payment_pending", "suspended", "at_risk"], description: "expiring = within 7 days; dues = owes money; at_risk = high churn risk" },
+        filter: { type: "string", enum: ["active", "expiring", "expired", "upcoming", "dues", "payment_pending", "suspended", "at_risk"], description: "expiring = within 7 days; upcoming = plan starts later; dues = owes money; at_risk = high churn risk" },
         limit: { type: "integer", minimum: 1, maximum: 50 },
       },
       required: ["filter"],
@@ -89,7 +89,7 @@ export const TOOL_DEFS = [
   {
     name: "draft_invoice",
     description:
-      "Prepare a GST invoice (bill) for a member for the user to confirm. Nothing is saved until they press Confirm. Amounts are rupees BEFORE GST; GST is added from the gym's setting for each taxable line. For a membership use draft_membership_sale instead.",
+      "Prepare a GST invoice (bill) for a member for the user to confirm. Nothing is saved until they press the card's \"Create invoice\" button. Amounts are rupees BEFORE GST; GST is added from the gym's setting for each taxable line. For a membership use draft_membership_sale instead.",
     input_schema: {
       type: "object",
       properties: {
@@ -195,7 +195,7 @@ export const TOOL_DEFS = [
 ] as const;
 
 type Input = Record<string, unknown>;
-const STATUS: Record<string, string> = { active: "ACTIVE", expiring: "EXPIRING_SOON", expired: "EXPIRED", payment_pending: "PAYMENT_PENDING", suspended: "SUSPENDED" };
+const STATUS: Record<string, string> = { active: "ACTIVE", expiring: "EXPIRING_SOON", expired: "EXPIRED", upcoming: "UPCOMING", payment_pending: "PAYMENT_PENDING", suspended: "SUSPENDED" };
 const INVOICE_STATUS: Record<string, string> = { unpaid: "UNPAID", partial: "PARTIALLY_PAID", overdue: "OVERDUE", paid: "PAID", cancelled: "CANCELLED" };
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");

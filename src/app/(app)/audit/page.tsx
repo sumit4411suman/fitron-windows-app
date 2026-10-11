@@ -6,7 +6,7 @@ import { listAudit } from "@/lib/services/accounting";
 import { verifyAuditChain } from "@/lib/services/audit";
 import { istInstant, todayIso } from "@/lib/services/time";
 import { addDays } from "@/lib/domain/dates";
-import { AUDIT_MODULES, deviceLabel, describeAudit, moduleOf, severityOf, type Severity } from "@/lib/domain/audit";
+import { AUDIT_MODULES, changedFields, deviceLabel, describeAudit, moduleOf, severityOf, type Severity } from "@/lib/domain/audit";
 import { AutoFilter } from "@/components/auto-filter";
 import { Button, Input, LinkButton, SEARCH, Segmented, Select, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
 import { PrintButton } from "@/components/print-button";
@@ -24,15 +24,8 @@ const RANGES = [
 ] as const;
 const SEVERITIES = ["High", "Medium", "Low"] as const;
 
-/** Field-by-field differences between the before and after of a change. */
-function changes(before: unknown, after: unknown): [string, string][] {
-  if (!after || typeof after !== "object") return [];
-  const b = (before && typeof before === "object" ? before : {}) as Record<string, unknown>;
-  const a = after as Record<string, unknown>;
-  return Object.keys(a)
-    .filter((k) => !["updatedAt", "createdAt", "id", "orgId"].includes(k) && JSON.stringify(a[k]) !== JSON.stringify(b[k]))
-    .map((k) => [k, `${k in b ? `${JSON.stringify(b[k])} → ` : ""}${JSON.stringify(a[k])}`]);
-}
+/** Field-by-field differences between the before and after of a change, as "field: old → new". */
+const changes = (before: unknown, after: unknown): [string, string][] => changedFields(before, after).map((c) => [c.label, c.text]);
 
 /** Where a record lives in the app, when it has a page. */
 const LINKS: Record<string, (id: string) => string> = {

@@ -10,6 +10,9 @@ export const freezeLastDay = (f: FreezeLike) => addDays(f.fromDate, f.days - 1);
 /** Still on hold: not unfrozen, and its days haven't all passed. A freeze starting later counts too (prototype). */
 export const freezeOpen = (f: FreezeLike, today: IsoDate) => !f.endedOn && freezeLastDay(f) >= today;
 
+/** Booked but not started yet: shown as "Freeze scheduled", not "Frozen". */
+export const freezeScheduled = (f: FreezeLike, today: IsoDate) => freezeOpen(f, today) && f.fromDate > today;
+
 /** Check-in is refused on the frozen days themselves. */
 export const freezeCovers = (f: FreezeLike, today: IsoDate) => !f.endedOn && f.fromDate <= today && freezeLastDay(f) >= today;
 

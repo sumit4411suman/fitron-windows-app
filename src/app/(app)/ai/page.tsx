@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { BrandMark } from "@/components/logo";
 import { redirect } from "next/navigation";
 import { requirePermission } from "@/lib/auth/current";
 import { aiOn, getAiSettings } from "@/lib/services/ai-settings";
@@ -25,7 +25,7 @@ export default async function AiPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <span className="relative inline-block h-[60px] w-[60px] flex-none rounded-full shadow-[0_0_0_1px_var(--accent-500),0_8px_28px_rgba(207,169,79,0.22)]">
-            <Image src="/fitron-mark.png" alt="" width={60} height={60} className="rounded-full" />
+            <BrandMark size={60} className="rounded-full" />
           </span>
           <div>
             <div className="text-xs tracking-[0.04em] text-muted uppercase">Your accounting assistant</div>

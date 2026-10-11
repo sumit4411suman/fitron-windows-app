@@ -5,8 +5,15 @@ import path from "node:path";
 import { db } from "@/lib/db";
 import { hasDb, makeGym, pick } from "@/test/db";
 import { createMember } from "./members";
-import { getObject } from "@/lib/integrations/storage";
+import * as storage from "@/lib/integrations/storage";
+import { UserError } from "./errors";
 import { deleteDocument, listDocuments, purgeDocuments, readDocument, replaceDocument, uploadDocument } from "./documents";
+
+vi.mock("@/lib/integrations/storage", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/integrations/storage")>();
+  return { ...real, putObject: vi.fn(real.putObject) };
+});
+const { getObject } = storage;
 
 const pdf = (text: string) => new File([`%PDF-1.4\n${text}`], "scan.pdf", { type: "application/pdf" });
 
@@ -47,6 +54,21 @@ describe.skipIf(!hasDb)("Member documents (database)", () => {
     expect(await readDocument(pick(await gym.user("Receptionist"), gym.b.id), d.id)).toBeNull();
     expect(await purgeDocuments(gym.org.id, memberId)).toBe(3);
     expect(await db.memberDocument.count({ where: { memberId } })).toBe(0);
+  });
+
+  it("a storage problem comes back as a UserError the page can show, and leaves no half-written row", async () => {
+    const put = vi.mocked(storage.putObject);
+    const problem = "File storage is not set up: this server has no disk for files, and no S3_* bucket settings are set.";
+    put.mockRejectedValueOnce(new UserError(problem));
+    const n = await db.memberDocument.count({ where: { memberId } });
+    await expect(uploadDocument(desk, memberId, { kind: "ID proof", title: "Aadhaar" }, pdf("storage"))).rejects.toSatisfy((e) => e instanceof UserError && e.message === problem);
+    expect(await db.memberDocument.count({ where: { memberId } })).toBe(n);
+
+    const ok = await uploadDocument(desk, memberId, { kind: "ID proof", title: "Aadhaar" }, pdf("fine"));
+    put.mockRejectedValueOnce(new UserError(problem));
+    await expect(replaceDocument(desk, ok.id, pdf("again"))).rejects.toThrow(UserError);
+    expect((await db.memberDocument.findUniqueOrThrow({ where: { id: ok.id } })).status).toBe("ACTIVE");
+    await deleteDocument(desk, ok.id, "Test file");
   });
 
   it("a Photo document becomes the member photo and follows replace and delete", async () => {

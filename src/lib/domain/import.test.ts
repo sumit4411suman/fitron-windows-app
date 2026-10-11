@@ -83,11 +83,44 @@ describe("row checks", () => {
     );
     expect(rows[0]!.errors).toEqual([]);
     expect(rows[0]!.data).toMatchObject({ phone: "9876543210", months: 3, start: "2026-07-01", end: "2026-09-30", amount: 450000, paid: 400000, planId: null, planName: "Gold Quarterly" });
-    expect(rows[0]!.warnings[0]).toMatch(/will be created/);
+    expect(rows[0]!.warnings[0]).toBe('Plan "Gold Quarterly" will be created as inactive at ₹4,500; set its price and activate it in Plans before selling');
     expect(rows[1]!.errors).toEqual(["Already a member (skipped)"]);
     expect(rows[2]!.errors).toEqual(["Repeated in this file"]);
-    expect(rows[3]!.data).toMatchObject({ planId: "p1", start: "2026-09-15", end: "2026-10-14", amount: 150000, paid: 150000 });
+    // Neither "Amount paid" nor "Balance due": recorded as unpaid, never assumed paid, and the row says so.
+    expect(rows[3]!.data).toMatchObject({ planId: "p1", start: "2026-09-15", end: "2026-10-14", amount: 150000, paid: 0 });
+    expect(rows[3]!.warnings).toContain("No amount paid or balance; recorded as unpaid (₹1,500 due)");
     expect(rows[3]!.n).toBe(5);
+  });
+
+  it("members: the join date is the file's own, else the plan's start, never the day of the import", () => {
+    const rows = checkRows(
+      "members",
+      [
+        { name: "Old", phone: "9000000011", start: "01-07-2026", joined: "15-03-2021" },
+        { name: "Mid", phone: "9000000012", start: "01-07-2026" },
+        { name: "Later", phone: "9000000013", start: "01-12-2026" },
+        { name: "Bad", phone: "9000000014", joined: "someday" },
+      ],
+      ctx(),
+    );
+    expect(rows.map((r) => r.data.joined)).toEqual(["2021-03-15", "2026-07-01", ctx().today, ctx().today]);
+    expect(rows[3]!.errors).toContain('Can\'t read join date "someday"');
+  });
+
+  it("payments: a receipt settles the member's dues first, and later rows see what earlier ones settled", () => {
+    const c = ctx();
+    c.memberByPhone.set("9000000021", "m21");
+    c.openDues = new Map([["m21", 300000]]);
+    const rows = checkRows(
+      "payments",
+      [
+        { phone: "9000000021", date: "01-09-2026", amount: "2000" },
+        { phone: "9000000021", date: "02-09-2026", amount: "1500" },
+      ],
+      c,
+    );
+    expect(rows[0]!.warnings).toEqual(["Settles ₹2,000 of unpaid invoices"]);
+    expect(rows[1]!.warnings).toEqual(["Settles ₹1,000 of unpaid invoices; ₹500 recorded as a separate receipt"]);
   });
 
   it("members with neither expiry nor duration get the gym's default membership duration", () => {
@@ -99,6 +132,20 @@ describe("row checks", () => {
     expect(one.warnings).toContain("No expiry or duration; 1 month assumed");
     expect(one.data).toMatchObject({ months: 1, end: "2026-07-31" });
     expect(checkRows("members", [row], ctx())[0]!.warnings).toContain("No expiry or duration; 1 month assumed");
+  });
+
+  it("members: a consent column of yes/true/1 or a date records privacy consent; anything else leaves it unrecorded", () => {
+    const base = { name: "Ravi", phone: "9123456781", start: "01-07-2026", months: "1" };
+    const of = (consent: string) => checkRows("members", [{ ...base, consent }], ctx())[0]!;
+    expect(of("").data.consentAt).toBeNull();
+    expect(of("yes").data.consentAt).toBe("2026-09-28");
+    expect(of("TRUE").data.consentAt).toBe("2026-09-28");
+    expect(of("1").data.consentAt).toBe("2026-09-28");
+    expect(of("15-07-2026").data.consentAt).toBe("2026-07-15");
+    const odd = of("maybe");
+    expect(odd.data.consentAt).toBeNull();
+    expect(odd.errors).toEqual([]);
+    expect(odd.warnings).toContain('Consent "maybe" not understood; left unrecorded');
   });
 
   it("payments match a member by phone, old ID or a unique name; locked months are refused", () => {
@@ -123,6 +170,9 @@ describe("row checks", () => {
     const [e1, e2] = checkRows("expenses", [{ date: "05-08-2026", category: "Bijli bill", amount: "8,200" }, { date: "06-08-2026", category: "Tea", amount: "50" }], ctx());
     expect(e1!.data).toMatchObject({ categoryId: "electricity", amount: 820000, method: "Cash" });
     expect(e2!.data.categoryId).toBe("miscellaneous");
+    // The head names other software uses for whole groups: Salaries and Utilities find Fitron's own categories.
+    const heads = checkRows("expenses", ["Salaries", "Utilities", "Wages", "Payroll"].map((category) => ({ date: "05-08-2026", category, amount: "100" })), ctx());
+    expect(heads.map((r) => r.data.categoryId)).toEqual(["staff-salary", "electricity", "staff-salary", "staff-salary"]);
     const [p1, p2] = checkRows("products", [{ name: "Whey 1kg", price: "2800" }, { name: "Energy Drink", price: "80", stock: "48" }], ctx());
     expect(p1!.errors).toEqual(["Product already exists"]);
     expect(p2!.data).toMatchObject({ sku: "ENERGY-DRINK", category: "Drinks", stock: 48, reorder: 10 });

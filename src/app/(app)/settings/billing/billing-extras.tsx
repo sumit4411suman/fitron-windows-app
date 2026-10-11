@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useConfirm } from "@/components/confirm-dialog";
 import { Button, Input } from "@/components/ui";
 import { formatInr } from "@/lib/format";
 import { MAX_SERVICE_RUPEES } from "@/lib/domain/services";
@@ -34,8 +35,9 @@ export function StopRenewal({ id, what, retry = false }: { id: string; what: str
   const router = useRouter();
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
-  const stop = () => {
-    if (!window.confirm(`Stop ${what} renewing automatically? It stays active until the end of the period you already paid for, then it ends.`)) return;
+  const [ask, dialog] = useConfirm();
+  const stop = async () => {
+    if (!(await ask({ title: `Stop ${what} renewing automatically?`, message: "It stays active until the end of the period you already paid for, then it ends.", label: "Stop renewing", danger: true }))) return;
     start(async () => {
       const r = await cancelAutoRenewalAction(id);
       if (!r.ok) return setMsg(r.error);
@@ -48,6 +50,7 @@ export function StopRenewal({ id, what, retry = false }: { id: string; what: str
         {pending ? "Stopping…" : retry ? "Try stopping again" : "Stop renewing"}
       </Button>
       {msg && <p className="text-xs text-alert">{msg}</p>}
+      {dialog}
     </div>
   );
 }

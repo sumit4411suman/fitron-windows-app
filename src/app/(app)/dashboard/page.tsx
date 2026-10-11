@@ -1,6 +1,6 @@
 import { getGymProfile } from "@/lib/services/settings";
 import { getOnboarding } from "@/lib/services/onboarding";
-import Image from "next/image";
+import { BrandMark } from "@/components/logo";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { canOpen } from "@/lib/nav";
@@ -50,7 +50,7 @@ const METHOD_COLORS: Record<string, string> = {
 };
 
 type Hero = { label: string; value: string; sub: string; icon: Icon; href: string; tone?: "alert" | "accent"; delta?: { text: string; good: boolean } | null };
-type Kpi = { label: string; value: string; sub: string; href?: string; tone?: "alert" };
+type Kpi = { label: string; value: string; sub: string; href?: string; tone?: "alert"; /** Shown on hover, for a figure that needs a word of explanation. */ title?: string };
 
 export default async function DashboardPage({ searchParams }: PageProps<"/dashboard">) {
   const u = await requireUser();
@@ -173,7 +173,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             );
             const cls = "flex flex-col gap-[3px] border-b border-line-soft py-3.5 text-left";
             return k.href && canOpen(u, k.href) ? (
-              <Link key={k.label} href={k.href} className={cls}>
+              <Link key={k.label} href={k.href} className={cls} title={k.title}>
                 {body}
               </Link>
             ) : (
@@ -190,7 +190,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <Section
             title={
               <>
-                <Image src="/fitron-mark.png" alt="" width={22} height={22} className="rounded-full" />
+                <BrandMark size={22} className="rounded-full" />
                 Today&apos;s brief
               </>
             }
@@ -215,7 +215,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
             <Section title="Revenue and expenses" sub="Last 12 months" legend={[["var(--accent)", "Revenue"], ["#4a4338", "Expenses"]]}>
               <RevenueBars series={d.series} />
             </Section>
-            <Section title="Profit and loss" sub={`Net by month · ${inr(d.series.reduce((x, m) => x + m.net, 0))} over 12 months`}>
+            <Section title="Profit and loss (invoiced)" sub={`Net by month, revenue on the invoice date · ${inr(d.series.reduce((x, m) => x + m.net, 0))} over 12 months`}>
               <ProfitBars series={d.series} />
             </Section>
           </>
@@ -275,7 +275,7 @@ export default async function DashboardPage({ searchParams }: PageProps<"/dashbo
           <Section
             title={
               <>
-                <Image src="/fitron-mark.png" alt="" width={22} height={22} className="rounded-full" />
+                <BrandMark size={22} className="rounded-full" />
                 Members at risk
               </>
             }
@@ -348,14 +348,22 @@ function cards(d: Dashboard, role: string, pLabel: string, period: PeriodKey) {
     { label: "Expiring in 7 days", value: num(h.exp7), sub: `${inr(h.exp7Value)} renewal value`, icon: ArrowsClockwiseIcon, href: "/renewals", tone: h.exp7 ? "accent" : undefined },
   ];
   const kpis: (Kpi & { finOnly?: boolean })[] = [
-    { label: "New members", value: num(k.newMembers), sub: period === "month" && k.newMembersLast ? `${k.newMembersLast} by this day last month` : pLabel, href: "/members" },
+    { label: "New members", value: num(k.newMembers), sub: `by ${k.joinedBy} · ${period === "month" ? `${k.newMembersLast} by this day last month` : pLabel}`, href: "/members" },
     { label: "Today's collections", value: inr(k.todayCollected), sub: `${k.todayCount} payment${k.todayCount === 1 ? "" : "s"}`, href: "/payments" },
     { label: "Collections", value: inr(h.collected), sub: `${h.collectedCount} payments · ${pLabel}`, href: "/payments" },
     { label: "Expenses", value: inr(k.expenses), sub: pLabel, href: "/expenses", finOnly: true },
-    { label: "Net profit", value: inr(k.net), sub: h.revenue ? `${Math.round((k.net / h.revenue) * 100)}% margin` : "", href: "/accounting", tone: k.net < 0 ? "alert" : undefined, finOnly: true },
+    {
+      label: "Net profit (invoiced)",
+      value: inr(k.net),
+      sub: h.revenue ? `${Math.round((k.net / h.revenue) * 100)}% margin · by invoice date` : "by invoice date",
+      title: "Revenue counted on the invoice date, not when paid; annual plans count in full in the month sold",
+      href: "/accounting",
+      tone: k.net < 0 ? "alert" : undefined,
+      finOnly: true,
+    },
     { label: "Monthly recurring revenue", value: inr(k.mrr), sub: "from active plans", finOnly: true },
-    { label: "New memberships", value: num(k.newMemberships), sub: `${inr(k.newMembershipsValue)} · ${pLabel}` },
-    { label: "Renewals", value: num(k.renewals), sub: `${inr(k.renewalsValue)} · ${pLabel}`, href: "/renewals" },
+    { label: "New memberships", value: num(k.newMemberships), sub: `${inr(k.newMembershipsValue)} · by ${k.soldBy} · ${period === "month" ? `${k.newMembershipsLast} by this day last month` : pLabel}` },
+    { label: "Renewals", value: num(k.renewals), sub: `${inr(k.renewalsValue)} · by ${k.soldBy} · ${period === "month" ? `${k.renewalsLast} by this day last month` : pLabel}`, href: "/renewals" },
     { label: "Pending payments", value: num(k.pending), sub: "invoices with a balance", href: "/receivables" },
     { label: "Expired members", value: num(k.expired), sub: "Not yet renewed", href: "/renewals?w=lapsed" },
   ];
@@ -572,7 +580,9 @@ function BranchComparison({ rows }: { rows: NonNullable<Dashboard["branches"]> }
               <th className={cx(th, "text-right")}>Expiring 7 d</th>
               <th className={cx(th, "min-w-[180px]")}>Collections</th>
               <th className={cx(th, "text-right")}>Expenses</th>
-              <th className={cx(th, "text-right")}>Net</th>
+              <th className={cx(th, "text-right whitespace-nowrap")} title="Payments received in the period minus expenses; not the invoiced net profit above">
+                Collected minus expenses
+              </th>
               <th className={cx(th, "text-right")}>Outstanding</th>
             </tr>
           </thead>

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { addDays, addMonths, daysBetween, membershipEndDate } from "./dates";
+import { addDays, addMonths, ageOn, daysBetween, membershipEndDate } from "./dates";
 
 describe("dates", () => {
+  it("counts age by the calendar, so a member is a year older on the birthday itself", () => {
+    expect(ageOn("1989-10-10", "2026-10-10")).toBe(37);
+    expect(ageOn("1989-10-10", "2026-10-09")).toBe(36);
+    expect(ageOn("1989-10-10", "2026-10-11")).toBe(37);
+    expect(ageOn("2000-02-29", "2026-02-28")).toBe(25);
+    expect(ageOn("2000-02-29", "2026-03-01")).toBe(26);
+  });
+
   it("adds days across month and year ends", () => {
     expect(addDays("2026-01-31", 1)).toBe("2026-02-01");
     expect(addDays("2026-12-31", 1)).toBe("2027-01-01");

@@ -19,6 +19,10 @@ const nextConfig: NextConfig = {
         },
       }
     : {}),
+  // One id per deployment, so a browser still running the previous deployment's code reloads the page instead of mixing
+  // the two (which fails with errors like "i is not a function"). Vercel sets VERCEL_DEPLOYMENT_ID at build time; other
+  // hosts can set NEXT_DEPLOYMENT_ID. Without either, nothing changes.
+  deploymentId: process.env.NEXT_DEPLOYMENT_ID || process.env.VERCEL_DEPLOYMENT_ID || undefined,
   // Shown in Settings › Help & support › System details.
   env: {
     APP_VERSION: pkg.version,

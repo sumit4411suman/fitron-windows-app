@@ -13,7 +13,7 @@ const PUBLIC = [
   // The Local Edition's first-run setup and owner recovery (they answer 404 on the Cloud Edition).
   "setup", "recover",
   "contact", "about", "privacy", "terms", "refund", "c",
-  "robots.txt", "sitemap.xml", "favicon.ico", "fitron-mark.png", "fitron-logo.png", "site", "_next",
+  "robots.txt", "sitemap.xml", "favicon.ico", "fitron-mark.png", "fitron-mark-v2.png", "fitron-mark-light-v2.png", "fitron-logo.png", "fitron-logo-v2.png", "site", "_next",
   "trainer", "api/trainer", "api/coach", "api/gym-demo", "api/assistant",
   "api/health", "api/local/shell", "api/analytics-config", "api/client-error", "api/csp-report", "api/webhooks", "api/jobs", "iclock",
   // The pages about Gym Accounting (src/lib/domain/gym-pages.ts) join this list by themselves.

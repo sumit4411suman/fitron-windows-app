@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { changeAction, createAction } from "./actions";
+import { useConfirmSubmit } from "@/components/confirm-dialog";
 import { Button, Field, Input, Notice, Select } from "@/components/ui";
 
 export function MandateForm({ members, plans }: { members: { id: string; label: string }[]; plans: { id: string; label: string }[] }) {
@@ -48,14 +49,10 @@ export function MandateForm({ members, plans }: { members: { id: string; label: 
 
 export function MandateButton({ id, action: act, label, variant = "default", confirm }: { id: string; action: "pause" | "resume" | "cancel" | "approve-demo"; label: string; variant?: "default" | "primary" | "danger" | "ghost"; confirm?: string }) {
   const [state, action, pending] = useActionState(changeAction.bind(null, id, act), undefined);
+  const [onSubmit, dialog] = useConfirmSubmit(() => (confirm ? { title: confirm, label, danger: variant === "danger" } : null));
   return (
-    <form
-      action={action}
-      onSubmit={(e) => {
-        if (confirm && !window.confirm(confirm)) e.preventDefault();
-      }}
-      className="flex items-center gap-2"
-    >
+    <form action={action} onSubmit={onSubmit} className="flex items-center gap-2">
+      {dialog}
       {state?.message && !state.ok && <span className="text-sm text-alert">{state.message}</span>}
       <Button variant={variant} disabled={pending}>
         {label}

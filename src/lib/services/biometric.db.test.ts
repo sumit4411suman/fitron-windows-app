@@ -6,7 +6,8 @@ import { addDays } from "@/lib/domain/dates";
 import { createMember, deleteMember } from "./members";
 import { createPlan } from "./plans";
 import { sellMembership } from "./billing";
-import { assignCard, enrol, openDoor, saveDevice, syncDevice, syncDevices, testScan, unseal, eraseBiometrics } from "./biometric";
+import { assignCard, enrol, openDoor, pendingCommands, saveDevice, syncDevice, syncDevices, testScan, unseal, eraseBiometrics } from "./biometric";
+import { severityOf } from "@/lib/domain/audit";
 import { findForCheckIn } from "./attendance";
 import { putSetting } from "./settings";
 import { todayIso } from "./time";
@@ -232,10 +233,38 @@ describe.skipIf(!hasDb)("Anti-passback, RFID cards, sync, test scan and remote d
     await expect(testScan(admin, none.id)).rejects.toThrow(/not on any device/);
   });
 
-  it("logs a remote door opening", async () => {
+  it("refuses to open the door of a device that is offline, and logs an online opening as High severity with the device name", async () => {
+    await db.device.update({ where: { id: dev.id }, data: { lastSeenAt: null } });
+    await expect(openDoor(admin, dev.id)).rejects.toThrow(/Front door is offline \(never called in\), so the door cannot be opened from here/);
+    await db.device.update({ where: { id: dev.id }, data: { lastSeenAt: new Date(Date.now() - 10 * 60_000) } });
+    await expect(openDoor(admin, dev.id)).rejects.toThrow(/is offline \(last seen .*\), so the door/);
+    expect(await db.accessLog.count({ where: { deviceId: dev.id, method: "Remote" } })).toBe(0);
+
+    await db.device.update({ where: { id: dev.id }, data: { lastSeenAt: new Date() } });
     await openDoor(admin, dev.id);
     const l = await db.accessLog.findFirstOrThrow({ where: { deviceId: dev.id, method: "Remote" } });
     expect(l.memberId).toBeNull();
     expect(l.reason).toContain(admin.name);
+    const a = await db.auditLog.findFirstOrThrow({ where: { orgId: admin.orgId, action: "device.open-door", entityId: dev.id }, orderBy: { id: "desc" } });
+    expect((a.after as { name: string }).name).toBe("Front door");
+    expect(severityOf(a.action, a.entity)).toBe("High");
+    const c = await db.deviceCommand.findFirstOrThrow({ where: { deviceId: dev.id, command: { contains: "CONTROL DEVICE 0101" } }, orderBy: { cmdNo: "desc" } });
+    expect(c.expiresAt && c.expiresAt.getTime() - Date.now()).toBeGreaterThan(20_000);
+    expect(c.expiresAt && c.expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(30_000);
+  });
+
+  it("drops a door command the device did not collect within 30 seconds instead of sending it late", async () => {
+    await db.deviceCommand.updateMany({ where: { deviceId: dev.id, status: "PENDING" }, data: { status: "DONE" } });
+    await db.device.update({ where: { id: dev.id }, data: { lastSeenAt: new Date() } });
+    await openDoor(admin, dev.id);
+    const d = await db.device.findUniqueOrThrow({ where: { id: dev.id } });
+    const late = await pendingCommands(d, new Date(Date.now() + 31_000));
+    expect(late).toBe("OK");
+    expect((await db.deviceCommand.findFirstOrThrow({ where: { deviceId: dev.id, command: { contains: "CONTROL DEVICE 0101" } }, orderBy: { cmdNo: "desc" } })).status).toBe("EXPIRED");
+
+    await openDoor(admin, dev.id);
+    const fresh = await pendingCommands(d);
+    expect(fresh).toContain("CONTROL DEVICE 0101");
+    await db.deviceCommand.updateMany({ where: { deviceId: dev.id, status: "SENT" }, data: { status: "DONE" } });
   });
 });

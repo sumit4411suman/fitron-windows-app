@@ -6,7 +6,9 @@ import { reportClientError } from "@/lib/client-error";
 // The last resort: the page layout itself failed, so none of the site's styles or components can be relied on. It brings
 // its own <html>, <body> and plain inline styles.
 export default function GlobalError({ error, retry }: { error: Error & { digest?: string }; retry: () => void }) {
-  useEffect(() => reportClientError(error, "global"), [error]);
+  useEffect(() => {
+    reportClientError(error, "global");
+  }, [error]);
   return (
     <html lang="en-IN">
       <body style={{ margin: 0, minHeight: "100vh", display: "grid", placeItems: "center", background: "#0e0d0a", color: "#f3ede0", fontFamily: "system-ui, sans-serif" }}>

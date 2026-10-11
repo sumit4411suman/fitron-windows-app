@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { ReasonForm } from "@/components/reason-form";
 import { cancel, collect, reverse } from "../../billing-actions";
 import { Button, Field, Input, Notice, Select } from "@/components/ui";
@@ -8,13 +8,26 @@ import { METHODS } from "@/lib/validation/billing";
 
 export function CollectForm({ invoiceId, balance, today }: { invoiceId: string; balance: number; today: string }) {
   const [state, action, pending] = useActionState(collect.bind(null, invoiceId), undefined);
+  // ₹0 (or less) is answered here at once; nothing is sent to the server for it.
+  const [zero, setZero] = useState(false);
   const e = state?.errors ?? {};
   const sent = state?.ok ? undefined : (state?.values as Record<string, string> | undefined);
   return (
-    <form action={action} key={state?.nonce} className="flex flex-col gap-3">
-      {state?.message && <Notice tone={state.ok ? "ok" : "alert"}>{state.message}</Notice>}
+    <form
+      action={action}
+      key={`${state?.nonce}-${balance}`}
+      onSubmit={(ev) => {
+        const n = Number(String(new FormData(ev.currentTarget).get("amount") ?? "").replace(/[₹,\s]/g, ""));
+        const bad = Number.isFinite(n) && n <= 0;
+        setZero(bad);
+        if (bad) ev.preventDefault();
+      }}
+      className="flex flex-col gap-3"
+    >
+      {state?.message && !zero && <Notice tone={state.ok ? "ok" : "alert"}>{state.message}</Notice>}
+      {zero && <Notice tone="alert">Enter an amount more than ₹0.</Notice>}
       <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Amount (₹)" error={e.amount}>
+        <Field label="Amount (₹)" error={zero ? ["Enter an amount more than ₹0."] : e.amount}>
           <Input name="amount" inputMode="decimal" defaultValue={sent?.amount ?? String(balance / 100)} required />
         </Field>
         <Field label="Method" error={e.method}>

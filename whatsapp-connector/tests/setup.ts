@@ -1,0 +1,21 @@
+// Environment for every test run. Integration tests override DATABASE_URL/REDIS_URL from the shell when set.
+process.env.NODE_ENV = "test";
+process.env.LOG_LEVEL = process.env.TEST_LOG_LEVEL ?? "silent";
+process.env.RUN_MODE = "all";
+process.env.DATABASE_URL ??= "postgresql://postgres:postgres@127.0.0.1:5440/wa_test";
+process.env.REDIS_URL ??= "redis://127.0.0.1:6390";
+process.env.WA_CONNECTOR_MASTER_KEY = "test-master-key-0123456789abcdef";
+process.env.SESSION_ENCRYPTION_KEY = "test-session-encryption-key-0123456789";
+process.env.SESSION_STORAGE_PATH = process.env.SESSION_STORAGE_PATH ?? `/tmp/wa-connector-test/${process.pid}/sessions`;
+process.env.MEDIA_STORAGE_PATH = process.env.MEDIA_STORAGE_PATH ?? `/tmp/wa-connector-test/${process.pid}/media`;
+process.env.MAX_MESSAGES_PER_MINUTE = "10";
+process.env.MAX_MESSAGES_PER_HOUR = "100";
+process.env.MAX_MESSAGES_PER_DAY = "500";
+process.env.MAX_QUEUE_SIZE_PER_GYM = "5";
+process.env.MIN_SEND_GAP_MS = "0";
+process.env.MAX_SEND_GAP_MS = "0";
+process.env.CORS_ORIGIN = "https://www.fitron.in";
+process.env.API_RATE_LIMIT_PER_MINUTE = "1000";
+process.env.QR_IDLE_MINUTES = "1";
+process.env.OFFLINE_RETRY_SECONDS = "1";
+process.env.OPT_OUT_REPLY = "You are opted out. Reply START to opt in.";

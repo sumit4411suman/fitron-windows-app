@@ -16,11 +16,12 @@ import {
   reversePreview,
   rupeeText,
   salePreview,
+  CONFIRM_LABEL,
   type DraftKind,
 } from "@/lib/domain/ai-drafts";
 import { expenseInput, type ExpenseInput } from "@/lib/validation/expense";
 import { invoiceInput, paymentInput, reasonInput, sellInput, LINE_CATEGORIES, type InvoiceInput, type PaymentInput, type SellInput } from "@/lib/validation/billing";
-import { cancelInvoice, collectPayment, createInvoice, getInvoice, reversePayment, sellMembership, suggestedStart } from "./billing";
+import { cancelInvoice, collectPayment, createInvoice, getInvoice, overlapMessage, overlappingMembership, reversePayment, sellMembership, suggestedStart } from "./billing";
 import { createExpense } from "./expenses";
 import { UserError } from "./errors";
 import { memberScope } from "./members";
@@ -48,7 +49,9 @@ export const DRAFT_PERMISSIONS: Record<DraftKind, Permission[]> = {
   REVERSE_PAYMENT: ["payments.reverse"],
 };
 
-const NOTE = "Shown to the user with Confirm and Discard buttons. Nothing is saved until they press Confirm. Give a one or two line summary and ask them to check it.";
+/** What the model is told with each draft: the card's button has the kind's own label, never the word "Confirm". */
+export const draftNote = (kind: DraftKind) =>
+  `Shown to the user as a card with a "${CONFIRM_LABEL[kind]}" button and a Discard button. Nothing is saved until they press "${CONFIRM_LABEL[kind]}". Give a one or two line summary and ask them to check the card and press "${CONFIRM_LABEL[kind]}".`;
 const DENIED = (what: string) => ({ error: `This staff member's role can't ${what}.` });
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
 
@@ -84,7 +87,7 @@ export async function resolveInvoice(u: CurrentUser, ref: string) {
 
 async function save(u: CurrentUser, kind: DraftKind, memberIds: string[], summary: string, preview: string, payload: object): Promise<Draft> {
   const p = await db.aiProposal.create({ data: { orgId: u.orgId, userId: u.id, kind, memberIds, body: preview, summary: summary.slice(0, 200), payload } });
-  return { proposal_id: p.id, preview, note: NOTE };
+  return { proposal_id: p.id, preview, note: draftNote(kind) };
 }
 
 const gstLabel = (t: { enabled: boolean; rate: number; type: string }) => (t.enabled ? `${t.rate}% ${t.type}` : "GST off");
@@ -160,13 +163,17 @@ async function draftSale(u: CurrentUser, i: Input) {
   const total = invoiceTotals([{ qty: 1, rate: price, discount, taxRate }, ...(regFee ? [{ qty: 1, rate: regFee, discount: 0, taxRate }] : [])]).total;
   if (input.payAmount > total) return { error: "The payment is more than the invoice total." };
   if (input.payAmount > 0 && !input.payMethod) return { error: "Say how it was paid (UPI, Cash, Card, Bank Transfer or Other)." };
+  // The same rule sellMembership applies when the card is pressed, said now so the model can offer the right start.
+  const end = membershipEndDate(input.startDate, plan.months);
+  const clash = await overlappingMembership(member.id, input.startDate, end);
+  if (clash) return { error: overlapMessage(member.name, clash) };
   await monthOpen(u, member.branchId, todayIso());
   const preview = salePreview({
     member: `${member.name} (${member.code})`,
     plan: plan.name,
     months: plan.months,
     start: input.startDate,
-    end: membershipEndDate(input.startDate, plan.months),
+    end,
     price,
     discount,
     regFee,

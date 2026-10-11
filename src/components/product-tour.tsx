@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import { BrandMark } from "@/components/logo";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeftIcon,
@@ -151,7 +151,7 @@ export function ProductTour({ firstName, email, sections }: { firstName: string;
         <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/65 p-4">
           <div role="dialog" aria-label="Product tour" className="flex max-h-[92vh] w-full max-w-[560px] flex-col gap-[18px] overflow-auto rounded-lg border border-accent-500/60 bg-surface p-7 shadow-lg">
             <div className="flex items-center gap-3.5">
-              <Image src="/fitron-mark.png" alt="" width={52} height={52} className="size-[52px] object-contain" />
+              <BrandMark size={52} className="size-[52px] object-contain" />
               <div>
                 <div className="text-[11px] tracking-[0.08em] text-muted uppercase">Product tour · {n} sections</div>
                 <h2 className="mt-1 mb-0 text-[28px] leading-[1.1]">
@@ -188,7 +188,7 @@ export function ProductTour({ firstName, email, sections }: { firstName: string;
           <div role="dialog" aria-label="Product tour" className="fixed right-5 bottom-4 z-[95] flex max-h-[calc(100vh-110px)] w-[min(420px,calc(100vw-32px))] flex-col overflow-hidden rounded-[14px] border border-accent-500/60 bg-surface shadow-[0_24px_60px_rgba(0,0,0,0.6),0_0_0_1px_rgba(0,0,0,0.3)] max-lg:bottom-[84px]">
             <div className="flex items-center justify-between gap-3 bg-gradient-to-b from-accent-soft to-transparent px-[18px] py-3.5">
               <div className="flex items-center gap-2">
-                <Image src="/fitron-mark.png" alt="" width={22} height={22} className="size-[22px] object-contain" />
+                <BrandMark size={22} className="size-[22px] object-contain" />
                 <span className="text-[11px] tracking-[0.1em] text-muted uppercase">Product tour</span>
                 <span className="rounded-[10px] bg-accent-soft px-2 py-0.5 text-[11px] text-accent tabular-nums">
                   {i + 1} / {n}

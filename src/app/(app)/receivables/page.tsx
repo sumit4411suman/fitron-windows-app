@@ -2,6 +2,7 @@ import Link from "next/link";
 import { WhatsappLogoIcon } from "@phosphor-icons/react/dist/ssr";
 import { requirePermission } from "@/lib/auth/current";
 import { listReceivables } from "@/lib/services/billing";
+import { INVOICE_STATUS_TAG } from "@/lib/domain/billing";
 import { todayIso, toIso } from "@/lib/services/time";
 import { Tag } from "@/components/tag";
 import { ListHeader, Notice, toneOf, Segmented, Stat, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
@@ -10,7 +11,7 @@ import { remindAllOverdueAction, remindDueAction } from "../reminder-actions";
 
 export const metadata = { title: "Outstanding payments · Fitron" };
 
-const STATUS_TAG = { UNPAID: "UNPAID", PARTIALLY_PAID: "PARTIALLY PAID", PAID: "PAID", CANCELLED: "CANCELLED" } as const;
+const STATUS_TAG = INVOICE_STATUS_TAG;
 
 export default async function ReceivablesPage({ searchParams }: PageProps<"/receivables">) {
   const u = await requirePermission("invoices.view");
@@ -33,7 +34,7 @@ export default async function ReceivablesPage({ searchParams }: PageProps<"/rece
         <Stat label="Outstanding" value={formatRupees(total)} tone="alert" />
         <Stat label="Overdue" value={formatRupees(counts.overdue!.amount)} />
         <Stat label="Due today" value={counts.due_today!.n.toLocaleString("en-IN")} />
-        <Stat label="Partially paid" value={counts.partial!.n.toLocaleString("en-IN")} />
+        <Stat label="Part paid" value={counts.partial!.n.toLocaleString("en-IN")} />
       </div>
       {canWa && (
         <form action={remindAllOverdueAction.bind(null, here)} className="self-start">
@@ -49,7 +50,7 @@ export default async function ReceivablesPage({ searchParams }: PageProps<"/rece
           { key: "", label: `All (${open.length})`, href: "/receivables" },
           { key: "due_today", label: "Due today", href: "/receivables?f=due_today" },
           { key: "overdue", label: "Overdue", href: "/receivables?f=overdue" },
-          { key: "partial", label: "Partially paid", href: "/receivables?f=partial" },
+          { key: "partial", label: "Part paid", href: "/receivables?f=partial" },
           { key: "unpaid", label: "Unpaid", href: "/receivables?f=unpaid" },
         ]}
       />

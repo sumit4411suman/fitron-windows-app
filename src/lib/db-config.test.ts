@@ -1,24 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { poolConfig, withoutSslParams } from "./db-config";
+import { CONNECT_WAIT_MS, IDLE_MS, poolConfig, STATEMENT_TIMEOUT_MS, withoutSslParams } from "./db-config";
 
 const URL = "postgres://postgres.abc:p%40ss@aws-0-ap-south-1.pooler.supabase.com:5432/postgres";
+/** What every pool gets whatever else is set: a connection limit and timeouts, so a burst of requests can't pile up. */
+const LIMITS = { max: 10, connectionTimeoutMillis: CONNECT_WAIT_MS, idleTimeoutMillis: IDLE_MS, statement_timeout: STATEMENT_TIMEOUT_MS };
 const PEM = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----";
 
 describe("poolConfig", () => {
   it("is just the connection string when nothing extra is set, as on a Docker server", () => {
-    expect(poolConfig({ DATABASE_URL: URL })).toEqual({ connectionString: URL });
+    expect(poolConfig({ DATABASE_URL: URL })).toEqual({ ...LIMITS, connectionString: URL });
     expect(poolConfig({ DATABASE_URL: `${URL}?sslmode=verify-full&sslrootcert=/certs/ca.crt` })).toEqual({
+      ...LIMITS,
       connectionString: `${URL}?sslmode=verify-full&sslrootcert=/certs/ca.crt`,
     });
   });
 
   it("treats blank settings, as the installer writes them, as not set", () => {
-    expect(poolConfig({ DATABASE_URL: URL, DATABASE_CA: "", DATABASE_POOL_MAX: "" })).toEqual({ connectionString: URL });
-    expect(poolConfig({ DATABASE_URL: URL, DATABASE_CA: "   " })).toEqual({ connectionString: URL });
+    expect(poolConfig({ DATABASE_URL: URL, DATABASE_CA: "", DATABASE_POOL_MAX: "" })).toEqual({ ...LIMITS, connectionString: URL });
+    expect(poolConfig({ DATABASE_URL: URL, DATABASE_CA: "   " })).toEqual({ ...LIMITS, connectionString: URL });
   });
 
   it("verifies against the certificate authority given as text", () => {
-    expect(poolConfig({ DATABASE_URL: URL, DATABASE_CA: PEM })).toEqual({ connectionString: URL, ssl: { ca: PEM } });
+    expect(poolConfig({ DATABASE_URL: URL, DATABASE_CA: PEM })).toEqual({ ...LIMITS, connectionString: URL, ssl: { ca: PEM } });
   });
 
   it("accepts the certificate on one line with \\n written out, and ignores spaces around it", () => {
@@ -34,12 +37,23 @@ describe("poolConfig", () => {
 
   it("limits the connections of one running copy when asked, and ignores nonsense", () => {
     expect(poolConfig({ DATABASE_URL: URL, DATABASE_POOL_MAX: "3" }).max).toBe(3);
-    for (const bad of ["abc", "0", "-1", "2.5", " "]) expect(poolConfig({ DATABASE_URL: URL, DATABASE_POOL_MAX: bad }).max).toBeUndefined();
+    for (const bad of ["abc", "0", "-1", "2.5", " "]) expect(poolConfig({ DATABASE_URL: URL, DATABASE_POOL_MAX: bad }).max).toBe(10);
+  });
+
+  it("holds few connections by default on Vercel, where many copies share one pooler", () => {
+    expect(poolConfig({ DATABASE_URL: URL, VERCEL: "1" }).max).toBe(3);
+    expect(poolConfig({ DATABASE_URL: URL, VERCEL: "1", DATABASE_POOL_MAX: "5" }).max).toBe(5);
+  });
+
+  it("never waits forever for a connection or lets a query run forever", () => {
+    const c = poolConfig({ DATABASE_URL: URL });
+    expect(c.connectionTimeoutMillis).toBeGreaterThan(0);
+    expect(c.statement_timeout).toBeGreaterThan(0);
   });
 
   it("copes with no DATABASE_URL at all (a build that never opens a connection)", () => {
-    expect(poolConfig({})).toEqual({ connectionString: undefined });
-    expect(poolConfig({ DATABASE_CA: PEM })).toEqual({ connectionString: undefined, ssl: { ca: PEM } });
+    expect(poolConfig({})).toEqual({ ...LIMITS, connectionString: undefined });
+    expect(poolConfig({ DATABASE_CA: PEM })).toEqual({ ...LIMITS, connectionString: undefined, ssl: { ca: PEM } });
   });
 });
 

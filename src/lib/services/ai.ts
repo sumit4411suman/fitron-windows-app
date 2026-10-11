@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
+import { listHasSome } from "@/lib/db-dialect";
 import type { CurrentUser } from "@/lib/auth/current";
 import { claude, type Block, type Msg } from "@/lib/integrations/ai";
 import { runTool, TOOL_DEFS } from "./ai-tools";
@@ -13,7 +14,7 @@ import { auditConfirm, DRAFT_PERMISSIONS, executeDraft, type Executed } from "./
 import { accountingSystem } from "@/lib/domain/ai-knowledge";
 import { TOOL_LABEL } from "@/lib/domain/ai-labels";
 import { canUsePermission } from "@/lib/domain/features";
-import { CONFIRM_LABEL, draftExpired, isDraftKind, type DraftKind } from "@/lib/domain/ai-drafts";
+import { CONFIRM_LABEL, draftExpired, isDraftKind, NO_LONGER, NOT_SAVED, type DraftKind } from "@/lib/domain/ai-drafts";
 import { todayIso } from "./time";
 import { log } from "@/lib/log";
 
@@ -138,7 +139,7 @@ async function confirmWhatsApp(u: CurrentUser, p: { id: string; memberIds: strin
  * Staff pressed Confirm on an accounting draft. It runs as them, through the same service function the page uses, so
  * their role, the plan, locked months and the audit log all apply. Drafts go stale after two hours.
  */
-async function confirmDraft(u: CurrentUser, p: { id: string; kind: DraftKind; summary: string; createdAt: Date; payload: unknown }): Promise<Executed> {
+async function confirmDraft(u: CurrentUser, p: { id: string; kind: DraftKind; summary: string; memberIds: string[]; createdAt: Date; payload: unknown }): Promise<Executed & { retired: string[] }> {
   if (draftExpired(p.createdAt)) {
     await db.aiProposal.updateMany({ where: { id: p.id, status: "PENDING" }, data: { status: "DISMISSED", doneAt: new Date() } });
     throw new UserError("This draft is over two hours old and the figures may have changed. Ask me to prepare it again.");
@@ -151,22 +152,32 @@ async function confirmDraft(u: CurrentUser, p: { id: string; kind: DraftKind; su
   try {
     done = await executeDraft(u, p.kind, (p.payload ?? {}) as Parameters<typeof executeDraft>[2]);
   } catch (e) {
-    // Nothing was booked (the service runs in one transaction): let the user fix the cause and press Confirm again.
-    await db.aiProposal.updateMany({ where: { id: p.id }, data: { status: "PENDING", doneAt: null } });
+    // Nothing was booked (the service runs in one transaction): the card stays open so the user can fix the cause (a
+    // locked month, a balance that changed) and press it again. A check the books failed is kept on the draft, so the
+    // card and the model both know it was not saved.
+    await db.aiProposal.updateMany({ where: { id: p.id }, data: { status: "PENDING", doneAt: null, result: e instanceof UserError ? `${NOT_SAVED} ${e.message}` : null } });
     throw e;
   }
   await db.aiProposal.update({ where: { id: p.id }, data: { result: done.message } });
   await auditConfirm(u, p, done.message);
-  return done;
+  // The other cards still open for the same action on the same member (asked for twice, or prepared again after a
+  // correction) stop working now, so the same sale can't be confirmed twice from an older card.
+  const retired = p.memberIds.length
+    ? await db.aiProposal.findMany({ where: { orgId: u.orgId, userId: u.id, kind: p.kind, status: "PENDING", id: { not: p.id }, ...listHasSome("memberIds", p.memberIds) }, select: { id: true } })
+    : [];
+  if (retired.length) await db.aiProposal.updateMany({ where: { id: { in: retired.map((r) => r.id) }, status: "PENDING" }, data: { status: "DISMISSED", doneAt: new Date(), result: `${NO_LONGER} "${p.summary}" was confirmed instead.` } });
+  return { ...done, retired: retired.map((r) => r.id) };
 }
 
-export type Confirmed = { kind: "WHATSAPP"; sent: number; failed: number } | ({ kind: "ACTION" } & Executed);
+export type Confirmed = { kind: "WHATSAPP"; sent: number; failed: number } | ({ kind: "ACTION"; retired: string[] } & Executed);
 
 export async function confirmProposal(u: CurrentUser, id: string): Promise<Confirmed> {
   // Switching Fitron AI off also stops drafts it already made from being confirmed.
   if (!(await aiOn(u.orgId))) throw new UserError(AI_OFF_MESSAGE);
   const p = await db.aiProposal.findFirst({ where: { id, orgId: u.orgId, userId: u.id } });
   if (!p) throw new UserError("Suggestion not found.");
+  // A retired card says why it stopped working rather than "already handled".
+  if (p.status === "DISMISSED" && p.result?.startsWith(NO_LONGER)) throw new UserError(p.result);
   if (p.status !== "PENDING") throw new UserError("Already handled.");
   if (isDraftKind(p.kind)) return { kind: "ACTION", ...(await confirmDraft(u, { ...p, kind: p.kind })) };
   const r = await confirmWhatsApp(u, p);

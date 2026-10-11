@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import type { Permission } from "@/lib/auth/permissions";
-import { invoiceState } from "@/lib/domain/billing";
+import { INVOICE_STATUS_TAG, invoiceState } from "@/lib/domain/billing";
 import { membershipStatus } from "@/lib/domain/membership";
 import { audit } from "./audit";
 import { memberScope, summarize } from "./members";
@@ -54,7 +54,7 @@ export async function buildExport(u: CurrentUser, kind: ExportKind): Promise<Rep
       columns: [col("invoice", "Invoice"), col("date", "Date"), col("member", "Member"), col("total", "Total", true), col("paid", "Paid", true), col("balance", "Balance", true), col("status", "Status")],
       rows: invoices.map((i) => {
         const st = invoiceState({ total: i.total, cancelled: i.status === "CANCELLED", dueDate: toIso(i.dueDate) }, i.payments as { amount: number; status: "SUCCESS" | "REVERSED" }[], today);
-        return { invoice: i.number, date: toIso(i.date), member: i.member.name, total: i.total, paid: st.paid, balance: st.balance, status: words(st.status) };
+        return { invoice: i.number, date: toIso(i.date), member: i.member.name, total: i.total, paid: st.paid, balance: st.balance, status: INVOICE_STATUS_TAG[st.status] };
       }),
     };
   }

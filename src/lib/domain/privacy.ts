@@ -26,7 +26,7 @@ export const DEFAULT_NOTICE: Record<NoticeKey, string> = {
     "Name, phone, WhatsApp number, email, date of birth, gender, address, emergency contact, photo, ID and address proof, health notes you choose to share, membership and payment records, attendance, and face or fingerprint templates if you use biometric entry.",
   why: "To register and identify you, run your membership, take payments and issue GST invoices, send reminders and receipts on WhatsApp, control door access, and keep you safe in the gym. We don't sell your data or use it for unrelated purposes.",
   consent:
-    "We process your data with your consent, given at registration, or where the law allows it without consent (for example, keeping tax records). You can withdraw consent at any time; this stops future processing but may mean we can't continue your membership.",
+    "We process your data with your consent, which we ask for and record when you join, or where the law allows it without consent (for example, keeping tax records). You can withdraw consent at any time; this stops future processing but may mean we can't continue your membership.",
   rights:
     "You can ask for a summary of your data, ask us to correct or complete it, ask us to erase it once it is no longer needed, nominate someone to act for you, and raise a grievance. Contact the Grievance Officer below. If you are not satisfied, you can complain to the Data Protection Board of India.",
   children: "For members under 18 we need verifiable consent from a parent or guardian, and we don't track or target children with advertising.",

@@ -214,6 +214,14 @@ select option {
   scrollbar-color: var(--scroll) transparent;
 }
 
+/* Scrolls without showing a scroll bar (the Fitron AI chat). */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 899px) {
   input,
   select,

@@ -55,7 +55,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
     <main className="grid min-h-screen grid-cols-[repeat(auto-fit,minmax(min(100%,380px),1fr))]">
       <section className="flex flex-col justify-between gap-10 bg-[#0e0d0a] bg-[radial-gradient(ellipse_at_top_left,rgba(207,169,79,0.18),transparent_60%)] p-10 text-[#f3ede0]">
         <div className="flex items-center justify-between gap-3">
-          <a href="/#top" className="block w-[min(100%,340px)]"><Image src="/fitron-logo.png" alt="FITRON" width={599} height={218} className="block h-auto w-full" priority /></a>
+          <a href="/#top" className="block w-[min(100%,340px)]"><Image src="/fitron-logo-v2.png" alt="FITRON" width={599} height={218} className="block h-auto w-full" priority /></a>
           <a href="/#products" className="text-[13px] text-[#cfa94f]">For gyms ↗</a>
         </div>
         <div className="max-w-[440px]">

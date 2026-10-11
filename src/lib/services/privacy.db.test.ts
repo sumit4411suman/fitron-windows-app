@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { hasDb, makeGym, pick } from "@/test/db";
 import { addDays, addMonths } from "@/lib/domain/dates";
 import { DEFAULT_NOTICE } from "@/lib/domain/privacy";
-import { createMember, restoreMember } from "./members";
+import { createMember, recordConsent, restoreMember } from "./members";
 import { createPlan } from "./plans";
 import { sellMembership } from "./billing";
 import { uploadDocument } from "./documents";
@@ -171,12 +171,26 @@ describe.skipIf(!hasDb)("Privacy & DPDP (database)", () => {
     expect(() => assertCanErase(admin)).not.toThrow();
   });
 
-  it("messages can name the grievance officer and consent counts every member", async () => {
+  it("messages can name the grievance officer, and consent counts only members with a recorded consent", async () => {
     const m = await newMember("Vars Devi");
     expect(await memberVars(gym.org.id, m.id)).toMatchObject({ grievance_officer: "Asha Rao", grievance_email: "privacy@test.local", grievance_phone: "9876543210" });
-    const c = await countConsented(admin);
-    expect(c.total).toBeGreaterThan(0);
-    expect(c.consented).toBe(c.total);
+    const before = await countConsented(admin);
+    expect(before.total).toBeGreaterThan(0);
+    // Members made without the tick box (as every member above) are not counted as consented.
+    expect(before.consented).toBeLessThan(before.total);
+    expect(m.consentAt).toBeNull();
+
+    const ticked = await newMember("Ticked Devi", { consent: true });
+    expect(ticked.consentAt).toBeInstanceOf(Date);
+    await recordConsent(admin, m.id);
+    const after = await countConsented(admin);
+    expect(after.total).toBe(before.total + 1);
+    expect(after.consented).toBe(before.consented + 2);
+    expect(await db.auditLog.count({ where: { orgId: gym.org.id, action: "member.consent", entityId: m.id } })).toBe(1);
+    // Recording twice keeps the first date.
+    const first = (await db.member.findUniqueOrThrow({ where: { id: m.id } })).consentAt;
+    await recordConsent(admin, m.id, new Date(0));
+    expect((await db.member.findUniqueOrThrow({ where: { id: m.id } })).consentAt).toEqual(first);
   });
 
   it("retention job erases only lapsed members past the cutoff", async () => {

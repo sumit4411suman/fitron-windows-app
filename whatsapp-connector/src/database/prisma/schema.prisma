@@ -1,0 +1,161 @@
+// Fitron WhatsApp Connector — database schema.
+// Every table that holds tenant data carries gymId; every query goes through a service that scopes by it.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum GymStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum SessionStatus {
+  DISCONNECTED
+  QR_REQUIRED
+  CONNECTING
+  CONNECTED
+  RECONNECTING
+  AUTH_FAILURE
+  SESSION_EXPIRED
+}
+
+enum MessageType {
+  TEXT
+  DOCUMENT
+  IMAGE
+  PDF
+}
+
+enum MessageCategory {
+  TRANSACTIONAL
+  MARKETING
+}
+
+enum MessageStatus {
+  QUEUED
+  PROCESSING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  CANCELLED
+}
+
+model Gym {
+  id           String    @id @default(uuid())
+  name         String
+  /** The tenant's id in Fitron (orgId); lets Fitron find its gym again without storing ours. */
+  externalId   String?   @unique
+  apiKeyHash   String    @unique
+  /** First characters of the key so an operator can tell keys apart in logs and the admin API. Not secret on its own. */
+  apiKeyPrefix String
+  status       GymStatus @default(ACTIVE)
+  /** Values available to templates as {{gymName}}, {{gymPhone}} and the gym's timezone. */
+  phone        String?
+  timezone     String    @default("Asia/Kolkata")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  session   WhatsAppSession?
+  messages  Message[]
+  consents  Consent[]
+  templates Template[]
+
+  @@index([status])
+}
+
+model WhatsAppSession {
+  id              String        @id @default(uuid())
+  gymId           String        @unique
+  gym             Gym           @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  status          SessionStatus @default(DISCONNECTED)
+  phoneNumber     String?
+  /** Folder holding this gym's encrypted WhatsApp authentication data (relative to SESSION_STORAGE_PATH). */
+  sessionLocation String?
+  lastError       String?
+  connectedAt     DateTime?
+  lastSeenAt      DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+}
+
+model Message {
+  id                String          @id @default(uuid())
+  gymId             String
+  gym               Gym             @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  /** Normalised E.164 digits, e.g. 919876543210 */
+  recipient         String
+  /** The rendered text (or the media caption) */
+  message           String
+  messageType       MessageType     @default(TEXT)
+  category          MessageCategory @default(TRANSACTIONAL)
+  status            MessageStatus   @default(QUEUED)
+  /** The Fitron member the message is about, if any (free text, Fitron's own id) */
+  memberId          String?
+  /** Which Fitron event produced it (welcome, membership-expiry, ...) */
+  templateKey       String?
+  /** Caller-supplied key: the same key never sends twice for one gym */
+  idempotencyKey    String?
+  /** Media: where the file waits on disk until it is sent, its original name and type */
+  mediaPath         String?
+  mediaName         String?
+  mediaMimeType     String?
+  providerMessageId String?
+  error             String?
+  attempts          Int             @default(0)
+  queuedAt          DateTime        @default(now())
+  processingAt      DateTime?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  readAt            DateTime?
+  failedAt          DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([gymId, idempotencyKey])
+  @@index([gymId, status])
+  @@index([gymId, createdAt])
+  @@index([gymId, recipient])
+  @@index([gymId, providerMessageId])
+}
+
+model Consent {
+  id            String    @id @default(uuid())
+  gymId         String
+  gym           Gym       @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  memberId      String?
+  phoneNumber   String
+  whatsappOptIn Boolean   @default(false)
+  optInSource   String?
+  optInAt       DateTime?
+  optOutSource  String?
+  optOutAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([gymId, phoneNumber])
+  @@index([gymId, memberId])
+}
+
+model Template {
+  id        String   @id @default(uuid())
+  gymId     String
+  gym       Gym      @relation(fields: [gymId], references: [id], onDelete: Cascade)
+  /** welcome, membership-expiry, payment-reminder, birthday, ... */
+  name      String
+  body      String
+  category  MessageCategory @default(TRANSACTIONAL)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([gymId, name])
+}

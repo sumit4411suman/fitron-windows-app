@@ -34,6 +34,7 @@ export async function toggleClass(id: string, active: boolean) {
 
 export async function bookAction(slotId: string, date: string, _: FormState, fd: FormData): Promise<FormState> {
   const u = await requirePermission("classes.manage");
+  let message = "Booked.";
   const r = await simpleAction(async () => {
     const m = await resolveMemberRef(u, String(fd.get("member") ?? ""));
     if (!m) throw new UserError("Pick a member from the list.");
@@ -42,11 +43,12 @@ export async function bookAction(slotId: string, date: string, _: FormState, fd:
       const slot = await getSlot(u, slotId);
       sendLater({ orgId: u.orgId, memberId: m.id, key: "class", userId: u.id, vars: { class_name: slot?.name ?? "", class_time: `${fmtDate(date)}, ${fmtClock(slot?.startTime ?? "00:00")}` } });
     }
-    if (b.status === "Waitlist") throw new UserError(`The class is full, so ${m.name} is on the waitlist.`);
-  }, "Booked.");
+    // Joining the waitlist is a booking that worked, not an error.
+    if (b.status === "Waitlist") message = `The class is full, so ${m.name} is on the waitlist.`;
+  }, message);
   revalidatePath(`/classes/${slotId}`);
   revalidatePath("/classes");
-  return r;
+  return r?.ok ? { ...r, message } : r;
 }
 
 export async function bookingStatusAction(id: string, slotId: string, status: "Cancelled" | "Attended" | "No-show" | "Booked") {

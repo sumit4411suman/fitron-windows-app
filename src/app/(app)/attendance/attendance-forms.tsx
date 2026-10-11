@@ -27,6 +27,7 @@ export function CheckInDesk({ rulesText, qr, qrText, gymName, branchName, device
   const [last, setLast] = useState<Done | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (q.trim().length < 2 || block) return;
@@ -44,19 +45,25 @@ export function CheckInDesk({ rulesText, qr, qrText, gymName, branchName, device
     start(async () => {
       setError(null);
       const r = await deskCheckInAction({ ...input, q: input.q ?? q, method: input.method ?? (mode === "QR" ? "QR" : "Manual") });
+      // The box is cleared after every verdict, so the next number typed never lands behind the last one.
       if (r.ok) {
         setLast(r);
         setBlock(null);
         setQ("");
         setHits([]);
-      } else if ("blocked" in r) setBlock(r);
-      else if ("error" in r) setError(r.error);
+      } else if ("blocked" in r) {
+        setBlock(r);
+        setQ("");
+        setHits([]);
+      } else if ("error" in r) setError(r.error);
       else if ("pick" in r) searchAction(q).then(setHits);
+      inputRef.current?.focus();
     });
 
   const box = (placeholder: string, big = false, label = "Check in") => (
     <div className="flex gap-2.5">
       <input
+        ref={inputRef}
         value={q}
         onChange={(e) => {
           setQ(e.target.value);

@@ -7,7 +7,7 @@ import { db } from "@/lib/db";
 import { memberInput } from "@/lib/validation/member";
 import { failed, fieldErrors, type FormState } from "@/lib/validation/common";
 import { simpleAction } from "@/lib/form-action";
-import { checkPhoto, createMember, deleteMember, removeMemberPhoto, restoreMember, setMemberPhoto, setSuspended, updateMember } from "@/lib/services/members";
+import { checkPhoto, createMember, deleteMember, recordConsent, removeMemberPhoto, restoreMember, setMemberPhoto, setSuspended, updateMember } from "@/lib/services/members";
 import { UserError } from "@/lib/services/errors";
 import { freezeMembership, transferMember, unfreezeMembership } from "@/lib/services/freeze";
 import { sendTemplate } from "@/lib/services/whatsapp";
@@ -33,6 +33,8 @@ export async function saveMember(id: string | null, _: FormState, fd: FormData):
   const u = await requirePermission(id ? "members.edit" : "members.create");
   const parsed = memberInput.safeParse(read(fd));
   if (!parsed.success) return failed(fd, { errors: fieldErrors(parsed.error), message: "Check the highlighted fields." });
+  // A new member is only registered with their consent to the privacy notice (DPDP); it can't be assumed.
+  if (!id && !parsed.data.consent) return failed(fd, { errors: { consent: ["Tick the box once the member has agreed to the privacy notice."] }, message: "Record the member's consent first." });
   let newId = id;
   const photoEntry = fd.get("photo");
   const photo = photoEntry instanceof File && photoEntry.size > 0 ? photoEntry : null;
@@ -46,6 +48,15 @@ export async function saveMember(id: string | null, _: FormState, fd: FormData):
   if (!res?.ok) return res;
   revalidatePath("/members");
   redirect(`/members/${newId}`);
+}
+
+/** "Record consent" on the member page: the member agreed to the privacy notice (e.g. on paper) and it was never recorded. */
+export async function recordConsentAction(id: string) {
+  const u = await requirePermission("members.edit");
+  await recordConsent(u, id);
+  revalidatePath(`/members/${id}`);
+  revalidatePath("/members");
+  redirect(`/members/${id}?${new URLSearchParams({ msg: "Consent recorded." })}`);
 }
 
 export async function toggleSuspend(id: string, suspend: boolean) {

@@ -2,10 +2,14 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { Badge, Button, Field, Input, Notice, Select, ScrollRegion } from "@/components/ui";
-import { autoMap, IMPORTS, MAX_ROWS, parseCsv, type CheckedRow, type ImportKind } from "@/lib/domain/import";
+import { useConfirm } from "@/components/confirm-dialog";
+import { autoMap, countOf, IMPORTS, MAX_ROWS, parseCsv, type CheckedRow, type ImportKind } from "@/lib/domain/import";
 import { commitAction, openingAction, previewAction, sourceAction } from "./actions";
 
 type Loaded = { fileName: string; headers: string[]; rows: string[][] };
+
+/** Rows per server call: small enough that each call finishes quickly and the progress bar moves. */
+const PART = 20;
 
 
 /** Upload a CSV, fix the column mapping, check the rows on the server, then import the valid ones. */
@@ -16,7 +20,10 @@ export function ImportWizard({ kind }: { kind: ImportKind }) {
   const [checked, setChecked] = useState<CheckedRow[] | null>(null);
   const [error, setError] = useState("");
   const [done, setDone] = useState<string>("");
+  const [consentOnPaper, setConsentOnPaper] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [pending, start] = useTransition();
+  const [ask, dialog] = useConfirm();
 
   const load = (f: File) => {
     setError("");
@@ -36,7 +43,7 @@ export function ImportWizard({ kind }: { kind: ImportKind }) {
     r.readAsText(f);
   };
 
-  const payload = () => ({ kind, fileName: file!.fileName, rows: file!.rows, map });
+  const payload = () => ({ kind, fileName: file!.fileName, rows: file!.rows, map, consentOnPaper });
   const check = () =>
     start(async () => {
       setError("");
@@ -44,11 +51,36 @@ export function ImportWizard({ kind }: { kind: ImportKind }) {
       if (!r.ok) setError(r.message);
       else setChecked(r.rows);
     });
+  // Only the rows that passed the check go to the server, in parts of PART rows, one call after another, so the
+  // page shows "Imported 40 of 120" and a long file never sits in one request (bug 13).
   const commit = () =>
     start(async () => {
-      const r = await commitAction(payload());
-      if (!r.ok) return setError(r.message);
-      setDone(`Imported ${r.made} ${spec.label.toLowerCase()}${r.skipped ? `; ${r.skipped} row${r.skipped === 1 ? "" : "s"} skipped` : ""}${r.plansCreated ? `; ${r.plansCreated} plan${r.plansCreated === 1 ? "" : "s"} created` : ""}.`);
+      setError("");
+      const okRows = (checked ?? []).filter((r) => r.errors.length === 0).map((r) => file!.rows[r.n - 2]!);
+      const total = okRows.length;
+      const of = Math.max(1, Math.ceil(total / PART));
+      let made = 0;
+      let skipped = (file?.rows.length ?? 0) - total;
+      let plansCreated = 0;
+      const plansInactive: string[] = [];
+      setProgress({ done: 0, total });
+      for (let i = 0; i < of; i++) {
+        const rows = okRows.slice(i * PART, (i + 1) * PART);
+        const r = await commitAction({ kind, fileName: file!.fileName, rows, map, consentOnPaper }, { index: i + 1, of, fileRows: file!.rows.length });
+        if (!r.ok) {
+          setProgress(null);
+          return setError(`${r.message}${made ? ` ${made} row${made === 1 ? " was" : "s were"} imported before that; check the rows and import the file again, imported rows are skipped.` : ""}`);
+        }
+        made += r.made;
+        skipped += r.skipped;
+        plansCreated += r.plansCreated;
+        plansInactive.push(...r.plansInactive);
+        setProgress({ done: Math.min(total, (i + 1) * PART), total });
+      }
+      setProgress(null);
+      setDone(
+        `Imported ${countOf(kind, made)}${skipped ? `; ${skipped} row${skipped === 1 ? "" : "s"} skipped` : ""}${plansCreated ? `; ${plansCreated} plan${plansCreated === 1 ? "" : "s"} created inactive (${plansInactive.join(", ")}) — set the price and activate in Plans before selling` : ""}.`,
+      );
       setFile(null);
       setChecked(null);
     });
@@ -59,8 +91,19 @@ export function ImportWizard({ kind }: { kind: ImportKind }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {dialog}
       {done && <Notice tone="ok">{done}</Notice>}
       {error && <Notice tone="alert">{error}</Notice>}
+      {progress && (
+        <div role="progressbar" aria-valuemin={0} aria-valuemax={progress.total} aria-valuenow={progress.done} aria-label="Import progress" className="flex flex-col gap-1.5">
+          <div className="text-sm">
+            Imported {progress.done} of {progress.total}…
+          </div>
+          <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-200">
+            <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${progress.total ? Math.round((progress.done / progress.total) * 100) : 0}%` }} />
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <Field label="CSV file">
           <Input
@@ -103,6 +146,15 @@ export function ImportWizard({ kind }: { kind: ImportKind }) {
               </Field>
             ))}
           </div>
+          {kind === "members" && (
+            <label className="flex items-start gap-2 text-sm">
+              <input type="checkbox" checked={consentOnPaper} onChange={(e) => setConsentOnPaper(e.target.checked)} className="mt-0.5 size-4" />
+              <span>
+                These members gave consent on paper when they joined.
+                <span className="block text-xs text-muted">Records today as their privacy-consent date. A &ldquo;Privacy consent&rdquo; column in the file (yes, or a date) wins for its row; without either, consent stays unrecorded and shows on the member.</span>
+              </span>
+            </label>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button onClick={check} disabled={pending} variant={checked ? "default" : "primary"}>
               {pending && !checked ? "Checking…" : "Check rows"}
@@ -111,8 +163,9 @@ export function ImportWizard({ kind }: { kind: ImportKind }) {
               <Button
                 variant="primary"
                 disabled={pending || valid === 0}
-                onClick={() => {
-                  if (window.confirm(`Import ${valid} ${spec.label.toLowerCase()}? Rows with problems are skipped.`)) commit();
+                onClick={async () => {
+                  const bad = checked.length - valid;
+                  if (await ask({ title: `Import ${countOf(kind, valid)}?`, message: bad ? `${bad} row${bad === 1 ? " has" : "s have"} problems and will be skipped.` : undefined, label: "Import" })) commit();
                 }}
               >
                 {pending ? "Importing…" : `Import ${valid} row${valid === 1 ? "" : "s"}`}

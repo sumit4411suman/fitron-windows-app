@@ -40,6 +40,7 @@
     "node_modules",
     "prototype",
     "build",
-    "src-tauri"
+    "src-tauri",
+    "whatsapp-connector"
   ]
 }

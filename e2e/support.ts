@@ -243,7 +243,10 @@ export async function chargeGst(page: Page, rate = "18") {
   await page.getByLabel("Charge GST on invoices").check();
   await page.getByLabel("GST rate (%)").fill(rate);
   await page.getByLabel("Tax type").selectOption("CGST+SGST");
+  // GST is only charged with a GSTIN to print on the invoice.
+  await page.getByLabel("GSTIN").fill("20ABCDE1234F1Z5");
   await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Saved. Changes are recorded in the audit log.")).toBeVisible();
   await expect(page.getByLabel("Charge GST on invoices")).toBeChecked();
 }
 
@@ -263,6 +266,8 @@ export async function addMember(page: Page, name: string): Promise<string> {
   await page.getByLabel("Mobile number").fill(`9${String(Math.floor(Math.random() * 1e9)).padStart(9, "0")}`);
   await page.getByLabel("Gender").selectOption({ index: 1 });
   await page.getByLabel("How did you hear about us?").selectOption({ index: 1 });
+  // A new member cannot be saved without their privacy consent.
+  await page.getByRole("checkbox", { name: /^Privacy consent/ }).check();
   await page.getByRole("button", { name: "Add member" }).click();
   await page.waitForURL(/\/members\/(?!new$)[^/?]+$/);
   return new URL(page.url()).pathname.split("/").pop()!;

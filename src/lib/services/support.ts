@@ -122,7 +122,7 @@ export async function systemDetails(u: CurrentUser, o: { userAgent?: string | nu
     { k: "Branches", v: String(branches) },
     { k: "Members", v: members.toLocaleString("en-IN") },
     { k: "Browser", v: deviceLabel(o.userAgent) + (o.ip ? ` · ${o.ip}` : "") },
-    { k: "File storage", v: storageMode() === "S3" ? "S3 bucket" : "Server disk (STORAGE_DIR)" },
+    { k: "File storage", v: storageMode() === "S3" ? "Cloud bucket" : "Server disk" },
     { k: "WhatsApp", v: `${WA_MODE[o.waMode] ?? o.waMode} · ${waText}` },
     { k: "Email", v: emailReady() ? `SMTP configured: tickets are emailed to ${supportTo()}` : "SMTP not set: tickets are saved here and only logged" },
     { k: "Database", v: database },

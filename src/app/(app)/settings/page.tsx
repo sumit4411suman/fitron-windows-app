@@ -336,7 +336,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
       {tab === "wa" && (
         <div className="flex max-w-[760px] flex-col gap-7">
           {!u.has("whatsapp") && <Notice>Automatic WhatsApp messages are on the Professional plan.</Notice>}
-          <LinkedCard wa={wa} cloud={wa.mode === "cloud" && cloudInfo ? { number: waStatus.number ?? cloudInfo.number, name: waStatus.name ?? cloudInfo.name } : null} canUse={u.has("whatsapp")} />
+          <LinkedCard wa={wa} cloud={wa.mode === "cloud" && cloudInfo ? { number: waStatus.number ?? cloudInfo.number, name: waStatus.name ?? cloudInfo.name } : null} canUse={u.has("whatsapp")} qr={!meta} />
           <p className="m-0 text-[13px] text-muted">
             Quiet hours {fmtClock(wa.quietFrom)} – {fmtClock(wa.quietTo)} ·{" "}
             <Link href="/whatsapp" className="underline">
@@ -480,7 +480,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
               </p>
             ) : (
               <p className="max-w-[720px] text-[13px] leading-[1.6] text-muted">
-                Live mode uses your own Razorpay account: set RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET on the server and add /api/webhooks/razorpay as a webhook in the Razorpay dashboard. Members approve once in any UPI
+                Live mode uses your own Razorpay account. To switch it on, send your Razorpay key and webhook secret to whoever hosts Fitron (or contact support), who adds them to the server; then add /api/webhooks/razorpay as a webhook in the Razorpay dashboard. Members approve once in any UPI
                 app; Razorpay sends the NPCI pre-debit notice, charges on the renewal date and retries; Fitron records each renewal automatically.
               </p>
             )}
@@ -644,7 +644,8 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
 }
 
 /** The prototype's "Linked WhatsApp" card: the paired number with Send test / Unlink, or a Link WhatsApp button. */
-function LinkedCard({ wa, cloud, canUse }: { wa: Awaited<ReturnType<typeof getWaSettings>>; cloud: { number: string; name: string } | null; canUse: boolean }) {
+/** `qr`: the gym links its own phone by scanning a QR (the whatsapp-connector service); otherwise the Meta Business flow. */
+function LinkedCard({ wa, cloud, canUse, qr }: { wa: Awaited<ReturnType<typeof getWaSettings>>; cloud: { number: string; name: string } | null; canUse: boolean; qr: boolean }) {
   const linked = wa.linked;
   const at = linked?.at ? new Date(linked.at) : null;
   return (
@@ -687,10 +688,21 @@ function LinkedCard({ wa, cloud, canUse }: { wa: Awaited<ReturnType<typeof getWa
           </LinkButton>
         )}
       </div>
-      <div className="text-[13px] leading-relaxed">
-        Connect your own WhatsApp Business number once. Fitron then sends reminders, invoices and renewals to your members from it by itself at the scheduled time. Your members don&apos;t need to connect anything.
-      </div>
-      <div className="text-xs leading-relaxed text-muted">This uses WhatsApp&apos;s official business service from Meta. Messages that start a conversation use templates Meta approves first, and Meta charges per conversation. Use it for your own members only.</div>
+      {qr ? (
+        <>
+          <div className="text-[13px] leading-relaxed">
+            Press Link WhatsApp, then scan the QR code from WhatsApp › Linked devices on the gym phone, like WhatsApp Web. Fitron then sends reminders, invoices and renewals to your members from that number by itself at the scheduled time. Your members don&apos;t need to connect anything.
+          </div>
+          <div className="text-xs leading-relaxed text-muted">The phone stays linked after restarts; unlink it here any time. Messages are paced and logged, members can reply STOP to opt out, and it is for your own members only.</div>
+        </>
+      ) : (
+        <>
+          <div className="text-[13px] leading-relaxed">
+            Connect your own WhatsApp Business number once. Fitron then sends reminders, invoices and renewals to your members from it by itself at the scheduled time. Your members don&apos;t need to connect anything.
+          </div>
+          <div className="text-xs leading-relaxed text-muted">This uses WhatsApp&apos;s official business service from Meta. Messages that start a conversation use templates Meta approves first, and Meta charges per conversation. Use it for your own members only.</div>
+        </>
+      )}
     </section>
   );
 }

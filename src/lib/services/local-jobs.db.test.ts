@@ -48,6 +48,7 @@ describe.skipIf(!hasDb)("the computer's timer (database)", () => {
     const owner = pick(await g.user("Super Admin"), g.a.id);
     await putSetting(owner, "whatsapp", { mode: "connector" });
     vi.stubEnv("WA_CONNECTOR_URL", "http://127.0.0.1:9");
+    vi.stubEnv("WA_CONNECTOR_KEY", "x");
     const today = todayIso();
     const out = await runLocalDailyJobs(g.org.id, today);
     const waiting = out.filter((j) => j.status === "waiting").map((j) => j.name);

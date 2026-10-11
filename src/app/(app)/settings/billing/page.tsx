@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { BrandMark } from "@/components/logo";
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth/current";
 import { db } from "@/lib/db";
@@ -101,7 +101,7 @@ export default async function BillingPage({ searchParams }: PageProps<"/settings
         <section className="flex flex-col gap-3.5 rounded-lg border border-t-2 border-line border-t-accent bg-surface px-[22px] py-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <Image src="/fitron-mark.png" alt="" width={44} height={44} className="size-11 object-contain" />
+              <BrandMark size={44} className="size-11 object-contain" />
               <div>
                 <div className={KICKER}>Your Fitron plan</div>
                 <div className="mt-0.5 text-[22px] font-semibold">{terms.custom ? "Set up by FITRON" : `${plan.name} · ${plan.cycle === "YEARLY" ? "yearly" : "monthly"}`}</div>
@@ -112,7 +112,7 @@ export default async function BillingPage({ searchParams }: PageProps<"/settings
           <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(140px,1fr))]">
             {[
               s.kind === "TRIAL" ? ["Trial ends", fmtDate(s.until)] : s.kind === "PAID" ? ["Paid until", fmtDate(s.until)] : s.kind === "GRACE" ? ["Read-only from", fmtDate(s.readOnlyFrom)] : s.kind === "LAPSED" ? ["Locked since", fmtDate(s.since)] : ["Plan", "Custom"],
-              ["Members", `${members}${terms.memberLimit !== null ? ` of ${terms.memberLimit}` : ""}`],
+              ["Active members", `${members}${terms.memberLimit !== null ? ` of ${terms.memberLimit}` : ""}`],
               ["Branches", String(branches.length)],
               ["Total paid", formatInr(paidTotal)],
             ].map(([k, v]) => (
@@ -122,6 +122,12 @@ export default async function BillingPage({ searchParams }: PageProps<"/settings
               </div>
             ))}
           </div>
+          <p className="m-0 text-[13px] text-muted">
+            Active members are members with a current plan, which is what the plan limit counts.{" "}
+            <Link href="/members" className="font-semibold text-accent">
+              See members
+            </Link>
+          </p>
           {terms.custom ? (
             <p className="text-sm">FITRON set up your gym by hand, so it has no member limit and {terms.includedBranches} branches are included. Extra branches are paid below. Write to hello@fitron.in to move to a listed plan.</p>
           ) : (

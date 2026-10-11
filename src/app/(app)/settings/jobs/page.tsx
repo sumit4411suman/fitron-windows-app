@@ -68,7 +68,7 @@ export default async function JobsPage({ searchParams }: { searchParams: Promise
           </Notice>
         ) : (
           <Notice>
-            On the server, a scheduler calls <code>/api/jobs/daily</code> each morning at about 6:30 with the <code>CRON_SECRET</code>. Each job runs once a day however many times it is called, and a failed job is retried on the next call. Messages held by quiet hours or a rule&apos;s Send at time go out when <code>/api/jobs/dispatch</code> is called (every 15 minutes), or when the WhatsApp page is opened. Once a week, on Sunday at about 2:30 at night, the scheduler calls <code>/api/jobs/weekly</code> to test that the latest backup restores.
+            Fitron runs its daily jobs each morning at about 6:30. Each job runs once a day, and one that fails is tried again on the next run. Messages held by quiet hours or a rule&apos;s Send at time go out every 15 minutes, or when the WhatsApp page is opened. Once a week, on Sunday at about 2:30 at night, the latest backup is test-restored. The schedule is set up by whoever hosts Fitron; if a day shows no run, use the button above and contact support.
           </Notice>
         )}
       </div>

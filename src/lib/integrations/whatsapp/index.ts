@@ -1,5 +1,6 @@
 import "server-only";
 import { graphCall, phoneInfo, type CloudCreds } from "./cloud";
+import { getConnectorGym, removeConnectorGym, saveConnectorGym } from "@/lib/services/wa-connector-store";
 import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
 import { isNetworkError, offlineMessage, probablyOnline, SERVICE } from "../online";
 
@@ -9,9 +10,10 @@ import { isNetworkError, offlineMessage, probablyOnline, SERVICE } from "../onli
 //   cloud      Meta WhatsApp Cloud API (official). Each gym connects its own number (Settings › WhatsApp › Connect) and
 //              Fitron sends with that gym's credentials; WHATSAPP_TOKEN and WHATSAPP_PHONE_NUMBER_ID on the server are
 //              only a fallback for one number shared by every gym.
-//   connector  the linked-phone connector in prototype/connector. WA_CONNECTOR_URL and WA_CONNECTOR_KEY say where it is and
-//              its key; without them the app looks for it on this computer (http://127.0.0.1:3131, key fitron-local),
-//              which is what the connector's double-click start files use out of the box.
+//   connector  the self-hosted WhatsApp Web connector in whatsapp-connector/ (one deployment serves every gym; each gym links
+//              its own phone by QR). WA_CONNECTOR_URL is its address and WA_CONNECTOR_KEY its master key, used only to
+//              create the gym on the connector the first time; after that Fitron calls it with the gym's own key, kept
+//              sealed in the gym's settings (wa-connector-store).
 
 export type WaMode = "demo" | "cloud" | "connector";
 export type Outgoing = {
@@ -29,20 +31,18 @@ export type Outgoing = {
 export type SendResult = { status: "Logged" | "Sent" | "Queued" | "Failed"; providerMessageId?: string; error?: string };
 
 const env = (k: string) => process.env[k]?.trim() || "";
-const DEFAULT_CONNECTOR_URL = "http://127.0.0.1:3131";
-const DEFAULT_CONNECTOR_KEY = "fitron-local";
-const connectorUrl = () => (env("WA_CONNECTOR_URL") || DEFAULT_CONNECTOR_URL).replace(/\/+$/, "");
-const connectorKey = () => env("WA_CONNECTOR_KEY") || DEFAULT_CONNECTOR_KEY;
+const connectorUrl = () => env("WA_CONNECTOR_URL").replace(/\/+$/, "");
+const masterKey = () => env("WA_CONNECTOR_KEY");
 /** The server-wide connection, when the Fitron team set one number for every gym (WHATSAPP_TOKEN, WHATSAPP_PHONE_NUMBER_ID). */
 // Never on FITRON for Windows: a gym's members would be messaged from, and visible to, a number that is not the gym's.
 const sharedCloud = (): CloudCreds | null => (!gymAccountingOnly() && env("WHATSAPP_TOKEN") && env("WHATSAPP_PHONE_NUMBER_ID") ? { token: env("WHATSAPP_TOKEN"), phoneNumberId: env("WHATSAPP_PHONE_NUMBER_ID"), wabaId: "" } : null);
 
-/** Fitron on Vercel cannot reach a connector on the gym PC (127.0.0.1 is Vercel's own machine): the connector must be hosted and WA_CONNECTOR_URL set. */
-export const HOSTED_NEEDS_CONNECTOR = "Fitron is hosted online, so it cannot reach a connector on your own computer. Run the Fitron connector on an always-on server, then set WA_CONNECTOR_URL and WA_CONNECTOR_KEY on the Fitron server (prototype/connector/README.md).";
+/** The connector is a separate deployment (whatsapp-connector/); until the Fitron server knows where it is, linking cannot start. */
+export const HOSTED_NEEDS_CONNECTOR = "The WhatsApp connector is not set up yet. Deploy whatsapp-connector/ on an always-on server, then set WA_CONNECTOR_URL (its https address, e.g. https://wa-api.fitron.in) and WA_CONNECTOR_KEY (its WA_CONNECTOR_MASTER_KEY) on the Fitron server (whatsapp-connector/README.md).";
 
 export const providerReady = (mode: WaMode, cloud?: CloudCreds | null): string | null => {
   if (mode === "cloud" && !cloud && !sharedCloud()) return "This gym has not connected its WhatsApp Business number yet. Press Connect WhatsApp in Settings › WhatsApp.";
-  if (mode === "connector" && !env("WA_CONNECTOR_URL") && env("VERCEL")) return HOSTED_NEEDS_CONNECTOR;
+  if (mode === "connector" && (!env("WA_CONNECTOR_URL") || !env("WA_CONNECTOR_KEY"))) return HOSTED_NEEDS_CONNECTOR;
   if (mode === "connector" && env("WA_CONNECTOR_URL") && !/^https?:\/\//i.test(env("WA_CONNECTOR_URL"))) return "WA_CONNECTOR_URL must start with http:// or https://.";
   return null;
 };
@@ -83,32 +83,106 @@ export function connectorProblem(e: unknown): string {
   const url = connectorUrl();
   const code = (e as { cause?: { code?: string } })?.cause?.code;
   const msg = e instanceof Error ? e.message : String(e);
+  if (e instanceof ConnectorError) return e.message;
   if (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError")) return `The connector at ${url} did not answer in time.`;
   if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "EAI_AGAIN" || code === "ECONNRESET" || code === "UND_ERR_CONNECT_TIMEOUT" || /fetch failed/i.test(msg))
-    return `Nothing is answering at ${url}. Start the connector and keep its window open${env("WA_CONNECTOR_URL") ? "" : " (the app looks for it on the same computer unless WA_CONNECTOR_URL is set on the server)"}.`;
+    return `Nothing is answering at ${url}. Check that the WhatsApp connector is running (docker compose ps on its server) and that WA_CONNECTOR_URL is its address.`;
   return msg;
 }
 
-async function connectorFetch(orgId: string, path: string, init: { method: "GET" | "POST"; body?: unknown; timeout?: number }) {
-  const res = await fetch(`${connectorUrl()}${path}`, {
-    method: init.method,
-    headers: { "Content-Type": "application/json", "x-fitron-key": connectorKey(), "x-fitron-org": orgId },
-    body: init.method === "POST" ? JSON.stringify(init.body ?? {}) : undefined,
-    signal: AbortSignal.timeout(init.timeout ?? 15_000),
-  });
-  const json = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-  if (res.status === 401) throw new Error("The connector refused the key. WA_CONNECTOR_KEY must be the same as the connector's FITRON_KEY (leave both empty to use the built-in key on one computer).");
-  if (!res.ok) throw new Error(String(json.error ?? `Connector returned ${res.status}`));
-  return json;
+/** An error the connector answered with: { success: false, error: { code, message } }. */
+export class ConnectorError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ConnectorError";
+  }
 }
 
-const connectorCall = (orgId: string, path: string, body: unknown) => connectorFetch(orgId, path, { method: "POST", body });
+type ApiResponse<T> = { success: true; data: T } | { success: false; error?: { code?: string; message?: string } };
+
+async function rawFetch<T>(path: string, init: { method: "GET" | "POST"; key: string; body?: unknown; timeout?: number }): Promise<T> {
+  const form = init.body instanceof FormData;
+  const res = await fetch(`${connectorUrl()}${path}`, {
+    method: init.method,
+    headers: { Authorization: `Bearer ${init.key}`, ...(init.body !== undefined && !form ? { "Content-Type": "application/json" } : {}) },
+    body: init.method === "POST" ? (form ? (init.body as FormData) : JSON.stringify(init.body ?? {})) : undefined,
+    signal: AbortSignal.timeout(init.timeout ?? 15_000),
+  });
+  const json = (await res.json().catch(() => ({}))) as ApiResponse<T>;
+  if (!res.ok || !json.success) {
+    const code = (json as { error?: { code?: string } }).error?.code ?? (res.status === 401 ? "INVALID_API_KEY" : `HTTP_${res.status}`);
+    let message = (json as { error?: { message?: string } }).error?.message ?? `Connector returned ${res.status}`;
+    if (res.status === 401 && init.key === masterKey()) message = "The connector refused the key. WA_CONNECTOR_KEY on the Fitron server must be the connector's WA_CONNECTOR_MASTER_KEY.";
+    throw new ConnectorError(code, message, res.status);
+  }
+  return json.data;
+}
+
+const masterCall = <T>(path: string, method: "GET" | "POST", body?: unknown) => rawFetch<T>(path, { method, key: masterKey(), body });
+
+type GymPublic = { gymId: string; name: string };
+
+/**
+ * The gym's own connector API key, provisioning it on first use: the connector knows the gym by Fitron's orgId
+ * (externalId). A gym whose key was lost (restored elsewhere, store wiped) gets its key rotated rather than a second gym.
+ */
+export async function ensureGym(orgId: string, gymName?: string): Promise<{ gymId: string; apiKey: string }> {
+  const stored = await getConnectorGym(orgId);
+  if (stored) return stored;
+  const existing = await masterCall<GymPublic>(`/api/v1/gyms/by-external/${encodeURIComponent(orgId)}`, "GET").catch((e: unknown) => {
+    if (e instanceof ConnectorError && e.status === 404) return null;
+    throw e;
+  });
+  let gym: { gymId: string; apiKey: string };
+  if (existing) gym = await masterCall<{ gymId: string; apiKey: string }>(`/api/v1/gyms/${existing.gymId}/rotate-key`, "POST");
+  else {
+    try {
+      gym = await masterCall<{ gymId: string; apiKey: string }>("/api/v1/gyms", "POST", { name: gymName?.trim() || `Fitron gym ${orgId}`, externalId: orgId });
+    } catch (e) {
+      // Two requests provisioned at once: the other one won, so take over its gym with a fresh key.
+      if (!(e instanceof ConnectorError && e.code === "DUPLICATE_REQUEST")) throw e;
+      const g = await masterCall<GymPublic>(`/api/v1/gyms/by-external/${encodeURIComponent(orgId)}`, "GET");
+      gym = await masterCall<{ gymId: string; apiKey: string }>(`/api/v1/gyms/${g.gymId}/rotate-key`, "POST");
+    }
+  }
+  await saveConnectorGym(orgId, { gymId: gym.gymId, apiKey: gym.apiKey });
+  return { gymId: gym.gymId, apiKey: gym.apiKey };
+}
+
+/** A call on behalf of one gym, with its own key. A key the connector no longer accepts is replaced once and the call retried. */
+async function gymFetch<T>(orgId: string, path: string, init: { method: "GET" | "POST"; body?: unknown; timeout?: number; gymName?: string }): Promise<T> {
+  const g = await ensureGym(orgId, init.gymName);
+  try {
+    return await rawFetch<T>(path, { ...init, key: g.apiKey });
+  } catch (e) {
+    if (!(e instanceof ConnectorError && e.status === 401)) throw e;
+    await removeConnectorGym(orgId);
+    const fresh = await ensureGym(orgId, init.gymName);
+    return rawFetch<T>(path, { ...init, key: fresh.apiKey });
+  }
+}
+
+type ConnectorMessage = { messageId: string; status: string; idempotencyKey: string | null; error: string | null };
 
 async function sendConnector(m: Outgoing): Promise<SendResult> {
-  const media = m.pdf ? { mimetype: "application/pdf", data: Buffer.from(m.pdf.bytes).toString("base64"), filename: m.pdf.filename } : undefined;
-  await connectorCall(m.orgId, "/send", { id: m.localId, to: m.to, text: m.body, media });
-  // The connector sends from a queue with 8–15 s gaps; the final status is fetched later.
-  return { status: "Queued", providerMessageId: m.localId };
+  let res: ConnectorMessage;
+  if (m.pdf) {
+    const form = new FormData();
+    form.append("to", m.to);
+    form.append("caption", m.body);
+    form.append("idempotencyKey", m.localId);
+    form.append("category", "TRANSACTIONAL");
+    form.append("file", new Blob([m.pdf.bytes as BlobPart], { type: "application/pdf" }), m.pdf.filename);
+    res = await gymFetch<ConnectorMessage>(m.orgId, "/api/v1/messages/document", { method: "POST", body: form, timeout: 30_000 });
+  } else {
+    res = await gymFetch<ConnectorMessage>(m.orgId, "/api/v1/messages/send", { method: "POST", body: { to: m.to, message: m.body, idempotencyKey: m.localId, category: "TRANSACTIONAL" } });
+  }
+  // The connector sends from a paced queue; the final status is fetched later (refreshQueued).
+  return { status: "Queued", providerMessageId: res.messageId };
 }
 
 /** Why Meta's WhatsApp Cloud API cannot be used right now on a computer with no internet; null when it can be tried. */
@@ -129,50 +203,79 @@ export async function sendWhatsApp(mode: WaMode, m: Outgoing): Promise<SendResul
 }
 
 /**
- * Whether the connector can send now: it answers, and its WhatsApp is linked and online. Null when it can, else why not.
- * Quick. A message handed to a connector that is not ready waits in its memory, and is lost if it is closed first.
+ * Whether the connector can send for this gym now: it answers, and the gym's WhatsApp is linked and online. Null when it
+ * can, else why not. Read before a bulk send, so nothing is recorded as sent to a connector that cannot take it.
  */
 export async function connectorAnswers(orgId: string): Promise<string | null> {
   const missing = providerReady("connector");
   if (missing) return missing;
   try {
-    const st = (await connectorFetch(orgId, "/status", { method: "GET", timeout: 3_000 })) as ConnectorStatus;
+    const st = await connectorStatus(orgId);
     if (st.state === "ready") return null;
-    return st.error ? `The connector is running but WhatsApp has not started: ${st.error}` : `WhatsApp on the linked phone is not ready (${st.state ?? "starting"}). Link it in Settings › WhatsApp.`;
+    if (st.state === "reconnecting") return "WhatsApp is reconnecting on the connector. Try again in a moment.";
+    return st.error ? `The connector is running but WhatsApp has not started: ${st.error}` : `WhatsApp on the linked phone is not ready (${st.state}). Link it in Settings › WhatsApp.`;
   } catch (e) {
     return connectorProblem(e);
   }
 }
 
-/** Final statuses for messages the connector queued: { id: { status, error } }. null when the connector can't be reached. */
+const STATUS_WORDS: Record<string, string> = { QUEUED: "Queued", PROCESSING: "Queued", SENT: "Sent", DELIVERED: "Delivered", READ: "Read", FAILED: "Failed", CANCELLED: "Failed" };
+
+/** Final statuses for messages the connector queued, by Fitron's own message ids: { id: { status, error } }. null when the connector can't be reached. */
 export async function connectorResults(orgId: string, ids: string[]): Promise<Record<string, { status: string; error?: string }> | null> {
   if (!ids.length) return {};
   if (providerReady("connector")) return null;
+  const out: Record<string, { status: string; error?: string }> = {};
   try {
-    return (await connectorCall(orgId, "/results", { ids })) as Record<string, { status: string; error?: string }>;
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      const r = await gymFetch<{ items: ConnectorMessage[] }>(orgId, `/api/v1/messages?idempotencyKeys=${encodeURIComponent(chunk.join(","))}&limit=200`, { method: "GET" });
+      for (const m of r.items) if (m.idempotencyKey) out[m.idempotencyKey] = { status: STATUS_WORDS[m.status] ?? m.status, error: m.status === "CANCELLED" ? "Cancelled on the connector" : (m.error ?? undefined) };
+    }
+    return out;
   } catch {
     return null;
   }
 }
 
-export type ConnectorStatus = { state: string; number?: string; qr?: string; sentToday?: number; cap?: number; queued?: number; error?: string | null };
+export type ConnectorStatus = { state: "ready" | "qr" | "starting" | "reconnecting" | "disconnected"; number?: string; qr?: string; sentToday?: number; cap?: number; queued?: number; error?: string | null };
 
-/** The connector's link state and, while it waits for a scan, the current QR code (data URL). */
-export async function connectorStatus(orgId: string): Promise<ConnectorStatus> {
-  const st = (await connectorFetch(orgId, "/status", { method: "GET", timeout: 10_000 })) as ConnectorStatus;
-  if (st.state === "ready") return st;
-  const qr = (await connectorFetch(orgId, "/qr", { method: "GET", timeout: 10_000 })) as { qr?: string; state?: string };
-  return { ...st, state: qr.state ?? st.state ?? "starting", qr: qr.qr ?? undefined };
+type StatusData = { status: string; phone: string | null; error: string | null; workerRunning: boolean; today: { sent: number; failed: number }; queued: number; limits: { perDay: number } };
+
+/**
+ * The connector's link state for this gym and, while it waits for a scan, the current QR code (data URL). With `start`,
+ * a gym that is not linked is asked to connect (the Link WhatsApp dialog); without it the state is only read.
+ */
+export async function connectorStatus(orgId: string, opts: { start?: boolean; gymName?: string } = {}): Promise<ConnectorStatus> {
+  const d = await gymFetch<StatusData>(orgId, "/api/v1/whatsapp/status", { method: "GET", timeout: 10_000, gymName: opts.gymName });
+  const base = { number: d.phone?.replace(/\D/g, "") || undefined, sentToday: d.today?.sent ?? 0, cap: d.limits?.perDay, queued: d.queued ?? 0, error: d.error };
+  switch (d.status) {
+    case "CONNECTED":
+      return { state: "ready", ...base, error: null };
+    case "QR_REQUIRED":
+    case "CONNECTING": {
+      const qr = await gymFetch<{ qr: string | null }>(orgId, "/api/v1/whatsapp/qr", { method: "GET", timeout: 10_000 }).catch(() => null);
+      return qr?.qr ? { state: "qr", qr: qr.qr, ...base } : { state: "starting", ...base };
+    }
+    case "RECONNECTING":
+      return { state: "reconnecting", ...base };
+    default: {
+      if (!opts.start) return { state: "disconnected", ...base };
+      if (!d.workerRunning) return { state: "starting", ...base, error: "The connector's WhatsApp worker is not running (docker compose up -d worker on its server)." };
+      await gymFetch(orgId, "/api/v1/whatsapp/connect", { method: "POST", timeout: 10_000 });
+      return { state: "starting", ...base, error: null };
+    }
+  }
 }
 
 /** Where the app looks for the connector (shown in the Link WhatsApp dialog). */
-export const connectorAddress = () => connectorUrl();
+export const connectorAddress = () => connectorUrl() || "(WA_CONNECTOR_URL not set)";
 
-/** "Unlink": the connector signs out of WhatsApp. Errors are ignored; the app forgets the link either way. */
+/** "Unlink": the connector logs the phone out and forgets its login. Errors are ignored; the app forgets the link either way. */
 export async function connectorLogout(orgId: string) {
   if (providerReady("connector")) return;
   try {
-    await connectorFetch(orgId, "/logout", { method: "POST", timeout: 10_000 });
+    await gymFetch(orgId, "/api/v1/whatsapp/disconnect", { method: "POST", body: { logout: true }, timeout: 10_000 });
   } catch {
     // The connector may already be off.
   }
@@ -193,9 +296,10 @@ export async function providerStatus(mode: WaMode, orgId: string, cloud?: CloudC
       return { ok: true, text: `Connected as ${j.verified_name ?? "?"} (${j.display_phone_number ?? "?"}), quality ${j.quality_rating ?? "unknown"}.`, number: j.display_phone_number, name: j.verified_name };
     }
     const st = await connectorStatus(orgId);
-    if (st.state === "ready") return { ok: true, text: `Linked to ${st.number ?? "the gym phone"}. ${st.sentToday ?? 0} of ${st.cap ?? 250} sent today.` };
-    if (st.error) return { ok: false, text: `The connector is running but WhatsApp has not started: ${st.error}` };
-    return { ok: false, text: `Not linked yet (${st.state}). Scan the QR from WhatsApp › Linked devices on the gym phone.`, qr: st.qr };
+    if (st.state === "ready") return { ok: true, text: `Linked to ${st.number ? "+" + st.number : "the gym phone"}. ${st.sentToday ?? 0} of ${st.cap ?? 500} sent today${st.queued ? `, ${st.queued} waiting` : ""}.`, number: st.number };
+    if (st.state === "reconnecting") return { ok: false, text: "WhatsApp is reconnecting on the connector. Messages queue meanwhile." };
+    if (st.error) return { ok: false, text: `Not linked: ${st.error}` };
+    return { ok: false, text: `Not linked yet (${st.state}). Press Link WhatsApp and scan the QR from WhatsApp › Linked devices on the gym phone.`, qr: st.qr };
   } catch (e) {
     if (mode === "connector") return { ok: false, text: connectorProblem(e) };
     if (isLocal() && isNetworkError(e)) return { ok: false, text: offlineMessage("Checking the WhatsApp Business number") };

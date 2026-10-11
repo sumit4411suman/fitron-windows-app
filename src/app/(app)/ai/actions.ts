@@ -8,19 +8,21 @@ import { confirmProposal, dismissProposal } from "@/lib/services/ai";
 import { computeRisk } from "@/lib/services/insights";
 import { getWaSettings } from "@/lib/services/whatsapp";
 
-type Done = NonNullable<FormState> & { href?: string; pdf?: string };
+type Done = NonNullable<FormState> & { href?: string; pdf?: string; retired?: string[] };
 
 export async function sendProposalAction(id: string): Promise<Done | undefined> {
   const u = await requirePermission("ai.use");
   let msg = "";
   let href: string | undefined;
   let pdf: string | undefined;
+  let retired: string[] = [];
   const r = await simpleAction(async () => {
     const res = await confirmProposal(u, id);
     if (res.kind === "ACTION") {
       msg = res.message;
       href = res.href;
       pdf = res.pdf;
+      retired = res.retired;
       return;
     }
     const mode = (await getWaSettings(u.orgId)).mode;
@@ -30,7 +32,7 @@ export async function sendProposalAction(id: string): Promise<Done | undefined> 
     // An accounting draft changes the books, so every page that reads them is stale.
     for (const path of ["/whatsapp", "/invoices", "/payments", "/receivables", "/expenses", "/accounting", "/dashboard", "/members", "/reports"]) revalidatePath(path);
   }
-  return r?.ok ? { ...r, message: msg, href, pdf } : r;
+  return r?.ok ? { ...r, message: msg, href, pdf, retired } : r;
 }
 
 export async function dismissProposalAction(id: string): Promise<FormState> {

@@ -3,6 +3,7 @@ import { FilePlusIcon } from "@phosphor-icons/react/dist/ssr";
 import { requirePermission } from "@/lib/auth/current";
 import { db } from "@/lib/db";
 import { listInvoices } from "@/lib/services/billing";
+import { limitSearch, TOO_MANY_SEARCHES } from "@/lib/rate-limit";
 import { AutoFilter } from "@/components/auto-filter";
 import { InvoiceStatusBadge } from "@/components/invoice-status";
 import { LinkButton, ListHeader, Pager, SEARCH, Segmented, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
@@ -14,7 +15,7 @@ const PAGE = 15;
 const FILTERS = [
   ["", "All"],
   ["PAID", "Paid"],
-  ["PARTIALLY_PAID", "Partially paid"],
+  ["PARTIALLY_PAID", "Part paid"],
   ["UNPAID", "Unpaid"],
   ["OVERDUE", "Overdue"],
   ["CANCELLED", "Cancelled"],
@@ -29,7 +30,10 @@ export default async function InvoicesPage({ searchParams }: PageProps<"/invoice
   const s = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : undefined);
   const f = { q: s("q"), status: s("status") ?? "" };
   const page = Math.max(1, Number(s("page") ?? 1) || 1);
-  const [{ rows }, count] = await Promise.all([listInvoices(u, f), db.invoice.count({ where: { orgId: u.orgId, branchId: { in: u.branchIds } } })]);
+  const load = () => Promise.all([listInvoices(u, f), db.invoice.count({ where: { orgId: u.orgId, branchId: { in: u.branchIds } } })]);
+  const loaded = f.q ? await limitSearch(u.id, load) : await load();
+  const limited = loaded === null;
+  const [{ rows }, count] = loaded ?? [{ rows: [] }, 0];
   const shown = rows.slice((page - 1) * PAGE, page * PAGE);
   const link = (o: { status?: string; page?: number }) => {
     const p = new URLSearchParams();
@@ -101,7 +105,13 @@ export default async function InvoicesPage({ searchParams }: PageProps<"/invoice
           </tbody>
         </table>
       </ScrollRegion>
-      {rows.length === 0 && <p className="text-muted">{f.q || f.status ? "No invoices match." : "No invoices yet."}</p>}
+      {limited ? (
+        <p role="alert" className="text-muted">
+          {TOO_MANY_SEARCHES}
+        </p>
+      ) : (
+        rows.length === 0 && <p className="text-muted">{f.q || f.status ? "No invoices match." : "No invoices yet."}</p>
+      )}
       <Pager page={page} pageSize={PAGE} total={rows.length} href={(p) => link({ page: p })} />
     </div>
   );

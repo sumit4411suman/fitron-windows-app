@@ -1,7 +1,8 @@
 import "server-only";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
-import { addDays, daysBetween } from "@/lib/domain/dates";
+import { balanceDue } from "@/lib/domain/billing";
+import { addDays, ageOn, daysBetween } from "@/lib/domain/dates";
 import { monthLabel, monthsBack } from "@/lib/domain/periods";
 import { summarize } from "./members";
 import { profitAndLoss, monthPeriod } from "./accounting";
@@ -70,9 +71,9 @@ export const MORE: Record<string, Def> = {
         const pl = await profitAndLoss(u, monthPeriod(m));
         rows.push({ month: monthLabel(m), revenue: pl.totalRevenue, expenses: pl.totalExpenses, dep: pl.depreciation, net: pl.net, margin: pl.totalRevenue ? share(pl.net, pl.totalRevenue) : 0 });
       }
-      return { columns: [col("month", "Month"), col("revenue", "Revenue", "money"), col("expenses", "Operating expenses", "money"), col("dep", "Depreciation", "money"), col("net", "Net profit", "money"), col("margin", "Margin", "pct")], rows, totals: { revenue: sum(rows, "revenue"), expenses: sum(rows, "expenses"), dep: sum(rows, "dep"), net: sum(rows, "net") } };
+      return { columns: [col("month", "Month"), col("revenue", "Revenue", "money"), col("expenses", "Operating expenses", "money"), col("dep", "Depreciation", "money"), col("net", "Net profit (invoiced)", "money"), col("margin", "Margin", "pct")], rows, totals: { revenue: sum(rows, "revenue"), expenses: sum(rows, "expenses"), dep: sum(rows, "dep"), net: sum(rows, "net") } };
     },
-    "Accrual basis · invoiced revenue minus operating expenses and depreciation; asset purchases are capitalised",
+    "Based on invoices: revenue is counted on the invoice date, not when paid, so an annual plan counts in full in the month sold · minus operating expenses and depreciation; asset purchases are capitalised",
   ),
   "rev-month": monthly("Revenue by month", "accounting.view", async (u) => {
     const ms = months12();
@@ -145,8 +146,8 @@ export const MORE: Record<string, Def> = {
     const invs = await db.invoice.findMany({ where: { ...scope(u), status: "ISSUED" }, orderBy: { dueDate: "asc" }, include: { member: { select: { name: true } }, payments: { where: { status: "SUCCESS" }, select: { amount: true } } } });
     const rows = invs
       .map((i) => ({ i, paid: i.payments.reduce((s, p) => s + p.amount, 0) }))
-      .filter((x) => x.paid < x.i.total)
-      .map(({ i, paid }) => ({ member: i.member.name, invoice: i.number, total: i.total, paid, pending: i.total - paid, due: toIso(i.dueDate), overdue: Math.max(0, daysBetween(today, toIso(i.dueDate))) }));
+      .filter((x) => balanceDue(x.i.total, x.paid) > 0)
+      .map(({ i, paid }) => ({ member: i.member.name, invoice: i.number, total: i.total, paid, pending: balanceDue(i.total, paid), due: toIso(i.dueDate), overdue: Math.max(0, daysBetween(today, toIso(i.dueDate))) }));
     return { columns: [col("member", "Member"), col("invoice", "Invoice"), col("total", "Total", "money"), col("paid", "Paid", "money"), col("pending", "Pending", "money"), col("due", "Due"), col("overdue", "Days overdue", "num")], rows, totals: { total: sum(rows, "total"), paid: sum(rows, "paid"), pending: sum(rows, "pending") } };
   }),
   cashflow: monthly("Cash flow", "accounting.view", async (u) => {
@@ -239,13 +240,13 @@ export const MORE: Record<string, Def> = {
     FY_NOTE,
   ),
   "m-plan": monthly("Plan-wise members", "members.view", async (u) => {
-    const act = (await members(u)).filter((m) => m.daysLeft != null && m.daysLeft >= 0);
+    const act = (await members(u)).filter((m) => m.current);
     const rows = group(act, (m) => m.planName ?? "—", () => 1).map(([plan, v]) => ({ plan, members: v.n, share: share(v.n, act.length) }));
     return { columns: [col("plan", "Plan"), col("members", "Active members", "num"), col("share", "Share", "pct")], rows, totals: { members: act.length } };
   }),
   "m-gender": monthly("Gender-wise", "members.view", async (u) => {
     const ms = await members(u);
-    const rows = group(ms, (m) => m.gender, () => 1).map(([gender, v]) => ({ gender, members: v.n, active: ms.filter((m) => m.gender === gender && m.daysLeft != null && m.daysLeft >= 0).length }));
+    const rows = group(ms, (m) => m.gender, () => 1).map(([gender, v]) => ({ gender, members: v.n, active: ms.filter((m) => m.gender === gender && m.current).length }));
     return { columns: [col("gender", "Gender"), col("members", "Members", "num"), col("active", "Active", "num")], rows, totals: { members: sum(rows, "members"), active: sum(rows, "active") } };
   }),
   "m-age": monthly(
@@ -256,7 +257,7 @@ export const MORE: Record<string, Def> = {
       const ms = (await members(u)).filter((m) => m.dob);
       const B = ["Under 18", "18–24", "25–34", "35–44", "45+"];
       const band = (dob: Date) => {
-        const a = Math.floor(daysBetween(today, toIso(dob)) / 365.25);
+        const a = ageOn(toIso(dob), today);
         return a < 18 ? B[0] : a < 25 ? B[1] : a < 35 ? B[2] : a < 45 ? B[3] : B[4];
       };
       const g = new Map(group(ms, (m) => band(m.dob!), () => 1));

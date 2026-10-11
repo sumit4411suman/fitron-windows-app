@@ -276,6 +276,8 @@ model Member {
   /// RFID card number pushed to door devices as USERINFO Card=
   cardNo             String?
   biometricConsentAt DateTime?
+  /// When the member agreed to the gym's privacy notice (DPDP). Null = no consent recorded yet.
+  consentAt          DateTime?
   memberships        Membership[]
   attendance         Attendance[]
   bookings           Booking[]
@@ -386,6 +388,9 @@ model Invoice {
   total         Int
   gstType       String?
   gstRate       Decimal?
+  /// Who issued it, as it was when the invoice was made: {name, tagline, address, phone, email, gstin, sac, instagram, logoKey}.
+  /// Written once so a later change in Settings never alters an old invoice. Null on invoices from before this was kept.
+  seller        Json?
   /// ISSUED | CANCELLED. Paid state is computed from payments, never stored.
   status        String
   cancelReason  String?
@@ -1055,6 +1060,38 @@ model VendorPayment {
 // ── Fitron AI ──────────────────────────────────────────────────────────────
 
 /// An action the assistant suggested. Nothing happens until a staff member confirms it.
+/// A saved Fitron AI conversation, one person's own (Fitron AI › history). Files attached in it are read for the answer and
+/// never kept: a message keeps only their names.
+model AiChat {
+  id        String          @id @default(cuid())
+  orgId     String
+  userId    String
+  /// The first question, shortened
+  title     String
+  messages  AiChatMessage[]
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  @@index([orgId, userId, updatedAt])
+}
+
+model AiChatMessage {
+  id          String   @id @default(cuid())
+  chatId      String
+  chat        AiChat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  /// user | assistant
+  role        String
+  content     String
+  /// The names and kinds of the files attached to a question: [{ name, kind }]
+  attachments Json?
+  /// The drafts Fitron AI offered in this answer (ProposalEvent[]), so a reopened chat shows them
+  proposals   Json?
+  error       String?
+  createdAt   DateTime @default(now())
+
+  @@index([chatId, createdAt])
+}
+
 model AiProposal {
   id        String    @id @default(cuid())
   orgId     String
@@ -1103,12 +1140,14 @@ model DeviceCommand {
   /// The number the device echoes back when it reports the result
   cmdNo      Int
   command    String
-  /// PENDING | SENT | DONE | FAILED
+  /// PENDING | SENT | DONE | FAILED | EXPIRED
   status     String    @default("PENDING")
   returnCode String?
   createdAt  DateTime  @default(now())
   sentAt     DateTime?
   ackAt      DateTime?
+  /// Door-open commands are dropped (status EXPIRED) if the device has not collected them by this time
+  expiresAt  DateTime?
 
   @@unique([deviceId, cmdNo])
   @@index([deviceId, status])
@@ -1665,4 +1704,14 @@ model PersonalRecord {
   createdAt   DateTime @default(now())
 
   @@index([memberId, lift])
+}
+
+/// A private file kept in the database, used only on a host with no disk and no S3 bucket
+/// (src/lib/integrations/storage.ts). The key is the same storage key a bucket would use.
+model StoredFile {
+  key         String   @id
+  body        Bytes
+  contentType String
+  size        Int
+  createdAt   DateTime @default(now())
 }

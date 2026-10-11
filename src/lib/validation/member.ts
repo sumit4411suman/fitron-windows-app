@@ -29,6 +29,11 @@ export const memberInput = z.object({
     .optional()
     .transform((s) => (s ?? "").split(",").map((t) => t.trim()).filter(Boolean)),
   trainerId: optionalText,
+  /** The privacy-notice tick box. Ticked once, the date is kept on the member; it is never unticked from the form. */
+  consent: z.preprocess((v) => v === "on" || v === "true" || v === true, z.boolean()).optional(),
 });
+
+/** What the tick box says, on the member form and at import. */
+export const CONSENT_LABEL = "The member agrees to Fitron's privacy notice (data stored to run their membership; WhatsApp reminders)";
 
 export type MemberInput = z.infer<typeof memberInput>;

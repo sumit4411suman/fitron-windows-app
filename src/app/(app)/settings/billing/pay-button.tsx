@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useConfirm } from "@/components/confirm-dialog";
 import { Button, Input, Select } from "@/components/ui";
 import { formatInr } from "@/lib/format";
 import type { PaymentFor } from "@/lib/services/saas";
@@ -64,6 +65,7 @@ export function PayButton({
   const cycle: "YEARLY" | "MONTHLY" | "ONCE" = fixedCycle ?? picked;
   const [msg, setMsg] = useState<{ tone: "ok" | "alert"; text: string } | null>(null);
   const [pending, start] = useTransition();
+  const [ask, dialog] = useConfirm();
   // The coupon box: what was typed, and what the server said it does to this payment (only good for the payment it was asked about).
   const [couponOpen, setCouponOpen] = useState(false);
   const [coupon, setCoupon] = useState("");
@@ -95,7 +97,7 @@ export function PayButton({
       // A coupon made it free: it is already paid.
       if (c.mode === "FREE") return done({ ok: true });
       if (c.mode === "DEMO") {
-        if (!window.confirm(`Demo mode: FITRON's Razorpay keys aren't set on this server, so no money is charged. Mark ${formatInr(c.total)} as paid?`)) return;
+        if (!(await ask({ title: `Mark ${formatInr(c.total)} as paid?`, message: "Demo mode: FITRON's Razorpay keys aren't set on this server, so no money is charged.", label: "Mark as paid" }))) return;
         return done(await confirmDemoAction(c.id));
       }
       try {
@@ -147,6 +149,7 @@ export function PayButton({
 
   return (
     <div className="flex flex-col gap-2">
+      {dialog}
       {couponOpen ? (
         <div className="flex flex-wrap items-center gap-2">
           <Input

@@ -47,13 +47,13 @@ export function LinkWatcher({ envMessage, address, hosted, onAComputer = false }
         <PlugsIcon size={30} weight="duotone" className="flex-none text-accent" />
         <div className="flex flex-col gap-1.5 text-sm leading-relaxed">
           <strong>One-time setup (Fitron team): run the WhatsApp connector</strong>
-          <span>Fitron runs online, so it needs the connector running on an always-on server. One connector serves every gym; each gym owner then links her own WhatsApp here by scanning a QR code.</span>
+          <span>Linking needs the Fitron WhatsApp connector running on an always-on server. One connector serves every gym; each gym owner then links her own WhatsApp here by scanning a QR code.</span>
           <ol className="m-0 list-decimal pl-[18px]">
             <li>
-              Run the <code>prototype/connector</code> folder (Docker or Node) on any always-on server, with <code>FITRON_KEY</code> set to a long secret and a persistent folder for <code>session</code>.
+              Deploy the <code>whatsapp-connector</code> folder with Docker (<code>docker compose up -d</code>, HTTPS at <code>wa-api.fitron.in</code>): see its README.
             </li>
             <li>
-              In Vercel › Environment Variables set <code>WA_CONNECTOR_URL</code> (the server&apos;s https address) and <code>WA_CONNECTOR_KEY</code> (the same secret), then redeploy.
+              On the Fitron server set <code>WA_CONNECTOR_URL</code> (the connector&apos;s https address) and <code>WA_CONNECTOR_KEY</code> (its <code>WA_CONNECTOR_MASTER_KEY</code>), then redeploy.
             </li>
             <li>Open this dialog again and scan the QR from WhatsApp › Linked devices on the gym phone.</li>
           </ol>
@@ -79,12 +79,9 @@ export function LinkWatcher({ envMessage, address, hosted, onAComputer = false }
       <div className="flex items-start gap-3.5">
         <PlugsIcon size={30} weight="duotone" className="flex-none text-accent" />
         <div className="flex flex-col gap-1.5 text-sm leading-relaxed">
-          <strong>Start WhatsApp on this computer</strong>
+          <strong>The WhatsApp connector is not answering</strong>
           <span>
-            Double-click <strong>Start WhatsApp -Windows-.bat</strong> in the Fitron <code>connector</code> folder (Mac: <strong>Start WhatsApp -Mac-.command</strong>). Keep its window open. The QR code appears here by itself, no need to refresh.
-          </span>
-          <span className="text-xs text-muted">
-            Fitron looks for the connector at <code>{address}</code>, which is this computer unless <code>WA_CONNECTOR_URL</code> and <code>WA_CONNECTOR_KEY</code> point to one hosted elsewhere. If Fitron itself is hosted online, host the connector too (see the connector README).
+            Fitron looks for it at <code>{address}</code>. Check that it is running on its server (<code>docker compose ps</code>) and that <code>WA_CONNECTOR_URL</code> and <code>WA_CONNECTOR_KEY</code> on the Fitron server match it. The QR code appears here by itself once it answers, no need to refresh.
           </span>
           {(envMessage || st.text) && <span className="text-xs text-alert">{envMessage ?? st.text}</span>}
           <span className="text-xs text-muted">Waiting for the connector… checking every few seconds</span>

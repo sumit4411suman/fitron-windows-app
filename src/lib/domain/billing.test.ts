@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatInr, invoiceState, invoiceTotals, lineTaxes } from "./billing";
+import { balanceDue, formatInr, invoiceState, invoiceTotals, lineTaxes } from "./billing";
 
 const plan = { qty: 1, rate: 300_000, discount: 20_000, taxRate: 18 };
 const regFee = { qty: 1, rate: 50_000, discount: 0, taxRate: 18 };
@@ -101,5 +101,19 @@ describe("invoiceState", () => {
 describe("formatInr", () => {
   it("uses Indian digit grouping", () => {
     expect(formatInr(123_456_789)).toBe("₹12,34,567.89");
+  });
+});
+
+describe("round-off", () => {
+  const gst = { total: 255_706, cancelled: false, dueDate: "2026-10-01" };
+  it("settles an invoice when less than a rupee is left after a payment", () => {
+    // ₹2,557.06 paid as ₹2,557: nobody can hand over six paise, so it is paid, not part paid.
+    expect(invoiceState(gst, [{ amount: 255_700, status: "SUCCESS" }], "2026-10-10")).toMatchObject({ status: "PAID", balance: 0, overdueDays: 0 });
+    expect(balanceDue(255_706, 255_700)).toBe(0);
+  });
+  it("still shows a rupee or more as owed, and an unpaid invoice of paise as unpaid", () => {
+    expect(invoiceState(gst, [{ amount: 255_600, status: "SUCCESS" }], "2026-10-10")).toMatchObject({ status: "PARTIALLY_PAID", balance: 106 });
+    expect(invoiceState({ ...gst, total: 50 }, [], "2026-10-10")).toMatchObject({ status: "UNPAID", balance: 50 });
+    expect(invoiceState(gst, [{ amount: 255_700, status: "REVERSED" }], "2026-10-10")).toMatchObject({ status: "UNPAID", balance: 255_706 });
   });
 });

@@ -144,7 +144,7 @@ async function ProfitLoss({ u, s, branchLabel }: { u: U; s: (k: string) => strin
             <span>{formatRupees(expTotal)}</span>
           </div>
           <div className={cx("mt-[18px] flex justify-between border-t-[3px] border-double border-fg py-3 text-[22px] font-semibold", pl.net < 0 && "text-alert-700")}>
-            <span>{pl.net >= 0 ? "Net profit" : "Net loss"}</span>
+            <span>{pl.net >= 0 ? "Net profit (invoiced)" : "Net loss (invoiced)"}</span>
             <span>{formatRupees(pl.net)}</span>
           </div>
         </section>
@@ -157,7 +157,7 @@ async function ProfitLoss({ u, s, branchLabel }: { u: U; s: (k: string) => strin
               <span className="font-semibold">{formatRupees(v)}</span>
             </div>
           ))}
-          <p className="mt-3 text-[12.5px] text-muted">Revenue is counted on the invoice date, collections on the payment date. Equipment bought is capitalised; its depreciation comes from the fixed-asset register.</p>
+          <p className="mt-3 text-[12.5px] text-muted">Revenue is counted on the invoice date, not when it is paid, so an annual plan counts in full in the month it is sold; collections are counted on the payment date. Equipment bought is capitalised; its depreciation comes from the fixed-asset register.</p>
         </section>
       </div>
     </>
@@ -310,7 +310,7 @@ async function Close({ u, s }: { u: U; s: (k: string) => string | undefined }) {
           <h3 className="mb-3.5 text-[22px]">Summary for {label}</h3>
           {c.rows.map(([k, v, bold]) => (
             <div key={k} className={cx("flex justify-between gap-3 border-b border-line-soft py-[7px] text-[15px]", bold && "font-semibold")}>
-              <span>{k}</span>
+              <span>{k === "Net profit" ? "Net profit (invoiced)" : k}</span>
               <span className={cx("tabular-nums", k === "Net profit" && v < 0 && "text-alert-700")}>{formatRupees(v)}</span>
             </div>
           ))}

@@ -32,7 +32,8 @@ import { raiseTicket, resolveTicket, supportTo } from "@/lib/services/support";
 import { isLocal } from "@/lib/runtime/edition";
 
 const back = (params: Record<string, string>) => redirect(`/settings?${new URLSearchParams(params)}`);
-const firstError = (e: z.ZodError) => e.issues.map((i) => `${String(i.path[0] ?? "")}: ${i.message}`)[0] ?? "Check the form.";
+/** The first problem, as the person reads it: the message alone, never the field's internal name ("name: …"). */
+const firstError = (e: z.ZodError) => e.issues[0]?.message ?? "Check the form.";
 
 async function save<T extends z.ZodType>(schema: T, fd: FormData, section: string, fn: (v: z.infer<T>) => Promise<void>, extra: Record<string, string> = {}) {
   const parsed = schema.safeParse(Object.fromEntries(fd));
@@ -135,11 +136,12 @@ export async function makeTrainerCode() {
   back({ saved: "gym" });
 }
 
-export async function saveTax(fd: FormData) {
+/** Settings › Billing & GST. Answers on the form itself, so a missing GSTIN shows beside the field and the GST tick stays. */
+export async function saveTax(_: FormState, fd: FormData): Promise<FormState> {
   const u = await requirePermission("settings.manage");
-  await save(taxInput, fd, "tax", async (v) => {
-    await saveTaxSettings(u, v);
-  });
+  const r = await formAction(fd, taxInput, (v) => saveTaxSettings(u, v), "Saved. Changes are recorded in the audit log.");
+  if (r?.ok) revalidatePath("/", "layout");
+  return r;
 }
 
 export async function saveNumbering(fd: FormData) {
@@ -338,7 +340,7 @@ export async function linkStatusAction(): Promise<LinkStatus> {
   if (missing) return { state: "offline", text: missing };
   let st: Awaited<ReturnType<typeof connectorStatus>>;
   try {
-    st = await connectorStatus(u.orgId);
+    st = await connectorStatus(u.orgId, { start: true, gymName: u.orgName });
   } catch (e) {
     return { state: "offline", text: connectorProblem(e) };
   }
@@ -358,7 +360,7 @@ export async function linkStatusAction(): Promise<LinkStatus> {
     return { state: "ready", number, text: "Linked." };
   }
   if (st.qr) return { state: "qr", qr: st.qr, text: "" };
-  return { state: "waiting", text: st.state === "authenticating" ? "Scanned. Finishing link…" : "Connector is starting WhatsApp…", problem: st.error ?? undefined };
+  return { state: "waiting", text: st.state === "reconnecting" ? "Reconnecting to WhatsApp…" : "Connector is starting WhatsApp… the QR code appears here in a moment.", problem: st.error ?? undefined };
 }
 
 /** Settings › Help & support › Raise a ticket: saved, audited and emailed to support. */

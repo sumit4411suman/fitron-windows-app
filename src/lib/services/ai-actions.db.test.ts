@@ -130,6 +130,37 @@ describe.skipIf(!hasDb)("Fitron AI accounting (database)", () => {
     expect(await draft(desk, "draft_membership_sale", { member: "Ravi Kumar", plan: "Platinum" })).toEqual({ error: expect.stringContaining('No active plan "Platinum"') });
   });
 
+  it("two cards for the same sale: confirming one retires the other, and dates already paid for are refused", async () => {
+    const m = await createMember(admin, { name: "Karan Pandey", gender: "Male", phone: "9855500004", source: "Walk-in", tags: [] });
+    // Asked twice, so two cards are open for the same plan on the same dates.
+    const a = must(await draft(desk, "draft_membership_sale", { member: "Karan Pandey", plan: "Monthly", pay_amount: 1180, pay_method: "UPI" }));
+    const b = must(await draft(desk, "draft_membership_sale", { member: "Karan Pandey", plan: "Monthly", pay_amount: 1180, pay_method: "UPI" }));
+    expect((a as Draft & { note: string }).note).toContain('press "Sell membership"');
+    const done = await confirmProposal(desk, a.proposal_id);
+    if (done.kind !== "ACTION") throw new Error("expected an action");
+    expect(done.retired).toEqual([b.proposal_id]);
+    const bRow = await db.aiProposal.findUniqueOrThrow({ where: { id: b.proposal_id } });
+    expect(bRow.status).toBe("DISMISSED");
+    expect(bRow.result).toMatch(/^No longer available: "Sell Monthly for Karan Pandey" was confirmed instead\./);
+    await expect(confirmProposal(desk, b.proposal_id)).rejects.toThrow(/No longer available/);
+    expect(await db.membership.count({ where: { memberId: m.id } })).toBe(1);
+    expect(await db.invoice.count({ where: { memberId: m.id } })).toBe(1);
+
+    // Asking again drafts the renewal from the day after; the same dates again are refused with the day it can start.
+    const again = must(await draft(desk, "draft_membership_sale", { member: "Karan Pandey", plan: "Monthly" }));
+    expect(again.preview).toContain("Renew Monthly");
+    expect(await draft(desk, "draft_membership_sale", { member: "Karan Pandey", plan: "Monthly", start_date: today })).toEqual({ error: expect.stringMatching(/Karan Pandey already has Monthly covering .* would overlap it\. Start it on/) });
+
+    // A card whose dates clash by the time it is pressed (as if sold from the member page meanwhile) saves nothing and keeps the reason.
+    await db.aiProposal.update({ where: { id: again.proposal_id }, data: { payload: { memberId: m.id, input: { planId, startDate: today, discount: 0, includeRegFee: false, payAmount: 0 } } } });
+    await expect(confirmProposal(desk, again.proposal_id)).rejects.toThrow(/would overlap/);
+    const row = await db.aiProposal.findUniqueOrThrow({ where: { id: again.proposal_id } });
+    expect(row.status).toBe("PENDING");
+    expect(row.result).toMatch(/^Not saved: Karan Pandey already has Monthly/);
+    expect(await db.membership.count({ where: { memberId: m.id } })).toBe(1);
+    expect(await db.invoice.count({ where: { memberId: m.id } })).toBe(1);
+  });
+
   it("records a payment against an invoice, never more than the balance", async () => {
     const inv = await db.invoice.findFirstOrThrow({ where: { orgId: gym.org.id, total: 708000 } });
     expect(await draft(desk, "draft_payment", { invoice: inv.number, amount: 5000, method: "UPI" })).toEqual({ error: expect.stringContaining("only ₹4,080.00 left") });
