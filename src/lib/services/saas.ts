@@ -1,4 +1,5 @@
 import "server-only";
+import { lockRow, nextFitronInvoiceNumber } from "@/lib/db-dialect";
 import { couponLabel } from "@/lib/domain/coupons";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
@@ -21,6 +22,7 @@ import { completeTrainerPayment, recordTrainerCharge, trainerRenewalTrouble } fr
 import { sendGymWhatsApp } from "./whatsapp";
 import { fromIso, toIso, todayIso } from "./time";
 import { log } from "@/lib/log";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 
 type Tx = Prisma.TransactionClient | typeof db;
 
@@ -129,6 +131,8 @@ export async function claimSlot(tx: Prisma.TransactionClient, orgId: string, bra
   const claimed = slot ? await tx.branchSubscription.updateMany({ where: { id: slot.id, branchId: null }, data: { branchId } }) : { count: 0 };
   // A slot paid for by a renewing subscription: its renewals now pay for this branch.
   if (claimed.count && slot?.razorpaySubscriptionId) await tx.razorpaySubscription.updateMany({ where: { id: slot.razorpaySubscriptionId, branchId: null }, data: { branchId } });
+  // FITRON for Windows has no plan billing: more branches are a licence term (Phase 13), arranged with FITRON support.
+  if (!claimed.count && gymAccountingOnly()) throw new UserError(`This computer's FITRON includes ${terms.includedBranches} active branches. Contact FITRON support (Settings › Help & support) to add more.`);
   if (!claimed.count) throw new UserError(`Your plan includes ${terms.includedBranches} branches. Pay for an extra branch in Settings › Plan & billing, then add it here.`);
 }
 
@@ -260,7 +264,7 @@ export async function startPayment(u: CurrentUser, what: PaymentFor, cycle: Cycl
 export const startBranchPayment = (u: CurrentUser, cycle: Cycle, branchId: string | null) => startPayment(u, { kind: "BRANCH", branchId }, cycle);
 
 async function invoiceNumber(tx: Prisma.TransactionClient, today: string) {
-  const [{ n }] = await tx.$queryRaw<{ n: bigint }[]>`SELECT nextval('fitron_invoice_seq') AS n`;
+  const n = await nextFitronInvoiceNumber(tx);
   const y = Number(today.slice(0, 4)) - (Number(today.slice(5, 7)) < 4 ? 1 : 0);
   return `FIT/${y}-${String(y + 1).slice(2)}/${String(n).padStart(5, "0")}`;
 }
@@ -275,7 +279,7 @@ async function completeIn(tx: Prisma.TransactionClient, where: { id: string } | 
   const today = todayIso();
   const sub = await tx.branchSubscription.findFirst({ where });
   if (!sub) return null;
-  await tx.$queryRaw`SELECT id FROM "BranchSubscription" WHERE id = ${sub.id} FOR UPDATE`;
+  await lockRow(tx, "BranchSubscription", sub.id);
   const fresh = await tx.branchSubscription.findUniqueOrThrow({ where: { id: sub.id } });
   if (fresh.status === "PAID") return fresh;
   let last: string | null = null;

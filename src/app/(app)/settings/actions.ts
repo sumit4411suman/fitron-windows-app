@@ -28,7 +28,8 @@ import { failed, type FormState } from "@/lib/validation/common";
 import { headers } from "next/headers";
 import { rateLimit } from "@/lib/rate-limit";
 import { ticketInput } from "@/lib/validation/support";
-import { raiseTicket, resolveTicket } from "@/lib/services/support";
+import { raiseTicket, resolveTicket, supportTo } from "@/lib/services/support";
+import { isLocal } from "@/lib/runtime/edition";
 
 const back = (params: Record<string, string>) => redirect(`/settings?${new URLSearchParams(params)}`);
 const firstError = (e: z.ZodError) => e.issues.map((i) => `${String(i.path[0] ?? "")}: ${i.message}`)[0] ?? "Check the form.";
@@ -365,13 +366,17 @@ export async function raiseTicketAction(_: FormState, fd: FormData): Promise<For
   if (!rateLimit(`ticket:${u.orgId}`, 10, 60 * 60_000)) return failed(fd, { message: "That's a lot of tickets in an hour. Wait a little and try again." });
   const h = await headers();
   const ctx = { userAgent: h.get("user-agent"), ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null };
-  let number = "";
+  const out: { t?: { number: string; emailed: boolean } } = {};
   const res = await formAction(fd, ticketInput, async (v) => {
-    number = (await raiseTicket(u, v, ctx)).number;
+    out.t = await raiseTicket(u, v, ctx);
   }, "");
-  if (res?.ok) {
+  const t = out.t;
+  if (res?.ok && t) {
     revalidatePath("/settings");
-    return { ...res, message: `Ticket ${number} raised. We'll reply here and by email.` };
+    if (!isLocal()) return { ...res, message: `Ticket ${t.number} raised. We'll reply here and by email.` };
+    // On a computer the ticket only reaches FITRON by email; never call it raised when the email did not go.
+    if (t.emailed) return { ...res, message: `Ticket ${t.number} sent to FITRON support. We'll reply by email.` };
+    return { ...res, ok: false, message: `Ticket ${t.number} is saved on this computer but could not be sent to FITRON support. Email ${supportTo()} with the System details below, or use the other contact details above.` };
   }
   return res;
 }

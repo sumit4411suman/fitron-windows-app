@@ -2,6 +2,7 @@ import { memberWithRenewal } from "@/lib/services/trainer";
 import { confirmTrainerOrder, confirmTrainerSubscription } from "@/lib/services/trainer-billing";
 import { db } from "@/lib/db";
 import { body, json, withTrainer } from "../../../_lib/http";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 /**
  * Razorpay Checkout finished: the app sends what Checkout returned, a subscription's reply for a plan that renews itself or an
@@ -9,6 +10,8 @@ import { body, json, withTrainer } from "../../../_lib/http";
  * captured the payment yet (the plan then turns on by itself).
  */
 export async function POST(req: Request, ctx: RouteContext<"/api/trainer/pay/[id]/confirm">) {
+  const off = notInLocal();
+  if (off) return off;
   const { id } = await ctx.params;
   return withTrainer(async (m) => {
     const b = await body<{ razorpay_payment_id?: unknown; razorpay_subscription_id?: unknown; razorpay_order_id?: unknown; razorpay_signature?: unknown }>(req);

@@ -13,6 +13,7 @@ import { notify } from "./notifications";
 import { getTax } from "./tax";
 import { nextNumber } from "./sequence";
 import { fromIso, todayIso } from "./time";
+import { ci } from "@/lib/db-dialect";
 
 type Tx = Prisma.TransactionClient;
 
@@ -25,7 +26,7 @@ export const isLow = (p: { stock: number | null; reorderLevel: number | null }) 
 export async function listProducts(u: CurrentUser, f: { q?: string; activeOnly?: boolean } = {}) {
   const q = f.q?.trim();
   return db.product.findMany({
-    where: { ...scope(u), ...(f.activeOnly ? { active: true } : {}), ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { sku: { contains: q, mode: "insensitive" } }] } : {}) },
+    where: { ...scope(u), ...(f.activeOnly ? { active: true } : {}), ...(q ? { OR: [{ name: ci(q) }, { sku: ci(q) }] } : {}) },
     orderBy: [{ category: "asc" }, { name: "asc" }],
     include: { branch: { select: { name: true } } },
   });

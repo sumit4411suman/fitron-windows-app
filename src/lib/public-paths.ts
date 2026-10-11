@@ -10,6 +10,8 @@ import { TRAINER_PAGE } from "@/lib/domain/trainer-page";
 // A path matches by whole segments: "/contact" and "/contact/x", not "/contacts".
 const PUBLIC = [
   "auth", "login", "signin", "signup", "verify-email", "forgot-password", "reset-password",
+  // The Local Edition's first-run setup and owner recovery (they answer 404 on the Cloud Edition).
+  "setup", "recover",
   "contact", "about", "privacy", "terms", "refund", "c",
   "robots.txt", "sitemap.xml", "favicon.ico", "fitron-mark.png", "fitron-logo.png", "site", "_next",
   "trainer", "api/trainer", "api/coach", "api/gym-demo", "api/assistant",
@@ -41,4 +43,31 @@ export function isGuardedPath(pathname: string): boolean {
 export function isPublicPath(pathname: string): boolean {
   if (pathname === "/") return true;
   return PUBLIC.some((p) => pathname === `/${p}` || pathname.startsWith(`/${p}/`));
+}
+
+/**
+ * Sign-in routes that need the internet and a fitron.in account (Google, emailed links and codes, website sign-up).
+ * The Local Edition sends them to its own sign-in instead (src/proxy.ts).
+ */
+export const ONLINE_ONLY_AUTH = ["signup", "signin", "forgot-password", "reset-password", "verify-email", "auth", "login/email"] as const;
+
+export function isOnlineOnlyAuthPath(pathname: string): boolean {
+  return ONLINE_ONLY_AUTH.some((p) => pathname === `/${p}` || pathname.startsWith(`/${p}/`));
+}
+
+/**
+ * What is not part of FITRON Gym Accounting for Windows: the fitron.in website and its APIs, the AI Trainer, the FITRON
+ * team console, FITRON's own plan billing, the Gym Partnership, webhooks from online services, door devices and the
+ * front-desk QR page (both need the gym's network to reach this computer). On the Local Edition these addresses lead to
+ * the console instead (src/proxy.ts). Matched by whole segments.
+ */
+export const NOT_IN_LOCAL = [
+  "site", "contact", "about", "privacy", "terms", "refund", "guides", "tools", "trainer", "c", "plan-ended", "partnership",
+  "fitron-admin", "settings/billing", "api/trainer", "api/coach", "api/gym-demo", "api/assistant", "api/webhooks", "api/analytics-config", "iclock",
+  ...GYM_PAGES.map((p) => p.path.slice(1)), TRAINER_PAGE.path.slice(1), "robots.txt", "sitemap.xml",
+] as const;
+
+export function isNotInLocal(pathname: string): boolean {
+  if (pathname === "/") return true;
+  return NOT_IN_LOCAL.some((p) => pathname === `/${p}` || pathname.startsWith(`/${p}/`));
 }

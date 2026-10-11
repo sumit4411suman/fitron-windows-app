@@ -4,7 +4,8 @@ import type { CurrentUser } from "@/lib/auth/current";
 import { daysBetween } from "@/lib/domain/dates";
 import { memberScope, summarize } from "./members";
 import { listReceivables } from "./billing";
-import { listTemplates, sendTemplate, setAutoSend } from "./whatsapp";
+import { assertCanSend, listTemplates, sendTemplate, setAutoSend } from "./whatsapp";
+import { count, emptyTally } from "@/lib/domain/wa-outcome";
 import { UserError } from "./errors";
 import { getAccessRules } from "./attendance";
 import { putSetting } from "./settings";
@@ -50,49 +51,52 @@ async function ownMember(u: CurrentUser, memberId: string) {
   return m;
 }
 
-/** One member's balance reminder. Returns false when they were reminded recently (no repeat within the de-dup window). */
+/**
+ * One member's balance reminder: the message with how it went (Sent, Queued, Logged in demo mode, Failed), or null when
+ * they were reminded recently (no repeat within the de-dup window).
+ */
 export async function remindDue(u: CurrentUser, memberId: string, invoiceNumber?: string) {
   await ownMember(u, memberId);
-  return !!(await sendTemplate({ orgId: u.orgId, memberId, key: "due", userId: u.id, vars: invoiceNumber ? { invoice_number: invoiceNumber } : undefined }));
+  return sendTemplate({ orgId: u.orgId, memberId, key: "due", userId: u.id, vars: invoiceNumber ? { invoice_number: invoiceNumber } : undefined });
 }
 
-/** "Remind all overdue": one reminder per member with an overdue invoice, oldest first. */
+/** "Remind all overdue": one reminder per member with an overdue invoice, oldest first, counted by how each went. */
 export async function remindAllOverdue(u: CurrentUser) {
   const { list } = await listReceivables(u, "overdue");
+  const tally = emptyTally();
+  if (!list.length) return tally;
+  await assertCanSend(u.orgId);
   const seen = new Set<string>();
-  let sent = 0;
-  let skipped = 0;
   for (const inv of [...list].sort((a, b) => b.overdueDays - a.overdueDays)) {
     if (seen.has(inv.member.id)) continue;
     seen.add(inv.member.id);
-    if (await sendTemplate({ orgId: u.orgId, memberId: inv.member.id, key: "due", userId: u.id, vars: { invoice_number: inv.number } })) sent++;
-    else skipped++;
+    count(tally, await sendTemplate({ orgId: u.orgId, memberId: inv.member.id, key: "due", userId: u.id, vars: { invoice_number: inv.number } }));
   }
-  return { sent, skipped };
+  return tally;
 }
 
-/** One member's renewal reminder, with the template for how soon the membership ends. */
+/** One member's renewal reminder, with the template for how soon the membership ends. The message, or null as for remindDue. */
 export async function remindRenewal(u: CurrentUser, memberId: string) {
   await ownMember(u, memberId);
   const end = (await summarize([memberId])).get(memberId)?.latestEnd;
   if (!end) throw new UserError("This member has no membership to renew.");
-  return !!(await sendTemplate({ orgId: u.orgId, memberId, key: expiryKey(daysBetween(end, todayIso())), userId: u.id }));
+  return sendTemplate({ orgId: u.orgId, memberId, key: expiryKey(daysBetween(end, todayIso())), userId: u.id });
 }
 
-/** "Remind all": renewal reminders for everyone in the shown list. */
+/** "Remind all": renewal reminders for everyone in the shown list, counted by how each went. */
 export async function remindRenewals(u: CurrentUser, memberIds: string[]) {
-  let sent = 0;
-  let skipped = 0;
+  const tally = emptyTally();
+  if (!memberIds.length) return tally;
+  await assertCanSend(u.orgId);
   for (const id of memberIds) {
     try {
-      if (await remindRenewal(u, id)) sent++;
-      else skipped++;
+      count(tally, await remindRenewal(u, id));
     } catch (e) {
       if (!(e instanceof UserError)) throw e;
-      skipped++;
+      tally.skipped++;
     }
   }
-  return { sent, skipped };
+  return tally;
 }
 
 /** Each member's last renewal reminder (which one, when, and how it went), for the Renewals table. */

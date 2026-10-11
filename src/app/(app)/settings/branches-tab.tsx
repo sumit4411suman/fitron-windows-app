@@ -13,6 +13,7 @@ import { branchRecordCounts, getSetting } from "@/lib/services/settings";
 import { fmtDate, formatInr, formatRupees } from "@/lib/format";
 import { fromIso, todayIso, toIso } from "@/lib/services/time";
 import { deleteBranchAction, openBranch, saveBranchAction, setBranchActiveAction } from "./actions";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 
 function StandingBadge({ s }: { s: Standing }) {
   if (s.kind === "PAID") return <Badge tone="ok">Paid till {fmtDate(s.until)}</Badge>;
@@ -63,9 +64,15 @@ export async function BranchesTab({ u, sp }: { u: CurrentUser; sp: Record<string
         <p className="m-0 max-w-[560px] text-sm">
           Each branch has its own members, invoices, payments, expenses, staff and devices. Plans and WhatsApp templates are shared. The Super Admin sees every branch and the consolidated total; other staff only see their own branch.
         </p>
-        {canEdit && (
+        {canEdit && (canAddFree || !gymAccountingOnly()) && (
           <LinkButton variant="primary" href={canAddFree ? `${here}&branch=new` : "/settings/billing#add-branch"}>
             <PlusIcon size={16} /> {canAddFree ? "Add branch" : "Add branch · paid"}
+          </LinkButton>
+        )}
+        {/* FITRON for Windows has no plan billing: more branches are arranged with FITRON support. */}
+        {canEdit && !canAddFree && gymAccountingOnly() && (
+          <LinkButton href="/settings?tab=help">
+            <PlusIcon size={16} /> More branches: contact support
           </LinkButton>
         )}
       </div>

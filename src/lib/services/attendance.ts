@@ -12,6 +12,7 @@ import { getSetting } from "./settings";
 import { fromIso, istInstant, nowHHMM, toIso, todayIso } from "./time";
 import { addDays } from "@/lib/domain/dates";
 import { fmtTime } from "@/lib/format";
+import { ci, ciEquals } from "@/lib/db-dialect";
 
 export const getAccessRules = async (orgId: string): Promise<AccessRules> => ({ ...DEFAULT_ACCESS, ...((await getSetting<Partial<AccessRules>>(orgId, "access")) ?? {}) });
 
@@ -24,7 +25,7 @@ export async function findForCheckIn(u: CurrentUser, q: string) {
     where: {
       ...memberScope(u),
       walkIn: false,
-      OR: [{ code: { equals: t, mode: "insensitive" } }, ...(digits.length >= 4 ? [{ cardNo: digits }] : []), ...(digits.length >= 4 ? [{ phone: { contains: digits.slice(-10) } }] : []), { name: { contains: t, mode: "insensitive" } }],
+      OR: [{ code: ciEquals(t) }, ...(digits.length >= 4 ? [{ cardNo: digits }] : []), ...(digits.length >= 4 ? [{ phone: { contains: digits.slice(-10) } }] : []), { name: ci(t) }],
     },
     take: 8,
     orderBy: { name: "asc" },

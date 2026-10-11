@@ -1,4 +1,5 @@
 import "server-only";
+import { isLocal, localSignupAllowed } from "@/lib/runtime/edition";
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
@@ -91,6 +92,8 @@ export type GymSignup = { plan: string; cycle: Cycle; name: string; email: strin
  */
 /** `emailVerified`: Google has already confirmed the address, so no link is sent. */
 export async function createGymAccount(d: GymSignup, emailVerified = false) {
+  // A gym on a computer is created by its first-run setup (src/lib/services/local-setup.ts), never as a fitron.in trial.
+  if (isLocal() && !localSignupAllowed()) throw new UserError("Sign-up is not available in FITRON for Windows. Set up the gym on the first-run screen.");
   const plan = findPlan(d.plan);
   if (!plan || plan.product !== "GYM_ACCOUNTING") throw new UserError("Pick a Gym Accounting plan.", "plan");
   if (await db.user.findUnique({ where: { email: d.email } })) {
@@ -169,7 +172,17 @@ export async function recordSignIn(userId: string, via: "email" | "google" | "em
   });
 }
 
+/**
+ * Emailed codes and links (verification, password reset, passwordless sign-in) belong to fitron.in. FITRON for Windows
+ * signs in with the password kept on this computer: staff passwords are reset by a Super Admin, and the owner's with the
+ * recovery key (/recover). These pages are closed on Local; this also stops a server action posted to them directly.
+ */
+function noEmailedLinksOnLocal() {
+  if (isLocal() && !localSignupAllowed()) throw new UserError("Not available in FITRON for Windows. Sign in with your password. A Super Admin can reset staff passwords, and the owner's is reset with the recovery key.");
+}
+
 export async function sendVerification(userId: string) {
+  noEmailedLinksOnLocal();
   const user = await db.user.findUniqueOrThrow({ where: { id: userId } });
   if (user.emailVerifiedAt) return;
   const link = `${appUrl()}/verify-email?token=${await issueToken(user.id, "VERIFY_EMAIL")}`;
@@ -183,6 +196,7 @@ export async function sendVerification(userId: string) {
 
 /** Resends the link to an unverified address. Says nothing about whether the address exists. */
 export async function resendVerification(email: string) {
+  noEmailedLinksOnLocal();
   const user = await db.user.findFirst({ where: { email, active: true, deletedAt: null, emailVerifiedAt: null } });
   if (user) await sendVerification(user.id);
 }
@@ -201,6 +215,7 @@ export async function verifyEmailWithCode(email: string, code: string) {
 
 /** Emails a reset link and code if the address belongs to an active account. Always looks the same to the caller. */
 export async function requestPasswordReset(email: string) {
+  noEmailedLinksOnLocal();
   const user = await db.user.findFirst({ where: { email, active: true, deletedAt: null } });
   if (!user) return;
   const link = `${appUrl()}/reset-password?token=${await issueToken(user.id, "RESET_PASSWORD")}`;
@@ -242,6 +257,7 @@ export async function resetPasswordWithCode(email: string, code: string, passwor
  * Clicking or typing proves the address, like a reset does. Two-step sign-in (authenticator app) still applies afterwards.
  */
 export async function requestSignInLink(email: string) {
+  noEmailedLinksOnLocal();
   const user = await db.user.findFirst({ where: { email, active: true, deletedAt: null } });
   if (!user) return;
   const link = `${appUrl()}/login/email?token=${await issueToken(user.id, "LOGIN")}`;

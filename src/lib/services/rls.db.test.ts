@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
 import { hasDb } from "@/test/db";
+import { isLocal } from "@/lib/runtime/edition";
 
-describe.skipIf(!hasDb)("row-level security", () => {
+// PostgreSQL only: a SQLite file on a laptop has no database API in front of it (docs/local-windows/DATABASE-MIGRATION.md).
+describe.skipIf(!hasDb || isLocal())("row-level security", () => {
   it("is on for every table, so a database API such as Supabase's can't read or change one", async () => {
     const rows = await db.$queryRaw<{ name: string }[]>`
       SELECT c.relname AS name

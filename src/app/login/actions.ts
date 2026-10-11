@@ -16,6 +16,8 @@ import { clearChallenge, readChallenge, startChallenge } from "@/lib/auth/two-st
 import { verifySecondFactor } from "@/lib/services/two-step";
 import { safeNext } from "@/lib/auth/next";
 import { rateLimit } from "@/lib/rate-limit";
+import { clearFailures, lockedMinutes, recordFailure } from "@/lib/auth/lockout";
+import { isLocal, localSignupAllowed } from "@/lib/runtime/edition";
 import { fieldErrors, type FormState } from "@/lib/validation/common";
 import { emailOnlySchema, signInCodeSchema, signupStep1Schema } from "@/lib/validation/site";
 
@@ -33,14 +35,23 @@ type LoginState = (FormState & { email?: string; unverified?: boolean }) | undef
 export async function login(_: LoginState, formData: FormData): Promise<LoginState> {
   const email = String(formData.get("email") ?? "");
   const ip = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim() ?? "local";
-  if (!rateLimit(`login:${ip}`, 5, 60_000)) return { email, message: "Too many attempts. Wait a minute and try again." };
+  // Per address: 5 a minute. On the Local Edition every attempt comes from this one computer, shared by the whole front
+  // desk, so the address limit is only a brake and the per-account lockout below does the protecting.
+  if (!rateLimit(`login:${ip}`, isLocal() ? 30 : 5, 60_000)) return { email, message: "Too many attempts. Wait a minute and try again." };
 
   const parsed = loginInput.safeParse({ email: formData.get("email"), password: formData.get("password") });
   if (!parsed.success) return { email, errors: z.flattenError(parsed.error).fieldErrors };
 
+  const locked = lockedMinutes(parsed.data.email);
+  if (locked) return { email, message: `Too many wrong passwords for this account. Try again in ${locked} ${locked === 1 ? "minute" : "minutes"}, or ask a Super Admin to reset it.` };
   const user = await db.user.findFirst({ where: { email: parsed.data.email, active: true, deletedAt: null } });
   const ok = await verifyPassword(user?.passwordHash ?? (await getDummyHash()), parsed.data.password);
-  if (!user || !ok) return { email, message: "Email or password is incorrect." };
+  if (!user || !ok) {
+    // Counted for unknown emails too, so the answer never tells whether an account exists.
+    recordFailure(parsed.data.email);
+    return { email, message: "Email or password is incorrect." };
+  }
+  clearFailures(parsed.data.email);
   if (!user.emailVerifiedAt) return { email, unverified: true, message: "Confirm your email first: open the link we sent you." };
 
   // Two-step sign-in: the password was right, but a code is still needed. No session until it is given.
@@ -77,6 +88,7 @@ export async function sendSignInEmail(_: EmailState, formData: FormData): Promis
   if (!parsed.success) return { email, errors: z.flattenError(parsed.error).fieldErrors };
   // Per address as well, so nobody can fill a stranger's inbox from many places.
   if (!rateLimit(`email-signin-to:${parsed.data.email}`, 3, 10 * 60_000)) return { email, sent: true, message: "We already sent a code a moment ago. Check your inbox and spam, or wait a few minutes to ask again." };
+  if (isLocal() && !localSignupAllowed()) return { email, message: "Email sign-in is not part of FITRON for Windows. Use your password instead." };
   if (!emailReady() && process.env.NODE_ENV === "production") return { email, message: "Email sign-in is not set up on this server. Use your password instead." };
   await requestSignInLink(parsed.data.email);
   return { email: parsed.data.email, sent: true, message: "If there is an account with that email, we sent a six-digit code and a sign-in link. Check spam too." };

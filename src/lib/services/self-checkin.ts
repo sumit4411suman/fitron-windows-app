@@ -1,4 +1,5 @@
 import "server-only";
+import { lockKey } from "@/lib/db-dialect";
 import { db } from "@/lib/db";
 import { entryBlock } from "@/lib/domain/access";
 import { planHas } from "@/lib/domain/features";
@@ -52,7 +53,7 @@ export async function selfCheckIn(branchId: string, rawPhone: string): Promise<S
   const at = new Date();
   const entered = await db.$transaction(async (tx) => {
     // Two scans of the same number at once must not both get in.
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`self-checkin:${m.id}`}))`;
+    await lockKey(tx, `self-checkin:${m.id}`);
     if (await tx.attendance.findFirst({ where: { memberId: m.id, date: fromIso(today), checkOut: null }, select: { id: true } })) return false;
     await tx.attendance.create({ data: { branchId, memberId: m.id, type: "MEMBER", date: fromIso(today), checkIn: at, method: "QR", createdById: null } });
     return true;

@@ -1,4 +1,5 @@
 import "server-only";
+import { lockRow } from "@/lib/db-dialect";
 import { db } from "@/lib/db";
 import type { Prisma, RazorpaySubscription } from "@/generated/prisma/client";
 import { addDays } from "@/lib/domain/dates";
@@ -26,7 +27,7 @@ const label = (plan: string, cycle: string) => `${findPlan(plan)?.name ?? plan},
  */
 export async function activateTrainerPaymentIn(tx: Prisma.TransactionClient, id: string, opts: { keepPlan?: boolean } = {}) {
   const today = todayIso();
-  await tx.$queryRaw`SELECT id FROM "TrainerPayment" WHERE id = ${id} FOR UPDATE`;
+  await lockRow(tx, "TrainerPayment", id);
   const fresh = await tx.trainerPayment.findUniqueOrThrow({ where: { id }, include: { member: true } });
   if (fresh.status === "PAID") return fresh;
   const m = fresh.member;

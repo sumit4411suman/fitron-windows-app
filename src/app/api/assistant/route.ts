@@ -5,6 +5,7 @@ import { aiReady, claudeText } from "@/lib/integrations/anthropic";
 import { log } from "@/lib/log";
 import { rateLimit } from "@/lib/rate-limit";
 import { readCapped } from "../trainer/_lib/http";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 // Fitron Assistant, the chat on the home page: POST { messages: [{ role, text }] } → { text, source }.
 // Open to anyone, so it is limited: per connection, and for the whole site so a crowd can't run up the AI bill.
@@ -23,6 +24,8 @@ const schema = z.object({
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "cache-control": "no-store" } });
 
 export async function POST(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   if (!rateLimit(`assistant:${ip}`, PER_MINUTE, 60_000) || !rateLimit(`assistant-hour:${ip}`, PER_HOUR, 3_600_000)) {
     return json({ error: "That's a lot of messages. Wait a moment, or message the team on WhatsApp +91 62077 74673." }, 429);

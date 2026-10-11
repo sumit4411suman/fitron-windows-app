@@ -1,9 +1,12 @@
 import { linkTrainerGym, unlinkTrainerGym } from "@/lib/services/trainer-gym";
 import { rateLimit } from "@/lib/rate-limit";
 import { body, json, withTrainer } from "../_lib/http";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 /** Link to a gym on FITRON with its trainer code (Gym Partnership). */
 export async function POST(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   return withTrainer(async (m) => {
     // A trainer code is six characters, so guessing it is throttled per account and per address.
     const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
@@ -17,6 +20,8 @@ export async function POST(req: Request) {
 
 /** Leave the gym. */
 export async function DELETE() {
+  const off = notInLocal();
+  if (off) return off;
   return withTrainer(async (m) => {
     await unlinkTrainerGym(m.id);
     return json({ gym: null });

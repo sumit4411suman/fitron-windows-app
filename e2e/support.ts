@@ -1,7 +1,8 @@
 import { createHmac } from "node:crypto";
 import { test as base, expect, type Browser, type BrowserContext, type BrowserContextOptions, type Page } from "@playwright/test";
 import { Client } from "pg";
-import { BASE_URL, DATABASE_URL } from "./env";
+import Database from "better-sqlite3";
+import { BASE_URL, DATABASE_URL, EDITION } from "./env";
 
 export { expect };
 export const PASSWORD = "a-long-password-123";
@@ -78,7 +79,58 @@ export const horizontalOverflow = (page: Page) => page.evaluate(() => document.d
 // ---------------------------------------------------------------------------------------------------------------------
 // The database, for what the app does not offer a screen for: changing a gym's plan, and reading what a screen wrote.
 
+/**
+ * The specs' SQL is PostgreSQL's. For the Local Edition the same text runs on the SQLite file after a few mechanical
+ * rewrites: $1 placeholders, ::int / ::text casts (SQLite's columns already carry the type), and count(*) FILTER (WHERE …).
+ */
+export function toSqlite(text: string): { text: string; order: number[] } {
+  // better-sqlite3 binds anonymous "?" in order, so each $n becomes "?" and its value is passed in that position.
+  const order: number[] = [];
+  const out = text
+    .replace(/\$(\d+)/g, (_, n: string) => (order.push(Number(n) - 1), "?"))
+    .replace(/::(int|integer|text|bigint)\b/g, "")
+    .replace(/\bnow\(\)/gi, "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')")
+    .replace(/count\(\*\)\s+filter\s*\(\s*where\s+([^)]+)\)/gi, "sum(case when $1 then 1 else 0 end)");
+  return { text: out, order };
+}
+
+/** Values as PostgreSQL's driver returns them: JSON columns parsed, list columns as arrays, booleans as booleans. */
+const JSON_COLUMNS = new Set(["value", "payload", "before", "after", "counts", "memberIds", "tags", "features", "riskReasons"]);
+function fromSqlite(row: Record<string, unknown>) {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(row)) {
+    if (typeof v === "string" && JSON_COLUMNS.has(k) && /^[[{]/.test(v)) {
+      try {
+        out[k] = JSON.parse(v);
+        continue;
+      } catch {
+        // plain text after all
+      }
+    }
+    out[k] = typeof v === "bigint" ? Number(v) : v;
+  }
+  return out;
+}
+
+function sqliteQuery<T>(text: string, values: unknown[]): T[] {
+  const db = new Database(DATABASE_URL.replace(/^file:/, ""), { timeout: 10_000 });
+  try {
+    const q = toSqlite(text);
+    const bind = (v: unknown) => (Array.isArray(v) || (v && typeof v === "object" && !(v instanceof Date)) ? JSON.stringify(v) : typeof v === "boolean" ? Number(v) : v);
+    const args = q.order.map((i) => bind(values[i]));
+    const stmt = db.prepare(q.text);
+    if (!stmt.reader) {
+      stmt.run(...args);
+      return [];
+    }
+    return stmt.all(...args).map((r) => fromSqlite(r as Record<string, unknown>)) as T[];
+  } finally {
+    db.close();
+  }
+}
+
 export async function sql<T = Record<string, unknown>>(text: string, values: unknown[] = []): Promise<T[]> {
+  if (EDITION === "local") return sqliteQuery<T>(text, values);
   const client = new Client({ connectionString: DATABASE_URL });
   await client.connect();
   try {

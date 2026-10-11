@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
-import { deleteObject, getObject, putObject, sniffType } from "@/lib/integrations/storage";
+import { deleteObject, putObject, sniffType, getObjectOrNull } from "@/lib/integrations/storage";
 import { audit } from "./audit";
 import { UserError } from "./errors";
 import { memberScope } from "./members";
@@ -104,7 +104,8 @@ export async function readDocument(u: CurrentUser, id: string) {
   const d = await db.memberDocument.findFirst({ where: { id, orgId: u.orgId } });
   if (!d) return null;
   if (!(await db.member.findFirst({ where: { ...memberScope(u), id: d.memberId }, select: { id: true } }))) return null;
-  const body = await getObject(d.storageKey);
+  const body = await getObjectOrNull(d.storageKey);
+  if (!body) return null;
   await db.$transaction((tx) => audit(tx, { orgId: u.orgId, userId: u.id, action: "document.view", entity: "MemberDocument", entityId: id }));
   return { doc: d, body };
 }

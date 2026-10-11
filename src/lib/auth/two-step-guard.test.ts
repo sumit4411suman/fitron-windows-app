@@ -22,7 +22,7 @@ describe("every place that opens a staff session", () => {
       .filter((f) => /\bcreateSession\(/.test(readFileSync(f, "utf8")))
       .map(rel)
       .sort();
-    expect(sites, "a new createSession( call needs the two-step check before it: see src/app/login/actions.ts").toEqual(["src/app/(site)/account-actions.ts", "src/app/auth/google/callback/route.ts", "src/app/login/actions.ts"]);
+    expect(sites, "a new createSession( call needs the two-step check before it: see src/app/login/actions.ts").toEqual(["src/app/(site)/account-actions.ts", "src/app/auth/google/callback/route.ts", "src/app/login/actions.ts", "src/app/setup/actions.ts"]);
   });
 
   it("asks for the second step first, after the password", () => {
@@ -64,4 +64,14 @@ describe("every place that opens a staff session", () => {
     expect(s.indexOf("createGymAccount(")).toBeGreaterThan(-1);
     expect(s.indexOf("createGymAccount(")).toBeLessThan(s.indexOf("createSession("));
   });
+
+  it("first-run setup (Local Edition) opens a session only for the owner it has just created", () => {
+    // A brand-new account has no two-step secret yet, so there is no second step to ask for; the session must come
+    // after the gym and owner exist, never on any other path through the action.
+    const s = readFileSync(path.join(root, "src/app/setup/actions.ts"), "utf8");
+    expect(s.indexOf("localSetupNeeded()")).toBeLessThan(s.indexOf("createSession("));
+    expect(s.indexOf("createLocalGym(")).toBeLessThan(s.indexOf("createSession("));
+    expect(s.match(/createSession\(/g)).toHaveLength(1);
+  });
 });
+

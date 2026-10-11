@@ -48,7 +48,7 @@ import { MemberStatus } from "@/components/status";
 import { Tag } from "@/components/tag";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Dialog, DialogButtons } from "@/components/dialog";
-import { Button, Field, Input, Notice, Select, Textarea, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
+import { Button, Field, Input, Notice, toneOf, Select, Textarea, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
 import { fmtDate, fmtShort, fmtStamp, fmtTime, formatRupees, initials } from "@/lib/format";
 import { remindDueAction } from "../../reminder-actions";
 import {
@@ -233,7 +233,7 @@ export default async function MemberPage({ params, searchParams }: PageProps<"/m
         <ArrowLeftIcon weight="duotone" />
         All members
       </Link>
-      {str("msg") && <Notice tone="ok">{str("msg")}</Notice>}
+      {str("msg") && <Notice tone={toneOf(str("tone"))}>{str("msg")}</Notice>}
 
       <div className="flex flex-wrap items-center gap-6">
         {m.photoKey ? (

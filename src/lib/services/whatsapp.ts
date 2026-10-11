@@ -7,7 +7,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { DEFAULT_TEMPLATES, defaultTemplateRows, placeholders, REMINDER_KEYS, render, rupeesText, waNumber, type TemplateVars } from "@/lib/domain/whatsapp";
 import { DEFAULT_REMINDERS, type ReminderSettings } from "@/lib/domain/reminders";
 import { fromColumns, holdUntil, toColumns, validateRule, type Rule, type RuleInput } from "@/lib/domain/wa-rules";
-import { connectorResults, sendWhatsApp, type WaMode } from "@/lib/integrations/whatsapp";
+import { cloudOffline, connectorAnswers, connectorResults, providerReady, sendWhatsApp, type WaMode } from "@/lib/integrations/whatsapp";
 import { DOC_HEADER_KEYS, metaTemplateName } from "@/lib/domain/wa-meta";
 import { getCloudCreds } from "./wa-cloud-store";
 import { fmtDate } from "@/lib/format";
@@ -20,6 +20,7 @@ import { getSetting, putSettingIn } from "./settings";
 import { getTax } from "./tax";
 import { todayIso } from "./time";
 import { log } from "@/lib/log";
+import { ci } from "@/lib/db-dialect";
 
 export type { ReminderSettings };
 export { DEFAULT_REMINDERS };
@@ -309,7 +310,7 @@ export async function listMessages(u: CurrentUser, f: { status?: string; key?: s
     ...(f.status ? { status: f.status } : {}),
     ...(f.key ? { templateKey: f.key } : {}),
     ...(f.memberId ? { memberId: f.memberId } : {}),
-    ...(f.q ? { AND: [{ OR: [{ member: { name: { contains: f.q, mode: "insensitive" } } }, { toNumber: { contains: f.q.replace(/\D/g, "") || f.q } }] }] } : {}),
+    ...(f.q ? { AND: [{ OR: [{ member: { name: ci(f.q) } }, { toNumber: { contains: f.q.replace(/\D/g, "") || f.q } }] }] } : {}),
   };
   const [rows, total, counts] = await Promise.all([
     db.whatsAppMessage.findMany({ where, orderBy: { sentAt: "desc" }, skip: (page - 1) * pageSize, take: pageSize, include: { member: { select: { id: true, name: true, code: true } } } }),
@@ -372,10 +373,29 @@ export async function refreshQueued(orgId: string) {
   return n;
 }
 
+/**
+ * Before a batch (reminders to everyone overdue, a campaign): whether WhatsApp can take messages at all, checked once.
+ * Throws a UserError that says why not (no internet for Meta's API on a computer, the connector not running, not
+ * connected), so nothing is sent and nobody gets a failure alert per member. Demo mode always can: it saves, not sends.
+ */
+export async function assertCanSend(orgId: string) {
+  const why = await whySendingFails(orgId);
+  if (why) throw new UserError(`Nothing was sent. ${why}`);
+}
+
+/** Why WhatsApp cannot take messages right now, or null when it can (demo mode always can: it saves, not sends). */
+export async function whySendingFails(orgId: string): Promise<string | null> {
+  const { mode } = await getWaSettings(orgId);
+  if (mode === "demo") return null;
+  if (mode === "cloud") return providerReady("cloud", await getCloudCreds(orgId)) ?? (await cloudOffline());
+  return connectorAnswers(orgId);
+}
+
 /** Sends one custom message to many members (capped, since WhatsApp limits bulk sending). */
 export async function sendCampaign(u: CurrentUser, memberIds: string[], body: string) {
   if (memberIds.length > 250) throw new UserError("Send to 250 members or fewer at a time.");
   if (!body.trim()) throw new UserError("Write the message first.", "body");
+  await assertCanSend(u.orgId);
   const allowed = await db.member.findMany({ where: { id: { in: memberIds }, orgId: u.orgId, branchId: { in: u.branchIds }, deletedAt: null, walkIn: false }, select: { id: true } });
   let sent = 0;
   let failed = 0;

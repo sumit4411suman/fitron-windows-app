@@ -1,3 +1,4 @@
+import { ci, ciEquals } from "@/lib/db-dialect";
 import "server-only";
 import { db } from "@/lib/db";
 import { writeBranch, type CurrentUser } from "@/lib/auth/current";
@@ -63,9 +64,9 @@ export async function resolveMember(u: CurrentUser, ref: string) {
   const q = ref.trim();
   if (!q) throw new UserError("Say which member (name, code or phone).");
   const where = { ...memberScope(u), walkIn: false } as const;
-  const exact = await db.member.findMany({ where: { ...where, OR: [{ id: q }, { code: { equals: q, mode: "insensitive" } }, { phone: q.replace(/[\s-]/g, "").replace(/^(\+91|91|0)(?=\d{10}$)/, "") }] }, select: { id: true, name: true, code: true, branchId: true }, take: 2 });
+  const exact = await db.member.findMany({ where: { ...where, OR: [{ id: q }, { code: ciEquals(q) }, { phone: q.replace(/[\s-]/g, "").replace(/^(\+91|91|0)(?=\d{10}$)/, "") }] }, select: { id: true, name: true, code: true, branchId: true }, take: 2 });
   if (exact.length === 1) return exact[0]!;
-  const byName = exact.length ? exact : await db.member.findMany({ where: { ...where, name: { contains: q, mode: "insensitive" } }, select: { id: true, name: true, code: true, phone: true, branchId: true }, take: 6 });
+  const byName = exact.length ? exact : await db.member.findMany({ where: { ...where, name: ci(q) }, select: { id: true, name: true, code: true, phone: true, branchId: true }, take: 6 });
   if (byName.length === 1) return byName[0]!;
   if (!byName.length) throw new UserError(`No member matches "${q}".`);
   throw new UserError(`Several members match "${q}": ${byName.map((m) => `${m.name} (${m.code})`).join(", ")}. Ask which one.`);
@@ -74,7 +75,7 @@ export async function resolveMember(u: CurrentUser, ref: string) {
 export async function resolveInvoice(u: CurrentUser, ref: string) {
   const q = ref.trim();
   if (!q) throw new UserError("Say which invoice (its number).");
-  const inv = await db.invoice.findFirst({ where: { orgId: u.orgId, branchId: { in: u.branchIds }, OR: [{ id: q }, { number: { equals: q, mode: "insensitive" } }] }, select: { id: true } });
+  const inv = await db.invoice.findFirst({ where: { orgId: u.orgId, branchId: { in: u.branchIds }, OR: [{ id: q }, { number: ciEquals(q) }] }, select: { id: true } });
   if (!inv) throw new UserError(`No invoice ${q} that you can see.`);
   const full = await getInvoice(u, inv.id);
   if (!full) throw new UserError(`No invoice ${q} that you can see.`);
@@ -129,7 +130,7 @@ async function draftSale(u: CurrentUser, i: Input) {
   if (!canUsePermission(u, "memberships.renew")) return DENIED("sell or renew memberships");
   const member = await resolveMember(u, str(i.member));
   const planRef = str(i.plan);
-  const plan = await db.membershipPlan.findFirst({ where: { orgId: u.orgId, status: "ACTIVE", OR: [{ id: planRef }, { name: { equals: planRef, mode: "insensitive" } }] }, include: { prices: true } });
+  const plan = await db.membershipPlan.findFirst({ where: { orgId: u.orgId, status: "ACTIVE", OR: [{ id: planRef }, { name: ciEquals(planRef) }] }, include: { prices: true } });
   if (!plan) return { error: `No active plan "${planRef}". Use the catalog tool to see the plans.` };
   const pay = i.pay_amount == null || i.pay_amount === "" ? 0 : Number(i.pay_amount);
   const suggested = await suggestedStart(member.id);
@@ -225,7 +226,7 @@ async function draftCancel(u: CurrentUser, i: Input) {
 async function draftReverse(u: CurrentUser, i: Input) {
   if (!canUsePermission(u, "payments.reverse")) return DENIED("reverse payments");
   const ref = str(i.payment);
-  const pay = await db.payment.findFirst({ where: { orgId: u.orgId, branchId: { in: u.branchIds }, OR: [{ id: ref }, { code: { equals: ref, mode: "insensitive" } }] }, include: { member: { select: { name: true } }, invoice: { select: { number: true } } } });
+  const pay = await db.payment.findFirst({ where: { orgId: u.orgId, branchId: { in: u.branchIds }, OR: [{ id: ref }, { code: ciEquals(ref) }] }, include: { member: { select: { name: true } }, invoice: { select: { number: true } } } });
   if (!pay) return { error: `No payment ${ref} that you can see.` };
   if (pay.status === "REVERSED") return { error: `Payment ${pay.code} is already reversed.` };
   const reason = reasonInput.safeParse({ reason: str(i.reason) });

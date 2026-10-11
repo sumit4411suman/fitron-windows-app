@@ -8,7 +8,8 @@ import { classInput } from "@/lib/validation/frontdesk";
 import type { FormState } from "@/lib/validation/common";
 import { book, bookedMembers, getSlot, markAllAttended, saveSlot, setBookingStatus, setSlotActive } from "@/lib/services/classes";
 import { db } from "@/lib/db";
-import { sendLater, sendTemplate } from "@/lib/services/whatsapp";
+import { assertCanSend, sendLater, sendTemplate } from "@/lib/services/whatsapp";
+import { count, emptyTally, tallyText, tallyTone } from "@/lib/domain/wa-outcome";
 import { fmtClock, fmtDate } from "@/lib/format";
 import { resolveMemberRef } from "@/lib/services/members";
 import { UserError } from "@/lib/services/errors";
@@ -75,7 +76,14 @@ export async function remindClassAction(slotId: string, date: string, back: stri
   const trainer = await db.user.findUnique({ where: { id: slot.trainerId }, select: { name: true } });
   const ids = await bookedMembers(u, slotId, date);
   const body = `Hi {{member_name}}, reminder: ${slot.name}${trainer ? ` with ${trainer.name}` : ""} is on ${fmtDate(date)} at ${fmtClock(slot.startTime)}. See you there!`;
-  for (const memberId of ids) await sendTemplate({ orgId: u.orgId, memberId, key: "campaign", body, userId: u.id, force: true });
-  redirect(`${back}&msg=${encodeURIComponent(`Reminder sent to ${ids.length} member${ids.length === 1 ? "" : "s"}.`)}`);
+  const tally = emptyTally();
+  try {
+    if (ids.length) await assertCanSend(u.orgId);
+  } catch (e) {
+    if (!(e instanceof UserError)) throw e;
+    redirect(`${back}&${new URLSearchParams({ msg: e.message, tone: "alert" })}`);
+  }
+  for (const memberId of ids) count(tally, await sendTemplate({ orgId: u.orgId, memberId, key: "campaign", body, userId: u.id, force: true }));
+  redirect(`${back}&${new URLSearchParams({ msg: tallyText(tally), tone: tallyTone(tally) })}`);
 }
 

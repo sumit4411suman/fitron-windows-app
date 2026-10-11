@@ -8,6 +8,7 @@ import { audit } from "./audit";
 import { UserError } from "./errors";
 import type { GymInput, TaxInput } from "@/lib/validation/settings";
 import { DEFAULT_IDLE_MINUTES } from "@/lib/domain/security";
+import { ciEquals } from "@/lib/db-dialect";
 
 type Tx = Prisma.TransactionClient;
 
@@ -95,7 +96,7 @@ type BranchValues = { name: string; short?: string; address: string; phone: stri
 export async function saveBranch(u: CurrentUser, id: string | null, v: BranchValues) {
   const data = { name: v.name, short: v.short ?? null, address: v.address, phone: v.phone, manager: v.manager ?? null, hours: v.hours ?? null, invoicePrefix: v.invoicePrefix || null, gstin: v.gstin ?? null };
   await db.$transaction(async (tx) => {
-    const clash = !v.short ? null : await tx.branch.findFirst({ where: { orgId: u.orgId, short: { equals: v.short, mode: "insensitive" }, ...(id ? { id: { not: id } } : {}) }, select: { id: true } });
+    const clash = !v.short ? null : await tx.branch.findFirst({ where: { orgId: u.orgId, short: ciEquals(v.short), ...(id ? { id: { not: id } } : {}) }, select: { id: true } });
     if (clash) throw new UserError("Another branch already uses this short name.", "short");
     if (id) {
       const before = await tx.branch.findFirst({ where: { orgId: u.orgId, id } });

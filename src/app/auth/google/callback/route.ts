@@ -10,6 +10,7 @@ import { gymSignupHref } from "@/lib/domain/site-links";
 import { appUrl, recordSignIn } from "@/lib/services/accounts";
 import { hasTrainerAccount, signInTrainerWithGoogle } from "@/lib/services/trainer-google";
 import { log } from "@/lib/log";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 // Google sends the visitor back here. The state must match the one we set in /auth/google,
 // and the code is redeemed with our PKCE verifier, so a forged or replayed callback goes nowhere.
@@ -20,6 +21,8 @@ const to = (path: string) => NextResponse.redirect(new URL(path, appUrl()));
 const cookie = { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax" as const, path: "/" };
 
 export async function GET(req: NextRequest) {
+  // FITRON for Windows signs in with the password on this computer: back to its own sign-in page, never to fitron.in.
+  if (notInLocal()) return NextResponse.redirect(new URL("/login", req.url));
   const q = req.nextUrl.searchParams;
   const f = unsign<Flow>(req.cookies.get(GOOGLE_FLOW_COOKIE)?.value);
   const done = (res: NextResponse) => {

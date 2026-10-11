@@ -8,6 +8,8 @@ import { Dialog, DialogButtons } from "@/components/dialog";
 import { SettingsShell } from "@/components/section-tabs";
 import { fmtDate, fmtStamp, fmtTime } from "@/lib/format";
 import { backupNow, restoreFromFile, restoreFromServer } from "./actions";
+import { isLocal } from "@/lib/runtime/edition";
+import { LocalBackupPage } from "./local-backup";
 
 export const metadata = { title: "Backup · Fitron" };
 
@@ -35,6 +37,7 @@ export default async function BackupPage({ searchParams }: PageProps<"/settings/
   // Open to a gym whose plan lapsed, so it can still take and download its data.
   const u = await requirePermission("settings.manage", { allowBlocked: true });
   const sp = await searchParams;
+  if (isLocal()) return <LocalBackupPage u={u} sp={sp} />;
   const superAdmin = u.role === "Super Admin";
   const [status, backups, failure, test] = await Promise.all([backupStatus(u.orgId), listBackups(u.orgId), lastAutoFailure(u.orgId), lastRestoreTest(u.orgId)]);
   const restore = typeof sp.restore === "string" && superAdmin ? sp.restore : null;

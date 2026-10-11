@@ -1,4 +1,5 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { isLocal } from "@/lib/runtime/edition";
 import path from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
@@ -51,20 +52,23 @@ async function fill(gym: Gym) {
 type Filled = Awaited<ReturnType<typeof fill>>;
 
 /** Deleting each kind of row, the way the app's own queries would. */
-const deletions = (f: Filled): Record<string, () => Promise<unknown>> => ({
-  Asset: () => db.asset.deleteMany({ where: { id: f.ids.asset } }),
-  Expense: () => db.expense.deleteMany({ where: { id: f.ids.expense } }),
-  Invoice: () => db.invoice.deleteMany({ where: { id: f.ids.invoice } }),
-  InvoiceItem: () => db.invoiceItem.deleteMany({ where: { id: f.ids.item } }),
-  Membership: () => db.membership.deleteMany({ where: { id: f.ids.membership } }),
-  Payment: () => db.payment.deleteMany({ where: { id: f.ids.payment } }),
-  Purchase: () => db.purchase.deleteMany({ where: { id: f.ids.purchase } }),
-  PurchaseLine: () => db.purchaseLine.deleteMany({ where: { id: f.ids.line } }),
-  Sequence: () => db.sequence.deleteMany({ where: { orgId: f.orgId, name: "guard-test" } }),
-  VendorPayment: () => db.vendorPayment.deleteMany({ where: { id: f.ids.vendorPayment } }),
-  BranchSubscription: () => db.branchSubscription.deleteMany({ where: { id: f.ids.subscription } }),
-  SalaryPayment: () => db.salaryPayment.deleteMany({ where: { id: f.ids.salary } }),
-  TrainerPayment: () => db.trainerPayment.deleteMany({ where: { id: f.ids.trainerPayment } }),
+// `c` is the client the delete runs on: the app's `db`, or the transaction that was given the permission (the Local
+// Edition's SQLite has one writer, so a delete through `db` inside an open transaction would wait for that transaction).
+type Deleter = Pick<typeof db, "asset" | "expense" | "invoice" | "invoiceItem" | "membership" | "payment" | "purchase" | "purchaseLine" | "sequence" | "vendorPayment" | "branchSubscription" | "salaryPayment" | "trainerPayment">;
+const deletions = (f: Filled, c: Deleter = db): Record<string, () => Promise<unknown>> => ({
+  Asset: () => c.asset.deleteMany({ where: { id: f.ids.asset } }),
+  Expense: () => c.expense.deleteMany({ where: { id: f.ids.expense } }),
+  Invoice: () => c.invoice.deleteMany({ where: { id: f.ids.invoice } }),
+  InvoiceItem: () => c.invoiceItem.deleteMany({ where: { id: f.ids.item } }),
+  Membership: () => c.membership.deleteMany({ where: { id: f.ids.membership } }),
+  Payment: () => c.payment.deleteMany({ where: { id: f.ids.payment } }),
+  Purchase: () => c.purchase.deleteMany({ where: { id: f.ids.purchase } }),
+  PurchaseLine: () => c.purchaseLine.deleteMany({ where: { id: f.ids.line } }),
+  Sequence: () => c.sequence.deleteMany({ where: { orgId: f.orgId, name: "guard-test" } }),
+  VendorPayment: () => c.vendorPayment.deleteMany({ where: { id: f.ids.vendorPayment } }),
+  BranchSubscription: () => c.branchSubscription.deleteMany({ where: { id: f.ids.subscription } }),
+  SalaryPayment: () => c.salaryPayment.deleteMany({ where: { id: f.ids.salary } }),
+  TrainerPayment: () => c.trainerPayment.deleteMany({ where: { id: f.ids.trainerPayment } }),
 });
 const present = async (f: Filled) => ({
   payment: await db.payment.count({ where: { id: f.ids.payment } }),
@@ -146,7 +150,7 @@ describe.skipIf(!hasDb)("financial records are kept (database)", () => {
 
   it("does not let staff pay, FITRON subscriptions or AI Trainer payments be deleted by anything, 'restore' and 'demo-clear' included", async () => {
     for (const why of ["restore", "demo-clear"] as const) {
-      for (const table of NEVER) await blocked(db.$transaction(async (tx) => { await allowDelete(tx, why); await deletions(f)[table]!(); }));
+      for (const table of NEVER) await blocked(db.$transaction(async (tx) => { await allowDelete(tx, why); await deletions(f, tx)[table]!(); }));
     }
     expect(await db.salaryPayment.count({ where: { id: f.ids.salary } })).toBe(1);
     expect(await db.branchSubscription.count({ where: { id: f.ids.subscription } })).toBe(1);
@@ -156,7 +160,7 @@ describe.skipIf(!hasDb)("financial records are kept (database)", () => {
   describe("'demo-clear'", () => {
     it("does not work for a gym that is not flagged demo: the database checks, not just the app", async () => {
       for (const table of GUARDED) {
-        await blocked(db.$transaction(async (tx) => { await allowDelete(tx, "demo-clear"); await deletions(f)[table]!(); }));
+        await blocked(db.$transaction(async (tx) => { await allowDelete(tx, "demo-clear"); await deletions(f, tx)[table]!(); }));
       }
       expect(await present(f)).toEqual(ALL_PRESENT);
     });
@@ -234,13 +238,20 @@ describe.skipIf(!hasDb)("financial records are kept (database)", () => {
 
     it("is only a known reason: any other value opens nothing", async () => {
       for (const why of ["yes", "true", "demo", "RESTORE", ""]) {
-        await blocked(db.$transaction(async (tx) => { await tx.$executeRaw`SELECT set_config('fitron.allow_delete', ${why}, true)`; await deletions(f).Payment!(); }));
+        await blocked(
+          db.$transaction(async (tx) => {
+            if (isLocal()) await tx.$executeRaw`INSERT OR REPLACE INTO "_fitron_guard" ("id", "allowDelete") VALUES (1, ${why})`;
+            else await tx.$executeRaw`SELECT set_config('fitron.allow_delete', ${why}, true)`;
+            await deletions(f, tx).Payment!();
+          }),
+        );
       }
       expect((await present(f)).payment).toBe(1);
     });
   });
 
-  describe("TRUNCATE, which skips row triggers", () => {
+  // SQLite has no TRUNCATE: a DELETE without WHERE runs the row triggers, which the tests above cover.
+  describe.skipIf(isLocal())("TRUNCATE, which skips row triggers", () => {
     it("is refused by the trigger function on every guarded table (proved on a scratch table, so a failure here cannot empty real data)", async () => {
       await expect(
         db.$transaction(async (tx) => {

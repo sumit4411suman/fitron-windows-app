@@ -1,4 +1,5 @@
 import { expect, newContext, setPlan, signUp, sql, test } from "./support";
+import { EDITION } from "./env";
 
 // What a plan opens. The unit tests check the rules; these check that the real pages and download routes of a real gym
 // follow them, and that a change of plan is felt at once.
@@ -51,6 +52,8 @@ test("the pages of a higher plan are closed to a Starter gym and its menu does n
 });
 
 test("priority support is promised to the plans that have it, and only to them", async ({ browser, page }) => {
+  // FITRON for Windows sends tickets only by email (its database is out of FITRON's sight): e2e/local/offline.spec.ts.
+  test.skip(EDITION === "local", "Cloud Edition ticket flow");
   await signUp(page, { plan: "enterprise", tag: "priority" });
   await page.goto("/settings?tab=help");
   await expect(page.getByText(/includes priority support/)).toBeVisible();

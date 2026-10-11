@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import { TEST_META_TEMPLATE, toMetaTemplate, type MetaTemplate } from "@/lib/domain/wa-meta";
 import { exchangeCode, phoneInfo, registerNumber, submitTemplates, subscribeApp, templateStatuses, type CloudCreds, type TemplateStatus } from "@/lib/integrations/whatsapp-cloud";
+import { cloudOffline } from "@/lib/integrations/whatsapp";
 import { audit } from "./audit";
 import { UserError } from "./errors";
 import { getCloudCreds, getCloudInfo, removeCloud, saveCloud, saveTemplateRows, type CloudInfo, type CloudTemplateRow } from "./wa-cloud-store";
@@ -34,6 +35,8 @@ export type ConnectInput = { code: string; wabaId: string; phoneNumberId: string
 
 /** Everything after the Connect pop-up. Throws a message the owner can read; nothing is stored unless Meta accepted the connection. */
 export async function connectCloud(u: CurrentUser, input: ConnectInput) {
+  const off = await cloudOffline("Connecting WhatsApp Business");
+  if (off) throw new UserError(off);
   if (!input.code || !ID.test(input.wabaId) || !ID.test(input.phoneNumberId)) throw new UserError("Meta did not finish the connection. Press Connect and complete every step.");
   let token: string;
   try {
@@ -74,6 +77,8 @@ export async function disconnectCloud(u: CurrentUser) {
 export async function resubmitTemplates(u: CurrentUser) {
   const creds = await getCloudCreds(u.orgId);
   if (!creds) throw new UserError("Connect WhatsApp first.");
+  const off = await cloudOffline("Sending templates to Meta");
+  if (off) throw new UserError(off);
   const rows = await submitFor(u.orgId, creds);
   await saveTemplateRows(u.orgId, rows);
   await db.$transaction((tx) => audit(tx, { orgId: u.orgId, userId: u.id, action: "whatsapp.templates", entity: "Setting", entityId: "whatsapp_cloud", after: { submitted: rows.filter((r) => r.ok).length, failed: rows.filter((r) => !r.ok).length } }));
@@ -83,7 +88,7 @@ export async function resubmitTemplates(u: CurrentUser) {
 /** Where the gym's templates stand with Meta, or null when it is not connected or Meta cannot be reached. */
 export async function cloudTemplateStatus(orgId: string): Promise<{ list: TemplateStatus[]; approved: number; pending: number; rejected: number } | null> {
   const creds = await getCloudCreds(orgId);
-  if (!creds?.wabaId) return null;
+  if (!creds?.wabaId || (await cloudOffline())) return null;
   try {
     const mine = (await templateStatuses(creds)).filter((t) => t.name.startsWith("fitron_"));
     return { list: mine, approved: mine.filter((t) => t.status === "APPROVED").length, pending: mine.filter((t) => t.status === "PENDING" || t.status === "IN_APPEAL").length, rejected: mine.filter((t) => t.status === "REJECTED").length };

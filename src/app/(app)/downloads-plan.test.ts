@@ -81,9 +81,10 @@ describe("every download route under the app", () => {
 
   // Left open on purpose, so that closing one is a decision and not an oversight: the two pictures a page shows (a person's
   // photo, the gym's logo), and the gym's own backup file, which a gym whose plan has lapsed can still take away.
-  const OPEN_TO_A_LAPSED_PLAN = ["profile/photo/[id]/route.ts", "settings/logo/route.ts", "settings/backup/[id]/download/route.ts"];
+  // The Local Edition's backup download (settings/backup/local/…) is the same promise for FITRON on a computer.
+  const OPEN_TO_A_LAPSED_PLAN = ["profile/photo/[id]/route.ts", "settings/logo/route.ts", "settings/backup/[id]/download/route.ts", "settings/backup/local/[kind]/[name]/route.ts"];
 
-  it("answers 402 to a gym whose plan has ended, wherever it reads the signed-in user (the FITRON team's own screens and the three above aside)", () => {
+  it("answers 402 to a gym whose plan has ended, wherever it reads the signed-in user (the FITRON team's own screens and the backup and photo downloads above aside)", () => {
     const bad = files
       .filter(({ f, s }) => /getCurrentUser\(/.test(s) && !/planBlocked/.test(s) && !f.includes("/fitron-admin/") && !OPEN_TO_A_LAPSED_PLAN.some((x) => f.endsWith(x)))
       .map((x) => x.f.slice(x.f.indexOf("src/")));

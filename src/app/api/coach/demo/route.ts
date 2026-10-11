@@ -5,6 +5,7 @@ import { log } from "@/lib/log";
 import { rateLimit } from "@/lib/rate-limit";
 import { demoCoachAnswer } from "@/lib/services/trainer-coach";
 import { readCapped } from "../../trainer/_lib/http";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 // The AI Coach live demo on the home page (public/site/coach-demo.html): POST { messages: [{ role, text }], profile } → { text }.
 // The twin of /api/coach for visitors who have no account. The profile is the made-up member the demo is signed in as, and
@@ -27,6 +28,8 @@ const schema = z.object({
 const json = (data: unknown, status = 200) => Response.json(data, { status, headers: { "cache-control": "no-store" } });
 
 export async function POST(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   if (!aiReady()) return json({ error: "The live coach isn't switched on here." }, 503);
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   if (!rateLimit(`coach-demo:${ip}`, PER_MINUTE, 60_000)) return json({ error: "That's a lot of messages in a minute. Wait a moment." }, 429);

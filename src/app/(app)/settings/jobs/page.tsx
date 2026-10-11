@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/auth/current";
-import { JOBS, WEEKLY_JOBS, recentRuns, runDailyJobs } from "@/lib/services/jobs";
+import { redirect } from "next/navigation";
+import { JOBS, WEEKLY_JOBS, recentRuns, runDailyJobs, runLocalDailyJobs } from "@/lib/services/jobs";
+import { isLocal } from "@/lib/runtime/edition";
 import { todayIso } from "@/lib/services/time";
 import { Badge, Button, Card, Empty, Notice, PageHeader } from "@/components/ui";
 import { SETTINGS_TABS, SectionTabs } from "@/components/section-tabs";
@@ -12,12 +14,18 @@ export const metadata = { title: "Daily jobs · Fitron" };
 async function runNow() {
   "use server";
   const u = await requirePermission("settings.manage");
-  await runDailyJobs(u.orgId);
+  const out = await (isLocal() ? runLocalDailyJobs : runDailyJobs)(u.orgId);
   revalidatePath("/settings/jobs");
+  // A job waiting for the internet leaves no row below, so say which ones wait and why.
+  const labels = new Map(JOBS.map((j) => [j.name, j.label]));
+  const waiting = out.filter((j) => j.status === "waiting");
+  if (waiting.length) redirect(`/settings/jobs?${new URLSearchParams({ waiting: waiting.map((j) => `${labels.get(j.name) ?? j.name}: ${j.error}`).join("\n") })}`);
 }
 
-export default async function JobsPage() {
+export default async function JobsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const u = await requirePermission("settings.manage");
+  const sp = await searchParams;
+  const waiting = typeof sp.waiting === "string" ? sp.waiting.split("\n").filter(Boolean) : [];
   const runs = await recentRuns(u.orgId);
   const labels = new Map([...JOBS, ...WEEKLY_JOBS].map((j) => [j.name, j.label]));
   const today = todayIso();
@@ -43,10 +51,26 @@ export default async function JobsPage() {
         }
       />
       <SectionTabs u={u} tabs={SETTINGS_TABS} current="/settings?tab=help" />
-      <div className="mb-4">
-        <Notice>
-          On the server, a scheduler calls <code>/api/jobs/daily</code> each morning at about 6:30 with the <code>CRON_SECRET</code>. Each job runs once a day however many times it is called, and a failed job is retried on the next call. Messages held by quiet hours or a rule&apos;s Send at time go out when <code>/api/jobs/dispatch</code> is called (every 15 minutes), or when the WhatsApp page is opened. Once a week, on Sunday at about 2:30 at night, the scheduler calls <code>/api/jobs/weekly</code> to test that the latest backup restores.
-        </Notice>
+      <div className="mb-4 flex flex-col gap-3">
+        {waiting.length > 0 && (
+          <Notice tone="alert">
+            Waiting, and tried again within the hour:
+            <ul className="mt-1 list-disc pl-5">
+              {waiting.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </Notice>
+        )}
+        {isLocal() ? (
+          <Notice>
+            FITRON runs these on this computer a few minutes after it opens, then every hour while it is open: each job once a day, so a day the computer was off is caught up the next time it is on. A job that needs the internet (WhatsApp through Meta, Razorpay, email) waits for it and runs when the connection is back. Messages held by quiet hours go out on the hourly run, or when the WhatsApp page is opened.
+          </Notice>
+        ) : (
+          <Notice>
+            On the server, a scheduler calls <code>/api/jobs/daily</code> each morning at about 6:30 with the <code>CRON_SECRET</code>. Each job runs once a day however many times it is called, and a failed job is retried on the next call. Messages held by quiet hours or a rule&apos;s Send at time go out when <code>/api/jobs/dispatch</code> is called (every 15 minutes), or when the WhatsApp page is opened. Once a week, on Sunday at about 2:30 at night, the scheduler calls <code>/api/jobs/weekly</code> to test that the latest backup restores.
+          </Notice>
+        )}
       </div>
       {days.length === 0 ? (
         <Empty>No jobs have run yet.</Empty>

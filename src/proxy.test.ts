@@ -144,3 +144,38 @@ describe("the Content-Security-Policy it sends", () => {
     expect(r.headers.get("Content-Security-Policy-Report-Only")).toBeNull();
   });
 });
+
+describe("proxy on FITRON for Windows", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  const local = () => {
+    vi.stubEnv("FITRON_EDITION", "local");
+    vi.stubEnv("FITRON_LOCAL_ALLOW_SIGNUP", "");
+  };
+
+  it("leads what is not Gym Accounting to the console, and online-only sign-ins to its own sign-in", () => {
+    local();
+    expect(visit("/").headers.get("location")).toBe("http://localhost/dashboard");
+    expect(visit("/gym-accounting").headers.get("location")).toBe("http://localhost/dashboard");
+    expect(visit("/settings/billing", true).headers.get("location")).toBe("http://localhost/dashboard");
+    expect(visit("/signup").headers.get("location")).toBe("http://localhost/login");
+    expect(visit("/forgot-password").headers.get("location")).toBe("http://localhost/login");
+  });
+
+  it("sends an error screen's Contact support to the console's own Help & support", () => {
+    local();
+    expect(visit("/contact?topic=support").headers.get("location")).toBe("http://localhost/settings?tab=help");
+  });
+
+  it("answers 404 for an API that is not part of it", () => {
+    local();
+    expect(visit("/api/analytics-config").status).toBe(404);
+  });
+
+  it("keeps the console, and leaves everything open for the end-to-end suite's switch", () => {
+    local();
+    expect(visit("/dashboard", true).status).toBe(200);
+    vi.stubEnv("FITRON_LOCAL_ALLOW_SIGNUP", "1");
+    expect(visit("/gym-accounting").headers.get("location")).toBeNull();
+  });
+});
+

@@ -7,6 +7,8 @@ import { localChat } from "@/lib/services/ai-local";
 import { rateLimit } from "@/lib/rate-limit";
 import { AI_OFF_MESSAGE, aiOn } from "@/lib/services/ai-settings";
 import { log } from "@/lib/log";
+import { isLocal } from "@/lib/runtime/edition";
+import { isNetworkError, probablyOnline, SERVICE } from "@/lib/integrations/online";
 
 // Fitron AI chat. Streams newline-delimited JSON events: tool progress, text, proposals, done.
 export const maxDuration = 120;
@@ -18,6 +20,8 @@ const body = z.object({
     .max(20)
     .refine((m) => m[m.length - 1]!.role === "user", "The last message must be the user's."),
 });
+
+const OFFLINE_NOTE = "This computer is offline, so Fitron AI is answering from the books on this computer. Full answers require an internet connection.";
 
 export async function POST(req: Request) {
   const u = await getCurrentUser();
@@ -34,13 +38,37 @@ export async function POST(req: Request) {
   const stream = new ReadableStream({
     async start(ctrl) {
       const send = (e: ChatEvent) => ctrl.enqueue(enc.encode(JSON.stringify(e) + "\n"));
+      const question = parsed.data.messages.at(-1)!.content;
+      // On a computer with no internet the model cannot be reached: answer from the books on this computer instead, and
+      // say so, rather than waiting on a lookup that fails or showing "couldn't answer".
+      const fromBooks = async () => {
+        send({ type: "text", text: OFFLINE_NOTE });
+        for await (const e of localChat(u, question)) send(e);
+      };
+      let answered = false;
       try {
-        // Without a model key, answer from live data the way the prototype does offline.
-        const events = aiReady() ? chat(u, parsed.data.messages) : localChat(u, parsed.data.messages.at(-1)!.content);
-        for await (const e of events) send(e);
+        if (!aiReady()) {
+          // Without a model key, answer from live data the way the prototype does offline.
+          for await (const e of localChat(u, question)) send(e);
+        } else if (isLocal() && !(await probablyOnline(SERVICE.anthropic))) {
+          await fromBooks();
+        } else {
+          for await (const e of chat(u, parsed.data.messages)) {
+            if (e.type === "text" || e.type === "proposal") answered = true;
+            send(e);
+          }
+        }
       } catch (e) {
-        log.error("ai_chat.failed", e);
-        send({ type: "error", message: "Fitron AI couldn't answer just now. Try again in a minute." });
+        if (isLocal() && !answered && isNetworkError(e)) {
+          log.warn("ai_chat.offline", e);
+          await fromBooks().catch((err) => {
+            log.error("ai_chat.failed", err);
+            send({ type: "error", message: "Fitron AI couldn't answer just now. Try again in a minute." });
+          });
+        } else {
+          log.error("ai_chat.failed", e);
+          send({ type: "error", message: isLocal() && isNetworkError(e) ? "Fitron AI lost the internet connection while answering. Try again when the computer is online." : "Fitron AI couldn't answer just now. Try again in a minute." });
+        }
       }
       ctrl.close();
     },

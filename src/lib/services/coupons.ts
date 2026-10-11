@@ -1,4 +1,5 @@
 import "server-only";
+import { lockKey } from "@/lib/db-dialect";
 import { db } from "@/lib/db";
 import type { Coupon, Prisma } from "@/generated/prisma/client";
 import { applyCoupon, COUPON_AUDIENCE_PHRASE, couponCovers, couponState, HOLD_MINUTES, normaliseCode, type CouponAudience, type CouponProduct } from "@/lib/domain/coupons";
@@ -69,7 +70,7 @@ export async function quoteCoupon(raw: string, product: CouponProduct, payer: Pa
  * payer's own with this coupon that was never finished gives its place back.
  */
 export async function reserveCoupon(tx: Prisma.TransactionClient, quote: CouponQuote, product: CouponProduct, payer: Payer, paymentId: string) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`coupon:${quote.coupon.id}`}))`;
+  await lockKey(tx, `coupon:${quote.coupon.id}`);
   const coupon = await tx.coupon.findUniqueOrThrow({ where: { id: quote.coupon.id } });
   await tx.couponRedemption.updateMany({ where: { couponId: coupon.id, status: "PENDING", ...own(payer) }, data: { status: "RELEASED" } });
   await assertUsable(tx, coupon, product, payer);

@@ -53,3 +53,6 @@ session/
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Local Edition end-to-end database (npm run e2e:local)
+/.local-e2e/

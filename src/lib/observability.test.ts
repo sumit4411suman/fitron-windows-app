@@ -150,6 +150,8 @@ describe("reporting an error nobody caught", () => {
   beforeEach(() => {
     out = [];
     vi.stubEnv("NODE_ENV", "production");
+    // The Cloud Edition's alerts (npm run test:local runs this file too, as FITRON for Windows).
+    vi.stubEnv("FITRON_EDITION", "cloud");
     vi.stubEnv("SMTP_HOST", "smtp.example.com");
     vi.stubEnv("ERROR_ALERT_TO", "owner@example.com, second@example.com");
     for (const m of ["error", "warn", "log"] as const) vi.spyOn(console, m).mockImplementation((l: unknown) => void out.push(String(l)));
@@ -181,6 +183,13 @@ describe("reporting an error nobody caught", () => {
     expect(sendEmail).toHaveBeenCalledTimes(1);
     expect(sendEmail.mock.calls[0]![0]).toMatchObject({ to: "owner@example.com,second@example.com", subject: "[FITRON] Error on /same" });
     expect(out.filter((l) => l.includes("request.error"))).toHaveLength(3);
+  });
+
+  it("sends no alert email from FITRON for Windows: there is no operations inbox, and the log is the record", async () => {
+    vi.stubEnv("FITRON_EDITION", "local");
+    await run(fail("digest-local"), { routePath: "/local-only" });
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(out.filter((l) => l.includes("request.error"))).toHaveLength(1);
   });
 
   it("ignores redirects, not-found and rules shown to the user: no log line, no email", async () => {

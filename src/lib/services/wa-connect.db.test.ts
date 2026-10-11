@@ -12,6 +12,8 @@ const meta = vi.hoisted(() => ({
   submitTemplates: vi.fn(),
   templateStatuses: vi.fn(),
 }));
+// Online, as far as FITRON for Windows can tell (npm run test:local); Meta itself is a stand-in below.
+vi.mock("@/lib/integrations/online", async (orig) => ({ ...(await orig<typeof import("@/lib/integrations/online")>()), probablyOnline: vi.fn(async () => true) }));
 vi.mock("@/lib/integrations/whatsapp-cloud", async (orig) => ({ ...(await orig<typeof import("@/lib/integrations/whatsapp-cloud")>()), ...meta }));
 
 import { cloudTemplateStatus, connectCloud, disconnectCloud, resubmitTemplates } from "./wa-connect";

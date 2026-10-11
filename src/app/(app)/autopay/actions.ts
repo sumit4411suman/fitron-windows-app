@@ -12,6 +12,7 @@ import { toIso } from "@/lib/services/time";
 import { db } from "@/lib/db";
 import { resolveMemberRef } from "@/lib/services/members";
 import { UserError } from "@/lib/services/errors";
+import { runCountsText } from "@/lib/domain/wa-outcome";
 
 export async function createAction(_: FormState, fd: FormData): Promise<FormState> {
   const u = await requirePermission("autopay.manage");
@@ -36,12 +37,16 @@ export async function changeAction(id: string, action: "pause" | "resume" | "can
   return r;
 }
 
-const back = (msg: string, f?: string) => redirect(`/autopay?${f ? `f=${encodeURIComponent(f)}&` : ""}msg=${encodeURIComponent(msg)}`);
-const said = async (fn: () => Promise<string>) => {
+const back = (msg: string | { msg: string; tone: string }, f?: string) => {
+  const m = typeof msg === "string" ? { msg, tone: "ok" } : msg;
+  return redirect(`/autopay?${new URLSearchParams({ ...(f ? { f } : {}), msg: m.msg, ...(m.tone !== "ok" ? { tone: m.tone } : {}) })}`);
+};
+/** The action's message, or what refused it (shown in red). */
+const said = async (fn: () => Promise<string>): Promise<{ msg: string; tone: string }> => {
   try {
-    return await fn();
+    return { msg: await fn(), tone: "ok" };
   } catch (e) {
-    if (e instanceof UserError) return e.message;
+    if (e instanceof UserError) return { msg: e.message, tone: "alert" };
     throw e;
   }
 };
@@ -94,5 +99,5 @@ export async function runDueAction() {
   // The day-ahead notice is the "Autopay debit notice" template's rule; held messages wait for quiet hours to end.
   const n = await runRules(u.orgId, null, ["autopay"], undefined, undefined, { userId: u.id });
   revalidatePath("/autopay");
-  back(`${r.charged} debit${r.charged === 1 ? "" : "s"} collected · ${n.sent} pre-debit notice${n.sent === 1 ? "" : "s"} sent${n.held ? ` · ${n.held} held` : ""}.`);
+  back(`${r.charged} debit${r.charged === 1 ? "" : "s"} collected · pre-debit notices: ${runCountsText(n)}${n.failed ? `, ${n.failed} failed` : ""}${n.held ? ` · ${n.held} held` : ""}.`);
 }

@@ -15,6 +15,14 @@ vi.mock("@/lib/integrations/email", async (importOriginal) => ({
   }),
 }));
 
+// Whether the computer is online, for FITRON for Windows (npm run test:local); the test machine may have no DNS at all.
+const net = vi.hoisted(() => ({ up: true }));
+vi.mock("@/lib/integrations/online", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/integrations/online")>()),
+  probablyOnline: vi.fn(async () => net.up),
+}));
+
+import { isLocal } from "@/lib/runtime/edition";
 import { createMember } from "./members";
 import { createInvoice } from "./billing";
 import { createExpense } from "./expenses";
@@ -26,6 +34,7 @@ const FIRST = "2026-10-01";
 const NOW = new Date("2026-10-01T04:00:00Z");
 
 beforeEach(() => {
+  net.up = true;
   mail.sent = [];
   mail.ready = true;
   mail.failFor.clear();
@@ -162,5 +171,17 @@ describe.skipIf(!hasDb)("monthly profit and loss email (database)", () => {
     expect(await sendMonthlyPl(gym.org.id, FIRST, NOW)).toMatchObject({ sent: 2 }); // both Super Admins
     expect(mail.sent[0]!.text).toContain("Revenue: ₹1,200"); // ₹1,000 at A and ₹200 at B
     expect(mail.sent[0]!.text).toContain("Money received in the month: ₹700");
+  });
+
+  it.skipIf(!isLocal())("on a computer with no internet it waits: nothing is sent or recorded, and it goes once the internet is back", async () => {
+    const { gym } = await septemberGym();
+    net.up = false;
+    const waiting = job(await runDailyJobs(gym.org.id, FIRST, NOW));
+    expect(waiting).toMatchObject({ status: "waiting", error: expect.stringContaining("Emailing the monthly profit and loss requires an internet connection.") });
+    expect(mail.sent).toEqual([]);
+    expect(await db.jobRun.count({ where: { orgId: gym.org.id, name: "reports.monthly" } })).toBe(0);
+    expect(await db.notification.count({ where: { orgId: gym.org.id, type: "JOB_FAILED" } })).toBe(0);
+    net.up = true;
+    expect(job(await runDailyJobs(gym.org.id, FIRST, NOW))).toMatchObject({ status: "ran", result: { sent: 1, month: "2026-09" } });
   });
 });

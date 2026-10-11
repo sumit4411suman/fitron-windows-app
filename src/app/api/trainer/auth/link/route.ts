@@ -3,9 +3,12 @@ import { UserError } from "@/lib/services/errors";
 import { requestTrainerLink } from "@/lib/services/trainer";
 import { body, json } from "../../_lib/http";
 import { log } from "@/lib/log";
+import { notInLocal } from "@/lib/runtime/not-in-local";
 
 /** Email a one-time sign-in link (creates the account on first use). */
 export async function POST(req: Request) {
+  const off = notInLocal();
+  if (off) return off;
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
   if (!rateLimit(`trainer-link:${ip}`, 10, 10 * 60_000)) return json({ error: "Too many tries. Wait a few minutes and try again." }, 429);
   try {

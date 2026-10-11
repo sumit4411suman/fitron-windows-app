@@ -10,6 +10,7 @@ import { UserError } from "./errors";
 import { assertMonthOpen } from "./locks";
 import { nextNumber } from "./sequence";
 import { fromIso, toIso, todayIso } from "./time";
+import { ci } from "@/lib/db-dialect";
 
 type Tx = Prisma.TransactionClient;
 type AssetRow = Prisma.AssetGetPayload<object>;
@@ -42,7 +43,7 @@ export async function listAssets(u: CurrentUser, f: { q?: string; status?: strin
       ...scope(u),
       ...(f.status ? { status: f.status } : {}),
       ...(f.category ? { category: f.category } : {}),
-      ...(q ? { OR: [{ name: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }, { vendor: { contains: q, mode: "insensitive" } }, { serial: { contains: q, mode: "insensitive" } }] } : {}),
+      ...(q ? { OR: [{ name: ci(q) }, { code: ci(q) }, { vendor: ci(q) }, { serial: ci(q) }] } : {}),
     },
     orderBy: [{ purchaseDate: "desc" }, { createdAt: "desc" }],
     include: { branch: { select: { name: true } } },

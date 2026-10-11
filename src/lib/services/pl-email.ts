@@ -1,6 +1,7 @@
 import "server-only";
+import { jsonPath } from "@/lib/db-dialect";
 import { db } from "@/lib/db";
-import { emailReady, sendEmail } from "@/lib/integrations/email";
+import { emailReachable, emailReady, sendEmail } from "@/lib/integrations/email";
 import { log } from "@/lib/log";
 import { systemUser } from "@/lib/auth/system";
 import { planHas } from "@/lib/domain/features";
@@ -12,6 +13,9 @@ import { monthPeriod, profitAndLoss } from "./accounting";
 import { gymNameOf } from "./support";
 import { gymPlan } from "./saas";
 import { getSetting } from "./settings";
+import { isLocal } from "@/lib/runtime/edition";
+import { OfflineError, offlineMessage } from "@/lib/integrations/online";
+import { NotNow } from "./errors";
 
 // The first days of each month, the Super Admins of a gym with accounting get last month's profit and loss by email, with
 // the statement as an Excel file. It is a daily job; it knows when it has already done the month.
@@ -33,7 +37,7 @@ export async function sendMonthlyPl(orgId: string, today: string, now: Date): Pr
   if (plan.standing.kind === "LAPSED") return { sent: 0, note: "plan ended" };
   if (!planHas({ key: plan.key, name: plan.name, custom: plan.terms.custom }, "accounting")) return { sent: 0, note: "not on the plan" };
 
-  const done = await db.jobRun.findFirst({ where: { orgId, name: "reports.monthly", error: null, finishedAt: { not: null }, result: { path: ["month"], equals: month } }, select: { id: true } });
+  const done = await db.jobRun.findFirst({ where: { orgId, name: "reports.monthly", error: null, finishedAt: { not: null }, result: { path: jsonPath(["month"]), equals: month } }, select: { id: true } });
   if (done) return { sent: 0, month, note: "already sent" };
 
   const owners = await db.user.findMany({ where: { orgId, active: true, deletedAt: null, role: { name: "Super Admin" }, email: { not: "" } }, select: { name: true, email: true }, orderBy: { createdAt: "asc" } });
@@ -45,6 +49,8 @@ export async function sendMonthlyPl(orgId: string, today: string, now: Date): Pr
 
   // Without a mail server the message would only be logged; leave the month open for when there is one.
   if (!emailReady()) return { sent: 0, note: "email is not set up on this server" };
+  // A computer with no internet: wait for it (the month stays open), rather than fail every owner's address.
+  if (isLocal() && !(await emailReachable())) throw new NotNow(offlineMessage("Emailing the monthly profit and loss"));
 
   const gym = await gymNameOf(sys);
   const file = buildXlsx(plSheet(month, pl), { title: `${gym}: profit and loss, ${monthLabel(month)}`, now });
@@ -58,6 +64,8 @@ export async function sendMonthlyPl(orgId: string, today: string, now: Date): Pr
       await sendEmail({ to: o.email, ...plEmail({ gym, month, name: o.name, pl, settingsUrl }), attachments: [attachment] });
       sent++;
     } catch (e) {
+      // The internet went before anyone got it: wait for it, as when it was gone from the start.
+      if (e instanceof OfflineError && !sent) throw new NotNow(e.message);
       failed++;
       log.error("pl_email.failed", e, { orgId });
     }

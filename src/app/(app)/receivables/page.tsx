@@ -4,7 +4,7 @@ import { requirePermission } from "@/lib/auth/current";
 import { listReceivables } from "@/lib/services/billing";
 import { todayIso, toIso } from "@/lib/services/time";
 import { Tag } from "@/components/tag";
-import { ListHeader, Notice, Segmented, Stat, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
+import { ListHeader, Notice, toneOf, Segmented, Stat, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
 import { fmtDate, formatRupees } from "@/lib/format";
 import { remindAllOverdueAction, remindDueAction } from "../reminder-actions";
 
@@ -28,7 +28,7 @@ export default async function ReceivablesPage({ searchParams }: PageProps<"/rece
   return (
     <div className="flex flex-col gap-6 pt-4">
       <ListHeader kicker="Accounts receivable" title="Outstanding payments" />
-      {msg && <Notice tone="ok">{msg}</Notice>}
+      {msg && <Notice tone={toneOf(sp.tone)}>{msg}</Notice>}
       <div className="flex flex-wrap gap-x-10 gap-y-4">
         <Stat label="Outstanding" value={formatRupees(total)} tone="alert" />
         <Stat label="Overdue" value={formatRupees(counts.overdue!.amount)} />

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireUser, upgradePath } from "@/lib/auth/current";
 import { NAV } from "@/lib/nav";
+import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
 import { NavLinks } from "@/components/nav-links";
 import { MobileNav } from "@/components/mobile-nav";
 import { MobileTabBar } from "@/components/mobile-tabbar";
@@ -76,14 +77,16 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             : null;
   // Sections the role may use stay listed even when the plan doesn't open them: locked, leading to the plans.
   // Fitron AI disappears altogether when a Super Admin switched it off (Settings › Integrations & AI).
+  // FITRON for Windows is Gym Accounting only: no Gym Partnership (AI Trainer) and no FITRON team console.
+  const local = isLocal();
   const groups = NAV.map((g) => ({
     ...g,
     items: g.items
-      .filter((i) => (!i.perm || u.can(i.perm)) && (!i.anyPerm || i.anyPerm.some((p) => u.can(p))) && (ai.enabled || i.icon !== "ai"))
+      .filter((i) => (!i.perm || u.can(i.perm)) && (!i.anyPerm || i.anyPerm.some((p) => u.can(p))) && (ai.enabled || i.icon !== "ai") && !(local && i.icon === "partnership"))
       .map((i) => (i.feature && !u.has(i.feature) ? { ...i, locked: true, href: upgradePath(u, i.feature) } : { ...i, badge: i.count ? counts[i.count] : undefined })),
   })).filter((g) => g.items.length);
   // The FITRON team (FITRON_ADMIN_EMAILS) also gets the console for the whole SaaS: every gym, user and rupee earned.
-  if (isFitronAdmin(u.email)) groups.push({ group: "FITRON team", items: [{ href: "/fitron-admin", label: "FITRON admin", icon: "platform", badge: undefined }] });
+  if (isFitronAdmin(u.email) && !local) groups.push({ group: "FITRON team", items: [{ href: "/fitron-admin", label: "FITRON admin", icon: "platform", badge: undefined }] });
   const branchName = u.branch === "ALL" ? "All branches (consolidated)" : (u.branches.find((b) => b.id === u.branch)?.name ?? "");
 
   return (
@@ -115,7 +118,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
                 branch: u.branch === "ALL" ? "All branches" : (u.branches.find((b) => b.id === u.branch)?.name ?? ""),
                 photo: photoUrl(u.id, u.photoKey),
                 canSettings: canPay,
-                plan: s.kind === "PAID" ? "Active" : s.kind === "TRIAL" ? "Free trial" : "Locked",
+                plan: gymAccountingOnly() ? null : s.kind === "PAID" ? "Active" : s.kind === "TRIAL" ? "Free trial" : "Locked",
               }}
             />
           </div>
@@ -131,7 +134,8 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         email={u.email}
         sections={Object.fromEntries(groups.flatMap((g) => g.items.filter((i) => !i.locked).map((i) => [i.icon, i.href])))}
       />
-      <CookieBanner />
+      {/* FITRON for Windows sets no analytics or website cookies, so it asks nothing about them. */}
+      {!local && <CookieBanner />}
     </div>
   );
 }

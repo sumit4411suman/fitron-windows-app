@@ -9,6 +9,7 @@ import { isUniqueViolation, UserError } from "./errors";
 import { getSetting } from "./settings";
 import { fromIso, todayIso, toIso } from "./time";
 import { dayLog, trainerPaymentRef } from "./trainer";
+import { ciEquals } from "@/lib/db-dialect";
 
 // The Gym Partnership: a member of the AI Trainer links to a gym on FITRON with the gym's trainer code.
 // The gym then sees that member's training next to their dues, and earns PARTNER_SHARE of what the
@@ -76,7 +77,7 @@ export async function linkTrainerGym(memberId: string, codeRaw: string) {
   const phone = typeof ob.phone === "string" ? last10(ob.phone) : "";
 
   const live = { orgId: org.id, deletedAt: null, walkIn: false, trainerMember: null } as const;
-  let match = await db.member.findFirst({ where: { ...live, email: { equals: m.email, mode: "insensitive" } }, orderBy: { createdAt: "asc" } });
+  let match = await db.member.findFirst({ where: { ...live, email: ciEquals(m.email) }, orderBy: { createdAt: "asc" } });
   if (!match && phone.length === 10) {
     const byPhone = await db.member.findMany({ where: { ...live, phone: { endsWith: phone } }, take: 2 });
     if (byPhone.length === 1) match = byPhone[0]!;

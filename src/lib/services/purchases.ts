@@ -1,4 +1,5 @@
 import "server-only";
+import { ci, lockRow } from "@/lib/db-dialect";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import { writeBranch } from "@/lib/auth/current";
@@ -27,7 +28,7 @@ export async function listPurchases(u: CurrentUser, f: { q?: string; show?: "pay
     where: {
       ...scope(u),
       status: f.show === "cancelled" ? "CANCELLED" : "ACTIVE",
-      ...(q ? { OR: [{ vendor: { contains: q, mode: "insensitive" } }, { code: { contains: q, mode: "insensitive" } }, { billNo: { contains: q, mode: "insensitive" } }] } : {}),
+      ...(q ? { OR: [{ vendor: ci(q) }, { code: ci(q) }, { billNo: ci(q) }] } : {}),
     },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     include: { payments: { select: { amount: true } }, lines: { select: { type: true, description: true, qty: true, rate: true, gstPct: true, amount: true } }, branch: { select: { name: true } } },
@@ -166,7 +167,7 @@ export async function payVendor(u: CurrentUser, id: string, input: VendorPayInpu
   if (input.date > todayIso()) throw new UserError("The date can't be in the future.", "date");
   return db.$transaction(async (tx) => {
     // Lock the bill so two payments can't both clear the same balance.
-    await tx.$queryRaw`SELECT id FROM "Purchase" WHERE id = ${id} FOR UPDATE`;
+    await lockRow(tx, "Purchase", id);
     const paid = (await tx.vendorPayment.aggregate({ where: { purchaseId: id }, _sum: { amount: true } }))._sum.amount ?? 0;
     const balance = p.total - paid;
     if (input.amount > balance) throw new UserError(`That's more than the balance of ₹${(balance / 100).toLocaleString("en-IN")}.`, "amount");

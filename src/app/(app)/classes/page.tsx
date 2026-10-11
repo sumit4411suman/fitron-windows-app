@@ -7,7 +7,7 @@ import { getSession, weekSchedule, weekStart, WEEKDAYS } from "@/lib/services/cl
 import { memberScope, summarize } from "@/lib/services/members";
 import { fromIso, nowHHMM, todayIso } from "@/lib/services/time";
 import { Tag } from "@/components/tag";
-import { LinkButton, ListHeader, Notice, TABLE, TD, TH, cx, ScrollRegion } from "@/components/ui";
+import { LinkButton, ListHeader, Notice, toneOf as noticeTone, TABLE, TD, TH, cx, ScrollRegion } from "@/components/ui";
 import { fmtClock, fmtDate, initials } from "@/lib/format";
 import { SessionBook } from "./class-forms";
 import { bookingStatusAction, markAllAttendedAction, remindClassAction } from "./actions";
@@ -125,7 +125,7 @@ export default async function ClassesPage({ searchParams }: PageProps<"/classes"
         ))}
       </div>
 
-      {str("msg") && <Notice tone="ok">{str("msg")}</Notice>}
+      {str("msg") && <Notice tone={noticeTone(str("tone"))}>{str("msg")}</Notice>}
 
       {!list ? (
         <ScrollRegion label="Weekly timetable" className="pb-1.5">

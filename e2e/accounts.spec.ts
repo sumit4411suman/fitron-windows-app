@@ -1,4 +1,5 @@
 import { expect, newContext, setPlan, signIn, signOut, signUp, sql, test, unique } from "./support";
+import { EDITION } from "./env";
 
 test.describe("sign-up and sign-in", () => {
   test("a gym owner signs up, reaches the dashboard, signs out and signs back in", async ({ page }) => {
@@ -69,7 +70,7 @@ test.describe("the plan chosen on the site is the plan the gym gets", () => {
         [gym.email],
       );
       expect(org?.plan).toBe(plan);
-      expect(org?.trial, "a free trial is running").toBe(true);
+      expect(Boolean(org?.trial), "a free trial is running").toBe(true);
       // The account menu says the trial is running, and the billing page says until when.
       await page.getByRole("button", { name: "Account menu" }).click();
       await expect(page.getByRole("menuitem", { name: /Plan & billing/ })).toContainText("Free trial");
@@ -105,7 +106,10 @@ test("guessing passwords is slowed down: after five tries the page asks to wait"
     await expect(page.getByText("Email or password is incorrect.")).toBeVisible();
   }
   await submit(gym.password);
-  await expect(page.getByText("Too many attempts. Wait a minute and try again."), "even the right password waits").toBeVisible();
+  // Cloud: the per-address limit answers first. Local: every try comes from one computer, so the address limit is loose
+  // and the per-account lockout answers instead (src/app/login/actions.ts). Either way the right password waits.
+  const waits = EDITION === "local" ? /Too many wrong passwords for this account/ : /Too many attempts\. Wait a minute and try again\./;
+  await expect(page.getByText(waits), "even the right password waits").toBeVisible();
   await expect(page).toHaveURL(/\/login/);
 });
 
