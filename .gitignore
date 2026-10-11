@@ -56,3 +56,10 @@ session/
 
 # Local Edition end-to-end database (npm run e2e:local)
 /.local-e2e/
+
+# FITRON for Windows: the desktop shell's build output, the bundled Node.js runtime and the packaged server
+# (npm run desktop:bundle makes them).
+/src-tauri/target/
+/src-tauri/gen/
+/src-tauri/binaries/fitron-node*
+/build/local-server/

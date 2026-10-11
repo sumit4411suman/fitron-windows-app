@@ -1,0 +1,16 @@
+:root { color-scheme: light dark; --bg: #f7f7f5; --ink: #1d1d1b; --muted: #5f5f5a; --accent: #e85d04; --line: #e2e2dc; }
+@media (prefers-color-scheme: dark) { :root { --bg: #151514; --ink: #f1f1ee; --muted: #a5a59e; --line: #2c2c29; } }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; display: grid; place-items: center; }
+main { max-width: 520px; padding: 24px; text-align: center; }
+h1 { font-size: 22px; margin: 16px 0 24px; letter-spacing: 0.02em; }
+h2 { font-size: 18px; margin: 0 0 8px; }
+p { margin: 8px 0; }
+.small { color: var(--muted); font-size: 13px; }
+code { font: 12px Consolas, ui-monospace, monospace; word-break: break-all; }
+.bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; margin: 0 auto 16px; width: 220px; }
+.bar span { display: block; height: 100%; width: 40%; background: var(--accent); border-radius: 2px; animation: slide 1.2s ease-in-out infinite; }
+@keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+@media (prefers-reduced-motion: reduce) { .bar span { animation: none; width: 100%; opacity: 0.5; } }
+#failed { text-align: left; border: 1px solid var(--line); border-radius: 8px; padding: 16px; }

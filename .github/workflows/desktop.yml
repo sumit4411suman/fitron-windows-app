@@ -1,0 +1,40 @@
+name: Desktop (Windows)
+
+# FITRON Gym Accounting for Windows (docs/local-windows/DESKTOP.md): the desktop shell, built and run on Windows.
+# The packaged server is checked as the shell starts it, then the real program is started, closed and ended
+# (npm run desktop:smoke).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Shell tests
+        working-directory: src-tauri
+        run: |
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+      - name: Package the server with this Node.js, and check it
+        run: npm run desktop:bundle
+      - name: Build the desktop program
+        run: npx tauri build --no-bundle --config src-tauri/tauri.bundle.conf.json
+      - name: Start, close and end the desktop program
+        run: npm run desktop:smoke

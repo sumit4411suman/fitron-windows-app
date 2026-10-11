@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import path from "node:path";
 
-// A Local Edition server of its own, started the way the desktop shell starts it (Phase 14): the production build,
+// A Local Edition server of its own, started much as the desktop shell starts it (src-tauri): the production build,
 // FITRON_EDITION=local, a data folder, 127.0.0.1 only, and nothing else. No test-only switches, no shared database.
 export type LocalServer = { url: string; dataDir: string; stop: () => Promise<void> };
 
@@ -51,8 +51,9 @@ export async function startLocalServer(dataDir: string, port: number, extra: Rec
   return {
     url,
     dataDir,
-    // As the desktop shell will (Phase 14): ask it to stop, and stop it after 5 seconds if it is still waiting for the
-    // browser's open connections to close. Every committed change is already on disk (WAL, synchronous=FULL).
+    // Ask it to stop, and stop it after 5 seconds if it is still waiting for the browser's open connections to close.
+    // Every committed change is already on disk (WAL, synchronous=FULL). The desktop shell stops its server by closing
+    // standard input instead (src/lib/runtime/local-shutdown.ts, npm run desktop:smoke).
     stop: () =>
       new Promise<void>((resolve) => {
         if (child.exitCode !== null || child.signalCode !== null) return resolve();

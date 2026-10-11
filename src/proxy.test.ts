@@ -171,6 +171,17 @@ describe("proxy on FITRON for Windows", () => {
     expect(visit("/api/analytics-config").status).toBe(404);
   });
 
+  it("answers only requests addressed to this computer, never a website pointed at 127.0.0.1", () => {
+    local();
+    const at = (host: string) => proxy(new NextRequest("http://127.0.0.1:51234/dashboard", { headers: { host, cookie: "fitron_session=abc" } }));
+    expect(at("127.0.0.1:51234").status).toBe(200);
+    expect(at("localhost:51234").status).toBe(200);
+    expect(at("attacker.example:51234").status).toBe(421);
+    expect(at("192.168.1.20:51234").status).toBe(421);
+    vi.stubEnv("FITRON_EDITION", "");
+    expect(at("fitron.in").status).toBe(200);
+  });
+
   it("keeps the console, and leaves everything open for the end-to-end suite's switch", () => {
     local();
     expect(visit("/dashboard", true).status).toBe(200);

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildCsp, cspHeaderName, cspMode, type CspTier } from "@/lib/csp";
 import { isGuardedPath, isNotInLocal, isOnlineOnlyAuthPath } from "@/lib/public-paths";
+import { isLoopbackHost } from "@/lib/runtime/loopback";
 
 // Runs before every page. Two jobs:
 //  1. Optimistic check only: send visitors without a session cookie to sign-in when they ask for a console page or a
@@ -10,7 +11,9 @@ import { isGuardedPath, isNotInLocal, isOnlineOnlyAuthPath } from "@/lib/public-
 //     Next.js reads it from the request header set here and puts it on its own scripts.
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
-  // Local Edition: no fitron.in account, no email, maybe no internet. Its own sign-in handles everything.
+  // Local Edition: only requests addressed to this computer, never a website that pointed its name at it
+  // (src/lib/runtime/loopback.ts).
+  if (process.env.FITRON_EDITION === "local" && !isLoopbackHost(req.headers.get("host") ?? req.nextUrl.host)) return new NextResponse("FITRON answers only on this computer.", { status: 421 });
   // Local Edition: FITRON Gym Accounting only. No fitron.in account, website, AI Trainer or FITRON billing; its own
   // sign-in handles signing in. (FITRON_LOCAL_ALLOW_SIGNUP is the end-to-end suite's switch, never set when shipped.)
   if (process.env.FITRON_EDITION === "local" && process.env.FITRON_LOCAL_ALLOW_SIGNUP !== "1") {

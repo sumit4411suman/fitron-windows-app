@@ -10,7 +10,7 @@ import { dataDirs } from "./paths";
 
 const HOUR = 60 * 60_000;
 const DUE_AFTER = 23 * HOUR;
-const g = globalThis as unknown as { fitronScheduler?: NodeJS.Timeout; fitronAutoBackupRunning?: boolean; fitronJobsRunning?: boolean };
+const g = globalThis as unknown as { fitronScheduler?: NodeJS.Timeout; fitronAutoBackupRunning?: boolean; fitronJobsRunning?: boolean; fitronStopping?: boolean };
 
 export async function autoBackupIfDue(now = new Date()): Promise<"done" | "not-due" | "off" | "busy"> {
   const s = readLocalSettings();
@@ -53,11 +53,14 @@ export async function localJobsIfDue(now = new Date()): Promise<"done" | "busy">
 export function startLocalScheduler() {
   if (g.fitronScheduler) return;
   // The backup first, so the day's jobs never run on data that has not been backed up yet today.
-  const tick = () =>
+  // Nothing starts once FITRON is closing (src/lib/runtime/local-shutdown.ts).
+  const tick = () => {
+    if (g.fitronStopping) return;
     void autoBackupIfDue()
       .catch(() => {})
-      .then(() => localJobsIfDue())
+      .then(() => (g.fitronStopping ? undefined : localJobsIfDue()))
       .catch(() => {});
+  };
   // A couple of minutes after start, so opening FITRON is never slowed down by a backup.
   setTimeout(tick, 2 * 60_000).unref();
   g.fitronScheduler = setInterval(tick, HOUR);

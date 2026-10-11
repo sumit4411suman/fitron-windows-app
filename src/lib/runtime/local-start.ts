@@ -5,6 +5,7 @@ import { migrateLocal } from "./local-migrate";
 import { ensureLocalSecrets } from "./local-secrets";
 import { recoverDocuments } from "./fitron-backup";
 import { startLocalScheduler } from "./local-scheduler";
+import { stopWhenShellCloses } from "./local-shutdown";
 
 // What the Local Edition does before serving: make the data folders, apply pending migrations. The result is kept so
 // /api/health can report it and refuse to say "ok" while the database is not ready.
@@ -21,6 +22,9 @@ export async function startLocalEdition(): Promise<LocalStartState> {
   const dirs = dataDirs(root);
   const state: LocalStartState = { ready: false, applied: [], dataRoot: root, startedAt: new Date().toISOString() };
   g.fitronLocalStart = state;
+  // Started by the desktop shell: stop cleanly when FITRON closes (src/lib/runtime/local-shutdown.ts). First, so a
+  // start that fails still stops when asked.
+  if (process.env.FITRON_SHELL === "1") stopWhenShellCloses(localDatabaseUrl().replace(/^file:/, ""));
   try {
     // A restore that stopped half-way through swapping the documents folder: put the old one back, before anything
     // makes a new, empty documents folder.
