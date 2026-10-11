@@ -4,8 +4,8 @@ import { SYNC_PROTOCOL, type SyncErrorBody } from "@/lib/sync/protocol";
 
 // Cloud sync, the computer's only connection to fitron.in (docs/local-windows/SYNC.md). Off until the gym's owner links
 // this computer in Settings › Cloud sync. What it sends: the gym's own records (members, plans, invoices, payments,
-// expenses and the rest listed in src/lib/sync/entities.ts), to the gym's own account on fitron.in, over HTTPS, with the
-// device token fitron.in issued at linking. Never another gym's, never to anyone else, never passwords or two-step
+// expenses and the rest listed in src/lib/sync/entities.ts) and the files they point to (documents, photos, the logo),
+// to the gym's own account on fitron.in, over HTTPS, with the device token fitron.in issued at linking. Never another gym's, never to anyone else, never passwords or two-step
 // secrets. What it receives: the same records, changed on the website.
 
 /** fitron.in, or (development and tests only) another address given to the server. */
@@ -60,6 +60,44 @@ export async function cloudCall<T>(base: string, path: string, o: { method?: "GE
     throw new SyncHttpError(res.status, b.error || (res.status >= 500 ? "fitron.in had a problem. FITRON tries again shortly." : `fitron.in refused the request (${res.status}).`), b.code);
   }
   return json as T;
+}
+
+async function fileRequest(base: string, token: string, query: URLSearchParams, init: { method: "GET" | "PUT"; body?: Uint8Array }): Promise<Response> {
+  try {
+    return await fetch(`${base}/api/sync/files?${query}`, {
+      method: init.method,
+      headers: { Authorization: `Bearer ${token}`, "X-Fitron-Sync": String(SYNC_PROTOCOL), ...(init.body ? { "Content-Type": "application/octet-stream" } : {}) },
+      body: init.body as BodyInit | undefined,
+      signal: AbortSignal.timeout(120_000),
+      cache: "no-store",
+    });
+  } catch (e) {
+    if (isNetworkError(e) || (e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError"))) throw new SyncHttpError(0, OFFLINE);
+    throw e;
+  }
+}
+
+async function refused(res: Response): Promise<SyncHttpError> {
+  let b: Partial<SyncErrorBody> = {};
+  try {
+    b = (await res.json()) as Partial<SyncErrorBody>;
+  } catch {}
+  return new SyncHttpError(res.status, b.error || `fitron.in refused the file (${res.status}).`, b.code);
+}
+
+/** One piece of a file from fitron.in, with the whole file's size and number of pieces; null when it has no such file. */
+export async function cloudFileGet(base: string, token: string, key: string, part: number): Promise<{ body: Uint8Array; size: number; parts: number } | null> {
+  const res = await fileRequest(base, token, new URLSearchParams({ key, part: String(part) }), { method: "GET" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw await refused(res);
+  return { body: new Uint8Array(await res.arrayBuffer()), size: Number(res.headers.get("x-file-size")), parts: Number(res.headers.get("x-file-parts")) };
+}
+
+/** Sends one piece of a file to fitron.in. "stored" once the whole file is there, "part" while pieces are missing. */
+export async function cloudFilePut(base: string, token: string, key: string, o: { part: number; parts: number; size: number }, body: Uint8Array): Promise<"stored" | "part" | "had"> {
+  const res = await fileRequest(base, token, new URLSearchParams({ key, part: String(o.part), parts: String(o.parts), size: String(o.size) }), { method: "PUT", body });
+  if (!res.ok) throw await refused(res);
+  return ((await res.json()) as { result: "stored" | "part" | "had" }).result;
 }
 
 /**

@@ -10,7 +10,12 @@ const dir = await vi.hoisted(async () => {
   return d;
 });
 
-const cloud = vi.hoisted(() => ({ calls: [] as { path: string; body?: unknown }[], handler: (async () => ({})) as (p: string, body?: unknown) => Promise<unknown> }));
+const cloud = vi.hoisted(() => ({
+  calls: [] as { path: string; body?: unknown }[],
+  handler: (async () => ({})) as (p: string, body?: unknown) => Promise<unknown>,
+  files: new Map<string, Uint8Array>(),
+  sent: [] as { key: string; part: number; parts: number; size: number; length: number }[],
+}));
 vi.mock("@/lib/integrations/sync", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/integrations/sync")>();
   return {
@@ -18,6 +23,16 @@ vi.mock("@/lib/integrations/sync", async (importOriginal) => {
     cloudCall: vi.fn(async (_base: string, p: string, o?: { body?: unknown }) => {
       cloud.calls.push({ path: p, body: o?.body });
       return cloud.handler(p, o?.body);
+    }),
+    // fitron.in's files, 1,000 bytes a piece here so that pieces are exercised with small files.
+    cloudFileGet: vi.fn(async (_b: string, _t: string, key: string, part: number) => {
+      const f = cloud.files.get(key);
+      if (!f) return null;
+      return { body: f.subarray(part * 1000, (part + 1) * 1000), size: f.length, parts: Math.ceil(f.length / 1000) };
+    }),
+    cloudFilePut: vi.fn(async (_b: string, _t: string, key: string, o: { part: number; parts: number; size: number }, body: Uint8Array) => {
+      cloud.sent.push({ key, ...o, length: body.length });
+      return "stored";
     }),
   };
 });
@@ -30,7 +45,8 @@ import { createMember, updateMember } from "@/lib/services/members";
 import { runLocalDailyJobs, ON_FITRON_IN } from "@/lib/services/jobs";
 import { todayIso } from "@/lib/services/time";
 import { readRecord } from "./records";
-import { dismissFailed, pullAll, pushPending, readState, retryFailed, sealToken, syncOnce, trimUploaded } from "./client";
+import { dismissFailed, pullAll, pushPending, readState, retryFailed, sealToken, syncFiles, syncOnce, trimUploaded } from "./client";
+import { getObjectOrNull, putObject } from "@/lib/integrations/storage";
 import type { ChangesPage, PushItem, PushResult, SnapshotPage } from "./protocol";
 
 type Gym = Awaited<ReturnType<typeof makeGym>>;
@@ -217,5 +233,47 @@ describe.skipIf(!isLocal())("cloud sync on the computer (database)", () => {
     expect(await db.lead.count({ where: { id: stray.id } })).toBe(0);
     expect(await db.syncConflict.count({ where: { kind: "only-here", entity: "Invoice" } })).toBe(await db.invoice.count({ where: { orgId: gym.org.id } }));
     expect(await readState()).toMatchObject({ needsSnapshot: false, pulledSeq: BigInt(500) });
+  });
+  it("brings files across after their records, both ways, and an erasure on fitron.in removes the file here", async () => {
+    await db.syncChange.updateMany({ where: { status: "PENDING" }, data: { status: "DONE" } });
+    const m = await newMember("Has Papers", "9822000021");
+    const pdf = (n: number, fill: number) => {
+      const b = Buffer.alloc(n, fill);
+      b.write("%PDF-1.7\n", 0);
+      return new Uint8Array(b);
+    };
+    const doc = (key: string, size: number) => db.memberDocument.create({ data: { orgId: gym.org.id, memberId: m.id, kind: "ID proof", title: key, fileName: "f.pdf", mime: "application/pdf", size, storageKey: key, uploadedById: owner.id } });
+    const here = `${gym.org.id}/members/${m.id}/here.pdf`;
+    const there = `${gym.org.id}/members/${m.id}/there.pdf`;
+    const nowhere = `${gym.org.id}/members/${m.id}/nowhere.pdf`;
+    const hereBody = pdf(1500, 1);
+    const thereBody = pdf(2500, 2);
+    await putObject(here, hereBody, "application/pdf");
+    await doc(here, hereBody.length);
+    const thereDoc = await doc(there, thereBody.length);
+    await doc(nowhere, 10);
+    cloud.files.set(there, thereBody);
+    cloud.sent.length = 0;
+    cloud.handler = async (p) => (p === "/api/sync/files" ? { missing: [here, nowhere, "another-gym/x.pdf"] } : {});
+
+    const r = await syncFiles(await conn());
+    expect(r).toEqual({ up: 1, down: 1 });
+    // Up: the one fitron.in lacks and this computer has, whole, in its own pieces.
+    expect(cloud.sent.filter((s) => s.key === here).reduce((n, s) => n + s.length, 0)).toBe(hereBody.length);
+    expect(cloud.sent.some((s) => s.key !== here)).toBe(false);
+    // Down: the one this computer lacks, put together from three pieces.
+    expect(Buffer.from((await getObjectOrNull(there))!).equals(Buffer.from(thereBody))).toBe(true);
+    // Neither side has this one: asked again later, not on every round.
+    expect(await syncFiles(await conn())).toEqual({ up: 1, down: 0 });
+
+    // The document is erased on fitron.in: its record goes, and so does its file here.
+    await db.syncChange.updateMany({ where: { status: "PENDING" }, data: { status: "DONE" } });
+    const from = Number((await readState())!.pulledSeq);
+    cloud.handler = async () => ({ changes: [{ seq: from + 1, entity: "MemberDocument", entityId: thereDoc.id, op: "delete", data: null, origin: "cloud" }], next: from + 1, latest: from + 1, more: false, resync: false }) satisfies ChangesPage;
+    expect(await pullAll(await conn())).toBe(1);
+    expect(await db.memberDocument.count({ where: { id: thereDoc.id } })).toBe(0);
+    expect(await getObjectOrNull(there)).toBeNull();
+    // The other document's file stays.
+    expect(await getObjectOrNull(here)).not.toBeNull();
   });
 });

@@ -14,6 +14,7 @@ import { changedFields, keyFields, keyOf, SyncDataError, toWire, type WireRow } 
 import { SYNC_ENTITIES, SYNC_ENTITY, type SyncEntity } from "./entities";
 import { decide, type ConflictNote } from "./merge";
 import { readPage, readRecord, writeRecord } from "./records";
+import { droppedFileKeys, removeUnusedFiles } from "./files";
 import { PULL_LIMIT, PUSH_LIMIT, SNAPSHOT_LIMIT, type ChangesPage, type GymCheck, type LinkedGym, type PulledChange, type PushItem, type PushResult, type SnapshotPage } from "./protocol";
 
 // Cloud sync, the fitron.in side (docs/local-windows/SYNC.md §2, §5–7). Computers never write to the database: they send
@@ -271,7 +272,7 @@ function refusal(e: unknown): string | null {
   return null;
 }
 
-async function applyOne(tx: Tx, dev: DeviceAuth, item: PushItem): Promise<{ result: PushResult; conflict?: ConflictNote }> {
+async function applyOne(tx: Tx, dev: DeviceAuth, item: PushItem): Promise<{ result: PushResult; conflict?: ConflictNote; dropped?: string[] }> {
   const spec = SYNC_ENTITY.get(item.entity);
   if (!spec) throw new SyncRejection(`${item.entity} is not synced.`);
   if (item.op !== "upsert" && item.op !== "delete") throw new SyncRejection("Unknown change.");
@@ -309,7 +310,8 @@ async function applyOne(tx: Tx, dev: DeviceAuth, item: PushItem): Promise<{ resu
     await writeRecord(tx, item.entity, item.entityId, d.data);
   }
   const merged = d.data && incoming && changedFields(item.entity, d.data, incoming).length ? d.data : undefined;
-  return { result: { changeId: item.changeId, status: "applied", version: await version(), ...(merged ? { current: merged } : {}), ...(d.conflict ? { conflict: d.conflict } : {}) }, conflict: d.conflict };
+  const dropped = droppedFileKeys(item.entity, current, d.data);
+  return { result: { changeId: item.changeId, status: "applied", version: await version(), ...(merged ? { current: merged } : {}), ...(d.conflict ? { conflict: d.conflict } : {}) }, conflict: d.conflict, dropped };
 }
 
 async function keepConflict(tx: Tx, dev: DeviceAuth, item: PushItem, c: ConflictNote) {
@@ -324,16 +326,22 @@ export async function pushOne(dev: DeviceAuth, item: PushItem): Promise<PushResu
   const seen = await db.syncApplied.findUnique({ where: { changeId: item.changeId } });
   if (seen) return seen.deviceId === dev.id ? { ...(seen.result as unknown as PushResult), replayed: true } : { changeId: item.changeId, status: "rejected", reason: "Bad change id." };
   try {
-    return await db.$transaction(
+    let dropped: string[] = [];
+    const out = await db.$transaction(
       async (tx) => {
         await tx.$executeRaw`SELECT set_config('fitron.sync_origin', ${`device:${dev.id}`}, true)`;
-        const { result, conflict } = await applyOne(tx, dev, item);
-        if (conflict) await keepConflict(tx, dev, item, conflict);
-        await tx.syncApplied.create({ data: { changeId: item.changeId, orgId: dev.orgId, deviceId: dev.id, result: result as unknown as Prisma.InputJsonValue } });
-        return result;
+        const applied = await applyOne(tx, dev, item);
+        if (applied.conflict) await keepConflict(tx, dev, item, applied.conflict);
+        await tx.syncApplied.create({ data: { changeId: item.changeId, orgId: dev.orgId, deviceId: dev.id, result: applied.result as unknown as Prisma.InputJsonValue } });
+        dropped = applied.dropped ?? [];
+        return applied.result;
       },
       { timeout: 30_000, maxWait: 15_000 },
     );
+    // A file whose last record went away with this change (a member erased, a photo replaced on the computer) goes here
+    // too, once the change has committed.
+    if (dropped.length) await removeUnusedFiles(dev.orgId, dropped);
+    return out;
   } catch (e) {
     const reason = refusal(e);
     if (!reason) throw e;

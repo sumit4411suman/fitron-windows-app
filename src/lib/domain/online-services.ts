@@ -65,7 +65,7 @@ export function onlineServices(s: OnlineServicesState): OnlineServiceRow[] {
       on: !!s.sync.linkedTo,
       state: s.sync.linkedTo ? `Linked to ${s.sync.linkedTo}` : "Not linked",
       sends: s.sync.linkedTo
-        ? `Every record of the gym (members, memberships, invoices, payments, expenses, attendance, saved WhatsApp messages, the gym's settings, and staff accounts without their passwords or sign-in codes) to your own gym on ${s.sync.linkedTo}, and changes made there come back. Over HTTPS, to nowhere else.`
+        ? `Every record of the gym (members, memberships, invoices, payments, expenses, attendance, saved WhatsApp messages, the gym's settings, and staff accounts without their passwords or sign-in codes), with the documents, photos and logo they point to, to your own gym on ${s.sync.linkedTo}, and changes made there come back. Over HTTPS, to nowhere else.`
         : "Nothing. The books stay on this computer.",
     },
     {

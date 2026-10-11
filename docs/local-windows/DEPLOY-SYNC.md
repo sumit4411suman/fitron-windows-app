@@ -89,8 +89,12 @@ Nothing in these logs holds record contents except `SyncConflict` (both versions
 
 ## 7. Known limits of this release
 
-- **Files**: member documents, photos and the gym logo sync as records (name, size, storage key), not as files; a
-  computer that downloaded the gym does not have the website's files, and the website does not have the computer's.
+- **Files** (member documents and photos, staff photos, the logo) follow their records after each round that moved
+  records, and every 10 minutes otherwise, 20 a pass each way, in 3 MB pieces (`/api/sync/files`; the host takes
+  about 4.5 MB a request). Only a file a record of the same gym points to moves, only up to 10 MB, only the types an
+  upload accepts (checked by content), never a backup. A file whose last record went away through sync (an erasure,
+  a replaced photo) is removed on the other side too; a whole-gym download after a restore never removes files, so
+  their bytes stay in the storage folder if the restore dropped their records.
 - **Staff passwords** never sync: staff who arrive on the other side sign in once a Super Admin sets their password
   there.
 - **WhatsApp** transport settings (Meta keys, the connector) stay on each side; messages and templates sync.

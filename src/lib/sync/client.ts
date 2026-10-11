@@ -4,11 +4,13 @@ import { db } from "@/lib/db";
 import { log } from "@/lib/log";
 import { isLocal } from "@/lib/runtime/edition";
 import { sealSecret, unsealSecret } from "@/lib/services/two-step";
-import { cloudCall, SyncHttpError } from "@/lib/integrations/sync";
+import { cloudCall, cloudFileGet, cloudFilePut, SyncHttpError } from "@/lib/integrations/sync";
+import { getObjectOrNull, putObject, sniffType } from "@/lib/integrations/storage";
 import { keyFields, keyOf, SyncDataError, type WireRow } from "./codec";
 import { SYNC_ENTITIES, SYNC_ENTITY } from "./entities";
 import type { ConflictNote } from "./merge";
 import { readRecord, writeRecord } from "./records";
+import { droppedFileKeys, FILE_ENTITIES, FILE_PART, missingFiles, removeUnusedFiles, SYNC_FILE_MAX } from "./files";
 import { PUSH_LIMIT, type ChangesPage, type PushItem, type PushResult, type SnapshotPage } from "./protocol";
 
 // Cloud sync, the computer's side (docs/local-windows/SYNC.md §5). The desk never waits for it: every change is saved
@@ -120,16 +122,32 @@ export function conflictWords(c?: ConflictNote): string {
 
 const isDataError = (e: unknown) => e instanceof SyncDataError || (!!e && typeof e === "object" && ["P2002", "P2003", "P2025"].includes((e as { code?: string }).code ?? "")) || (e as { code?: string })?.code === "FITRON_GUARD";
 
-async function applyPulled(tx: Tx, ch: ChangesPage["changes"][number]) {
+/** Writes a record that came from fitron.in, noting the files it no longer points to in `gone`. */
+async function writeFromCloud(tx: Tx, entity: string, entityId: string, data: WireRow | null, gone: Set<string>) {
+  if (FILE_ENTITIES.has(entity)) for (const k of droppedFileKeys(entity, await readRecord(tx, entity, entityId), data)) gone.add(k);
+  await writeRecord(tx, entity, entityId, data);
+}
+
+async function applyPulled(tx: Tx, ch: ChangesPage["changes"][number], gone: Set<string>) {
   // A record changed here and not yet uploaded is left as it is: the upload goes first, from the version this
   // computer started from, and fitron.in decides (SYNC.md §6); its answer, and the next download, bring the result.
   if (await hasPending(tx, ch.entity, ch.entityId)) return;
-  await writeRecord(tx, ch.entity, ch.entityId, ch.op === "delete" ? null : ch.data);
+  await writeFromCloud(tx, ch.entity, ch.entityId, ch.op === "delete" ? null : ch.data, gone);
   await setVersion(tx, ch.entity, ch.entityId, ch.seq);
 }
 
 /** Downloads and applies every change since the checkpoint. Returns how many were applied. */
 export async function pullAll(c: Conn): Promise<number> {
+  const gone = new Set<string>();
+  try {
+    return await pullPages(c, gone);
+  } finally {
+    // Files whose last record went away on fitron.in (a member erased there, a photo replaced) go here too.
+    if (gone.size) await removeUnusedFiles(c.state.orgId, gone);
+  }
+}
+
+async function pullPages(c: Conn, gone: Set<string>): Promise<number> {
   let since = Number(c.state.pulledSeq);
   let total = 0;
   for (let round = 0; round < 1000; round++) {
@@ -141,7 +159,7 @@ export async function pullAll(c: Conn): Promise<number> {
     if (page.changes.length) {
       try {
         await fromCloud(async (tx) => {
-          for (const ch of page.changes) await applyPulled(tx, ch);
+          for (const ch of page.changes) await applyPulled(tx, ch, gone);
           await tx.syncState.update({ where: { id: 1 }, data: { pulledSeq: BigInt(page.next), appliedSeq: BigInt(page.next), lastPullAt: new Date() } });
         });
       } catch (e) {
@@ -151,7 +169,7 @@ export async function pullAll(c: Conn): Promise<number> {
         for (const ch of page.changes) {
           try {
             await fromCloud(async (tx) => {
-              await applyPulled(tx, ch);
+              await applyPulled(tx, ch, gone);
               await tx.syncState.update({ where: { id: 1 }, data: { pulledSeq: BigInt(ch.seq), appliedSeq: BigInt(ch.seq), lastPullAt: new Date() } });
             });
           } catch (err) {
@@ -198,6 +216,7 @@ export async function downloadGym(o: { base: string; token: string; client: type
             const id = keyOf(e.name, r.data);
             seen.add(id);
             if (await hasPending(tx, e.name, id)) continue;
+            // Files are never removed by a whole-gym download (a restore on either side): only a change that dropped them is.
             await writeRecord(tx, e.name, id, r.data);
             await setVersion(tx, e.name, id, r.version);
           }
@@ -223,6 +242,7 @@ async function removeMissing(client: typeof db, orgId: string, entity: string, s
     if (entity === "Setting" && spec.skipKeys?.includes(String(row.key))) continue;
     await client.$transaction(async (tx) => {
       await tx.$executeRaw`INSERT OR REPLACE INTO "_fitron_sync_apply" ("id") VALUES (1)`;
+      // Its file, if it has one, stays in the documents folder (see downloadGym).
       if (spec.deletable) await writeRecord(tx, entity, id, null);
       else await tx.syncConflict.create({ data: { orgId, entity, entityId: id, kind: "only-here", fields: "" } });
       await tx.$executeRaw`DELETE FROM "_fitron_sync_apply"`;
@@ -242,7 +262,7 @@ export async function resync(c: Conn): Promise<void> {
 
 // ── One round ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type RoundResult = { pushed: number; pulled: number; resynced: boolean };
+export type RoundResult = { pushed: number; pulled: number; resynced: boolean; files?: FilesResult };
 
 /** Upload what waits, then download what is new. Throws SyncHttpError when fitron.in cannot be reached or refuses. */
 export async function syncOnce(base: string): Promise<RoundResult | null> {
@@ -271,6 +291,14 @@ export async function syncOnce(base: string): Promise<RoundResult | null> {
       out.resynced = true;
       out.pulled += await pullAll(c);
     }
+    // Files follow their records. A file that cannot move now is tried again later; it never holds the records back.
+    if (filesDue(!!(out.pushed || out.pulled || out.resynced))) {
+      try {
+        out.files = await syncFiles(c);
+      } catch (e) {
+        if (!(e instanceof SyncHttpError)) log.error("sync.files_failed", e);
+      }
+    }
     await db.syncState.update({ where: { id: 1 }, data: { lastOkAt: new Date(), lastError: null, failures: 0 } });
     return out;
   } catch (e) {
@@ -279,6 +307,80 @@ export async function syncOnce(base: string): Promise<RoundResult | null> {
     throw e;
   }
 }
+
+// ── Files ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+const fg = globalThis as unknown as { fitronSyncFiles?: { at: number; skip: Map<string, number> } };
+const files = () => (fg.fitronSyncFiles ??= { at: 0, skip: new Map() });
+/** A file neither side has, or one fitron.in refused, is asked about again after this long. */
+const FILE_RETRY_MS = 60 * 60_000;
+/** The file pass runs after a round that moved records, and otherwise every this often. */
+const FILES_EVERY_MS = 10 * 60_000;
+/** Files per direction per pass; the rest follow on the next. */
+const FILES_PER_PASS = 20;
+
+export type FilesResult = { up: number; down: number };
+
+/**
+ * Brings files across after their records (src/lib/sync/files.ts): first the ones fitron.in's records point to and it
+ * lacks, from this computer, then the ones this computer's records point to and it lacks, from fitron.in.
+ */
+export async function syncFiles(c: Conn, now = Date.now()): Promise<FilesResult> {
+  const out: FilesResult = { up: 0, down: 0 };
+  const f = files();
+  f.at = now;
+  const skip = (key: string) => (f.skip.get(key) ?? 0) > now;
+  const later = (key: string) => f.skip.set(key, now + FILE_RETRY_MS);
+  const orgId = c.state.orgId;
+
+  const { missing } = await cloudCall<{ missing?: string[] }>(c.base, "/api/sync/files", { token: c.token });
+  for (const key of Array.isArray(missing) ? missing : []) {
+    if (out.up >= FILES_PER_PASS) break;
+    if (!key.startsWith(`${orgId}/`) || skip(key)) continue;
+    const body = await getObjectOrNull(key).catch(() => null);
+    if (!body || !body.length || body.length > SYNC_FILE_MAX) continue;
+    try {
+      const parts = Math.ceil(body.length / FILE_PART);
+      for (let part = 0; part < parts; part++) await cloudFilePut(c.base, c.token, key, { part, parts, size: body.length }, body.subarray(part * FILE_PART, (part + 1) * FILE_PART));
+      out.up++;
+    } catch (e) {
+      if (!(e instanceof SyncHttpError) || e.retryable) throw e;
+      log.warn("sync.file_refused", e, { key });
+      later(key);
+    }
+  }
+
+  for (const key of await missingFiles(orgId)) {
+    if (out.down >= FILES_PER_PASS) break;
+    if (skip(key)) continue;
+    const first = await cloudFileGet(c.base, c.token, key, 0).catch((e) => {
+      if (e instanceof SyncHttpError && !e.retryable) return null;
+      throw e;
+    });
+    if (!first || !(first.size > 0) || first.size > SYNC_FILE_MAX || !(first.parts >= 1)) {
+      later(key);
+      continue;
+    }
+    const pieces = [first.body];
+    for (let part = 1; part < first.parts; part++) {
+      const p = await cloudFileGet(c.base, c.token, key, part);
+      if (!p) break;
+      pieces.push(p.body);
+    }
+    const body = Buffer.concat(pieces);
+    const type = sniffType(body);
+    if (body.length !== first.size || !type) {
+      log.warn("sync.file_not_whole", undefined, { key, size: body.length, expected: first.size });
+      later(key);
+      continue;
+    }
+    await putObject(key, body, type.mime);
+    out.down++;
+  }
+  return out;
+}
+
+const filesDue = (moved: boolean, now = Date.now()) => moved || now - files().at > FILES_EVERY_MS;
 
 // ── For the screen ──────────────────────────────────────────────────────────────────────────────────────────────────
 
