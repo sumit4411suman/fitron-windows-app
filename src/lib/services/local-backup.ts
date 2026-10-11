@@ -6,6 +6,7 @@ import { BackupError, createLocalBackup, listLocalBackups, pruneLocalBackups, re
 import { migrationsDir } from "@/lib/runtime/local-migrate";
 import { readLocalSettings } from "@/lib/runtime/local-settings";
 import { dataDirs } from "@/lib/runtime/paths";
+import { reopenLocalConnections } from "@/lib/runtime/sqlite-adapter";
 import { audit } from "./audit";
 import { UserError } from "./errors";
 
@@ -70,8 +71,9 @@ export async function localRestore(u: CurrentUser, a: { file: string; password?:
         audit(tx, { orgId: gym.id, userId: known ? u.id : null, action: "backup.local.restore", entity: "Backup", entityId: a.label, after: { backupMadeAt: r.manifest.createdAt, appVersion: r.manifest.appVersion, migrated: r.migrated, safetyBackup: r.safety.name, by: known ? undefined : u.email } }),
       );
     }
-    // The app's open connections already see the restored file (SQLite's online backup writes into it under its own
-    // lock), so nothing is reconnected or restarted here.
+    // Reload: every database connection of FITRON is closed and reopened, so nothing goes on serving what was there
+    // before the restore (no restart needed).
+    await reopenLocalConnections();
     return r;
   } catch (e) {
     if (e instanceof BackupError) throw new UserError(e.message);

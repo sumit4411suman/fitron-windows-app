@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildCsp, cspHeaderName, cspMode, type CspTier } from "@/lib/csp";
-import { isGuardedPath, isOnlineOnlyAuthPath } from "@/lib/public-paths";
+import { isGuardedPath, isNotInLocal, isOnlineOnlyAuthPath } from "@/lib/public-paths";
 
 // Runs before every page. Two jobs:
 //  1. Optimistic check only: send visitors without a session cookie to sign-in when they ask for a console page or a
@@ -11,8 +11,11 @@ import { isGuardedPath, isOnlineOnlyAuthPath } from "@/lib/public-paths";
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
   // Local Edition: no fitron.in account, no email, maybe no internet. Its own sign-in handles everything.
-  if (process.env.FITRON_EDITION === "local" && process.env.FITRON_LOCAL_ALLOW_SIGNUP !== "1" && isOnlineOnlyAuthPath(pathname)) {
-    return NextResponse.redirect(new URL("/login", req.url));
+  // Local Edition: FITRON Gym Accounting only. No fitron.in account, website, AI Trainer or FITRON billing; its own
+  // sign-in handles signing in. (FITRON_LOCAL_ALLOW_SIGNUP is the end-to-end suite's switch, never set when shipped.)
+  if (process.env.FITRON_EDITION === "local" && process.env.FITRON_LOCAL_ALLOW_SIGNUP !== "1") {
+    if (isOnlineOnlyAuthPath(pathname)) return NextResponse.redirect(new URL("/login", req.url));
+    if (isNotInLocal(pathname)) return pathname.startsWith("/api/") ? new NextResponse("Not part of FITRON for Windows.", { status: 404 }) : NextResponse.redirect(new URL("/dashboard", req.url));
   }
   const guarded = isGuardedPath(pathname);
   if (guarded && !req.cookies.has("fitron_session")) {

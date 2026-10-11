@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Button, Field, Input, Notice } from "@/components/ui";
 
 /**
@@ -12,8 +12,11 @@ export function RestoreUpload() {
   const [busy, setBusy] = useState(false);
   // Until the page's script has loaded, the form must not be sent the browser's own way (it would put the password in
   // the address): the button stays off until then.
-  const [ready, setReady] = useState(false);
-  useEffect(() => setReady(true), []);
+  const ready = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   async function submit(ev: React.FormEvent<HTMLFormElement>) {
     ev.preventDefault();
     const fd = new FormData(ev.currentTarget);

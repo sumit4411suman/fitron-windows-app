@@ -79,9 +79,44 @@ class SerialisedTransaction implements Transaction {
   async rollback() { try { await this.inner.rollback(); } finally { this.release(); } }
 }
 
+// Every open Local adapter in this process (Next.js may load more than one copy of the database client), so a restore
+// can make them all reconnect (reopenLocalConnections).
+const g = globalThis as unknown as { fitronAdapters?: Set<LocalAdapter> };
+const adapters = (g.fitronAdapters ??= new Set());
+
+/**
+ * Closes and reopens every database connection of this process, waiting for work in progress to finish first. Called
+ * after a restore, so nothing can go on serving what was there before it: the brief's "reload the application", done
+ * without restarting.
+ */
+export async function reopenLocalConnections(): Promise<number> {
+  for (const a of adapters) await a.reopen();
+  return adapters.size;
+}
+
 class LocalAdapter implements SqlDriverAdapter {
   readonly #lock = new Lock();
-  constructor(private readonly writer: SqlDriverAdapter, private readonly reader: SqlDriverAdapter) {}
+  constructor(
+    private writer: SqlDriverAdapter,
+    private reader: SqlDriverAdapter,
+    private readonly open: () => Promise<{ writer: SqlDriverAdapter; reader: SqlDriverAdapter }>,
+  ) {
+    adapters.add(this);
+  }
+
+  async reopen() {
+    const release = await this.#lock.acquire();
+    try {
+      const old = { writer: this.writer, reader: this.reader };
+      const fresh = await this.open();
+      this.writer = fresh.writer;
+      this.reader = fresh.reader;
+      if (old.reader !== old.writer) await old.reader.dispose().catch(() => {});
+      await old.writer.dispose().catch(() => {});
+    } finally {
+      release();
+    }
+  }
   get provider() { return this.writer.provider; }
   get adapterName() { return this.writer.adapterName; }
   async queryRaw(q: SqlQuery): Promise<SqlResultSet> {
@@ -108,7 +143,8 @@ class LocalAdapter implements SqlDriverAdapter {
     try { return await this.writer.executeScript(script); } finally { release(); }
   }
   async dispose() {
-    await this.reader.dispose();
+    adapters.delete(this);
+    if (this.reader !== this.writer) await this.reader.dispose();
     await this.writer.dispose();
   }
 }
@@ -120,17 +156,21 @@ export function sqliteAdapter(opts: SqliteAdapterOptions): SqlMigrationAwareDriv
   const file = opts.url.replace(/^file:/, "");
   if (file !== ":memory:") mkdirSync(path.dirname(file), { recursive: true });
   const factory = new PrismaBetterSqlite3({ url: opts.url, timeout: opts.timeoutMs ?? 5000 });
-  const connect = async (): Promise<SqlDriverAdapter> => {
+  const open = async () => {
     const writer = await factory.connect();
     await writer.executeScript(SQLITE_PRAGMAS.join(";\n") + ";");
     // A restore or demo-clear that died mid-way (power cut) leaves no row: its transaction was rolled back. A row left
     // by an older build that forgot to revoke would let the next delete through, so start clean.
     await writer.executeScript('DELETE FROM "_fitron_guard"').catch(() => {});
     // An in-memory database is private to its handle, so it cannot have a separate reader.
-    if (file === ":memory:") return new LocalAdapter(writer, writer);
+    if (file === ":memory:") return { writer, reader: writer };
     const reader = await factory.connect();
     await reader.executeScript(["PRAGMA busy_timeout = 5000", "PRAGMA query_only = ON"].join(";\n") + ";");
-    return new LocalAdapter(writer, reader);
+    return { writer, reader };
+  };
+  const connect = async (): Promise<SqlDriverAdapter> => {
+    const c = await open();
+    return new LocalAdapter(c.writer, c.reader, open);
   };
   return { provider: "sqlite", adapterName: "fitron-sqlite", connect, connectToShadowDb: () => factory.connectToShadowDb() };
 }

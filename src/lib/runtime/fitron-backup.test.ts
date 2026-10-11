@@ -121,6 +121,9 @@ describe("restoring", () => {
     // The app keeps its connection open the whole time, as FITRON does.
     const app = new Database(dirs.database);
     app.pragma("journal_mode = WAL");
+    // And a read-only connection that has already read, as FITRON's own reader connection has.
+    const reader = new Database(dirs.database, { readonly: true });
+    expect(reader.prepare('SELECT COUNT(*) AS n FROM "Member"').get()).toEqual({ n: 1 });
     // Later work, which the restore must undo: a new member, a deleted document, a new document, a session.
     app.exec(`INSERT INTO "Member" (id, code, "orgId", "branchId", name, gender, phone, source, "createdById", "createdAt", "updatedAt") VALUES ('m2', 'FT-2', 'org1', 'br1', 'Ravi', 'Male', '9811100002', 'Walk-in', 'u', '2026-10-02T00:00:00.000Z', '2026-10-02T00:00:00.000Z')`);
     rmSync(path.join(dirs.documents, "org1", "members", "m1", "aadhaar.pdf"));
@@ -130,6 +133,8 @@ describe("restoring", () => {
     const r = await restore(b.file, { password: "pw-123456" });
     expect(r.migrated).toEqual([]);
     expect(app.prepare('SELECT COUNT(*) AS n FROM "Member"').get(), "the open connection sees the restored data").toEqual({ n: 1 });
+    expect(reader.prepare('SELECT COUNT(*) AS n FROM "Member"').get(), "so does the open reader").toEqual({ n: 1 });
+    reader.close();
     expect(app.prepare('SELECT total FROM "Invoice" WHERE id = ?').get("i1")).toEqual({ total: 117882 });
     app.close();
     expect(readFileSync(path.join(dirs.documents, "org1", "members", "m1", "aadhaar.pdf"), "utf8")).toBe("%PDF-1.7 the original id proof");

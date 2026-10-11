@@ -95,6 +95,17 @@ test("first-run setup checks the form, creates the gym and owner, and shows the 
   // Setup is closed now: the page sends a signed-in owner to the dashboard.
   await page.goto("/setup");
   await expect(page).toHaveURL(/\/dashboard/);
+
+  // FITRON for Windows is Gym Accounting only: the website, the AI Trainer, FITRON's own billing, the Gym Partnership
+  // and the FITRON team console lead back to the console, and the menus do not offer them.
+  for (const p of ["/", "/trainer", "/contact", "/gym-accounting", "/fitron-admin", "/settings/billing", "/partnership", "/plan-ended"]) {
+    await page.goto(p);
+    await expect(page, p).toHaveURL(/\/dashboard$/);
+  }
+  await expect(page.getByRole("link", { name: "Gym Partnership" })).toHaveCount(0);
+  await page.goto("/settings");
+  await expect(page.getByRole("link", { name: "Subscription" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Backup" }).first()).toBeVisible();
 });
 
 test("sign-in offers only what works offline, and locks the account after five wrong passwords", async ({ browser }) => {

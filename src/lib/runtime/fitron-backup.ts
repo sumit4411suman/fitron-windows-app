@@ -336,14 +336,10 @@ export async function restoreLocalBackup(o: RestoreOptions): Promise<RestoreResu
     }
     if (!integrityCheck(restoredDb).ok) throw new BackupError("The restored database failed its integrity check. Nothing was changed.");
 
-    // 5. Database: SQLite's online backup copies the pages into the live file under its own lock, so FITRON's open
-    //    connections see the restored data on their next query, with no restart and no file swapped under them.
-    const src = new Database(restoredDb, { readonly: true });
-    try {
-      await src.backup(liveDb);
-    } finally {
-      src.close();
-    }
+    // 5. Database: copied in as one ordinary transaction (copyDatabaseInto), so FITRON's open connections see the
+    //    restored data on their next query, with no restart and no file swapped under them, and a failure half-way
+    //    leaves the live database exactly as it was.
+    copyDatabaseInto(restoredDb, liveDb);
     // Documents: the old folder is moved aside, the backup's moved in, then the old one removed (its files are in the
     // safety backup). If FITRON stops between the two moves, start-up moves the old folder back (recoverDocuments).
     const restoredDocs = path.join(work, "documents");
@@ -364,13 +360,7 @@ export async function restoreLocalBackup(o: RestoreOptions): Promise<RestoreResu
       process.env.BIOMETRIC_KEY = value;
     }
 
-    // 6–7. Sign everyone out (the sessions in the backup are old), then check what is now live.
-    const live = new Database(liveDb, { timeout: 10_000 });
-    try {
-      live.exec('DELETE FROM "Session"; DELETE FROM "_fitron_guard";');
-    } finally {
-      live.close();
-    }
+    // 6–7. Everyone was signed out inside the copy (the sessions in a backup are old); check what is now live.
     const after = integrityCheck(liveDb);
     if (!after.ok) throw new BackupError(`The restored database failed its integrity check: ${after.problems.slice(0, 3).join("; ")}. Restore the safety backup ${safety.name}.`);
     if (!migrated.length) {
@@ -381,6 +371,51 @@ export async function restoreLocalBackup(o: RestoreOptions): Promise<RestoreResu
     return { manifest, safety, migrated };
   } finally {
     await rm(work, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Replaces every table of `liveDb` with the rows of `restoredDb` (same schema: both are at this version's migrations),
+ * in one transaction on a connection of its own. Triggers are dropped for the copy and re-created from the restored
+ * database's own definitions, so the financial-row guard and the append-only audit log are back before the commit.
+ * Sessions are emptied: everyone signs in again. Exported for its test.
+ */
+export function copyDatabaseInto(restoredDb: string, liveDb: string) {
+  const live = new Database(liveDb, { timeout: 30_000 });
+  try {
+    live.pragma("foreign_keys = ON");
+    live.prepare("ATTACH DATABASE ? AS r").run(restoredDb);
+    const objects = (schema: "main" | "r", type: string) =>
+      (live.prepare(`SELECT name, sql FROM ${schema}.sqlite_master WHERE type = ? AND name NOT LIKE 'sqlite_%'`).all(type) as { name: string; sql: string }[]);
+    const tables = objects("r", "table").map((t) => t.name).sort();
+    const liveTables = objects("main", "table").map((t) => t.name).sort();
+    if (tables.join() !== liveTables.join()) throw new BackupError("The backup's tables do not match this version of FITRON after migration. Nothing was changed.");
+    const q = (n: string) => `"${n.replace(/"/g, '""')}"`;
+    live.transaction(() => {
+      live.pragma("defer_foreign_keys = ON");
+      for (const t of objects("main", "trigger")) live.exec(`DROP TRIGGER ${q(t.name)}`);
+      for (const t of tables) {
+        const cols = (live.prepare(`SELECT name FROM pragma_table_info(?, 'r')`).all(t) as { name: string }[]).map((c) => q(c.name)).join(", ");
+        live.exec(`DELETE FROM main.${q(t)}`);
+        live.exec(`INSERT INTO main.${q(t)} (${cols}) SELECT ${cols} FROM r.${q(t)}`);
+      }
+      const hasSeq = (schema: string) => !!live.prepare(`SELECT 1 FROM ${schema}.sqlite_master WHERE name = 'sqlite_sequence'`).get();
+      if (hasSeq("main")) {
+        live.exec("DELETE FROM main.sqlite_sequence");
+        if (hasSeq("r")) live.exec("INSERT INTO main.sqlite_sequence (name, seq) SELECT name, seq FROM r.sqlite_sequence");
+      }
+      live.exec('DELETE FROM main."Session"; DELETE FROM main."_fitron_guard";');
+      for (const t of objects("r", "trigger")) live.exec(t.sql);
+      const broken = live.prepare("SELECT * FROM main.pragma_foreign_key_check").all();
+      if (broken.length) throw new BackupError(`The backup's records do not fit together (${broken.length} broken links). Nothing was changed.`);
+    })();
+  } finally {
+    try {
+      live.exec("DETACH DATABASE r");
+    } catch {
+      // not attached
+    }
+    live.close();
   }
 }
 

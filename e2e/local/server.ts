@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import path from "node:path";
 
 // A Local Edition server of its own, started the way the desktop shell starts it (Phase 14): the production build,
@@ -6,6 +7,12 @@ import path from "node:path";
 export type LocalServer = { url: string; dataDir: string; stop: () => Promise<void> };
 
 export async function startLocalServer(dataDir: string, port: number, extra: Record<string, string> = {}): Promise<LocalServer> {
+  // A server left running by an interrupted run would answer instead of this one and make every check meaningless.
+  const taken = await fetch(`http://127.0.0.1:${port}/api/health`).then(
+    () => true,
+    () => false,
+  );
+  if (taken) throw new Error(`Port ${port} is already in use (a FITRON server left over from an earlier run?). Stop it first.`);
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH ?? "",
     HOME: process.env.HOME ?? "",
@@ -22,8 +29,13 @@ export async function startLocalServer(dataDir: string, port: number, extra: Rec
     stdio: ["ignore", "pipe", "pipe"],
   });
   let output = "";
-  child.stdout?.on("data", (b) => (output += String(b)));
-  child.stderr?.on("data", (b) => (output += String(b)));
+  const logFile = process.env.E2E_LOCAL_SERVER_LOG;
+  const keep = (b: unknown) => {
+    output += String(b);
+    if (logFile) appendFileSync(logFile, String(b));
+  };
+  child.stdout?.on("data", keep);
+  child.stderr?.on("data", keep);
   const url = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 60_000;
   for (;;) {
@@ -39,10 +51,16 @@ export async function startLocalServer(dataDir: string, port: number, extra: Rec
   return {
     url,
     dataDir,
+    // As the desktop shell will (Phase 14): ask it to stop, and stop it after 5 seconds if it is still waiting for the
+    // browser's open connections to close. Every committed change is already on disk (WAL, synchronous=FULL).
     stop: () =>
       new Promise<void>((resolve) => {
-        if (child.exitCode !== null) return resolve();
-        child.once("exit", () => resolve());
+        if (child.exitCode !== null || child.signalCode !== null) return resolve();
+        const force = setTimeout(() => child.kill("SIGKILL"), 5_000);
+        child.once("exit", () => {
+          clearTimeout(force);
+          resolve();
+        });
         child.kill("SIGTERM");
       }),
   };
@@ -67,8 +85,10 @@ export async function firstRun(page: import("@playwright/test").Page, o: Owner) 
   await page.waitForURL(/\/dashboard/);
 }
 
+/** Signs in, or carries on when the session is still valid (a sign-in survives a restart of FITRON). */
 export async function localSignIn(page: import("@playwright/test").Page, o: Owner) {
   await page.goto("/login");
+  if (new URL(page.url()).pathname === "/dashboard") return;
   await page.getByLabel("Email").fill(o.email);
   await page.getByLabel("Password").fill(o.password);
   await page.getByRole("button", { name: "Sign in" }).click();
