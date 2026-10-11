@@ -192,10 +192,10 @@ same shape. Differences (`String[]` → JSON, `Decimal` handling) are listed per
 ### Local Edition runtime layout
 
 ```
-C:\Program Files\FITRON Gym Accounting\        (installer, read-only for the app)
-├── FITRON Gym Accounting.exe                  Tauri shell
-├── node.exe                                   sidecar (Node 22 LTS)
-└── resources\server\                          .next/standalone + static + prisma migrations
+%LOCALAPPDATA%\FITRON Gym Accounting\         (per-user install, Phase 15 INSTALLER.md; the app writes nothing here)
+├── FITRON Gym Accounting.exe                  Tauri shell (src-tauri)
+├── fitron-node.exe                            the Node.js that built the server (npm run desktop:bundle)
+└── server\                                    Next.js standalone + static + public + prisma/local-migrations
 
 %LOCALAPPDATA%\FITRON\                         (customer data, never touched by uninstall)
 ├── data\fitron.db  (+ -wal, -shm)
@@ -203,20 +203,23 @@ C:\Program Files\FITRON Gym Accounting\        (installer, read-only for the app
 ├── documents\<orgId>\{invoices,receipts,member-documents}\
 ├── logs\server.log, shell.log
 ├── licence.fitronlicence, licence-state.json   the licence and the latest date seen (Phase 13)
-└── secrets.json, settings.json (install id and date, keys; port, last version)
+├── fitron.lock                                held while FITRON is open (one FITRON per data folder)
+└── secrets.json, settings.json (install id and date, keys; automatic backup settings)
 ```
 
-Start-up sequence (Phase 14):
+Start-up and shut-down (Phase 14, `DESKTOP.md`):
 
-1. Tauri resolves `%LOCALAPPDATA%\FITRON`, creates the folders.
-2. Picks a free port on 127.0.0.1, writes a one-time shell token.
-3. Spawns `node.exe resources/server/server.js` with `FITRON_EDITION=local`,
-   `FITRON_DATA_DIR`, `PORT`, `HOSTNAME=127.0.0.1`, `DATABASE_URL=file:…\data\fitron.db`.
-4. The server applies pending migrations from `prisma/local-migrations` on start (after a
-   pre-migration backup when the schema version changes), then listens.
-5. Tauri polls `/api/health` until `{ ok: true, edition: "local" }`, then shows the window.
-6. On window close Tauri sends SIGTERM to the sidecar and waits for it to exit; the WAL is
-   checkpointed on `SIGTERM` by the server.
+1. The shell resolves `%LOCALAPPDATA%\FITRON`, takes `fitron.lock`, shows its start-up page.
+2. Picks a free port on 127.0.0.1 and a new instance id.
+3. Starts `fitron-node.exe server\server.js` with `FITRON_EDITION=local`, `FITRON_SHELL=1`,
+   `FITRON_INSTANCE`, `FITRON_DATA_DIR`, `PORT`, `HOSTNAME=127.0.0.1`, standard input held open.
+4. The server makes the data folders and applies pending migrations from `prisma/local-migrations`
+   (src/lib/runtime/local-start.ts), after a safety backup when an update changes an existing database,
+   then reports ready.
+5. The shell polls `/api/health` until `{ ok: true, edition: "local", instance }` is its own, then
+   opens FITRON in the window.
+6. On close the shell closes the server's standard input; the server stops its timer, waits for a
+   running backup or job, checkpoints the WAL into `fitron.db` and exits. The shell waits up to 15 s.
 
 ### What stays Cloud-only
 

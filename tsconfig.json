@@ -38,6 +38,8 @@
   ],
   "exclude": [
     "node_modules",
-    "prototype"
+    "prototype",
+    "build",
+    "src-tauri"
   ]
 }

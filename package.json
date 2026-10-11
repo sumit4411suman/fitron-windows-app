@@ -20,7 +20,12 @@
     "db:local-schema": "tsx scripts/local-schema.ts && prisma generate --schema prisma/schema.local.prisma",
     "e2e:local": "tsx scripts/e2e-local.ts",
     "licence:keygen": "tsx scripts/licence-keygen.ts",
-    "licence:issue": "tsx scripts/licence-issue.ts"
+    "licence:issue": "tsx scripts/licence-issue.ts",
+    "desktop:bundle": "tsx scripts/desktop-bundle.ts",
+    "desktop:build": "tsx scripts/desktop-bundle.ts && tauri build --config src-tauri/tauri.bundle.conf.json && tsx scripts/desktop-installer.ts",
+    "desktop:installer": "tsx scripts/desktop-installer.ts",
+    "desktop:installer-test": "tsx scripts/desktop-installer-test.ts",
+    "desktop:smoke": "tsx scripts/desktop-smoke.ts"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",
@@ -46,6 +51,7 @@
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.56.1",
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "2.12.2",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^22.20.5",
     "@types/pg": "^8.23.1",

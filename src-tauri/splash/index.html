@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FITRON Gym Accounting</title>
+    <link rel="stylesheet" href="splash.css" />
+    <script src="splash.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <img src="fitron-mark.png" alt="" width="72" height="72" />
+      <h1>FITRON Gym Accounting</h1>
+      <section id="starting" aria-live="polite">
+        <div class="bar" aria-hidden="true"><span></span></div>
+        <p>Starting FITRON on this computer…</p>
+        <p class="small" id="slow" hidden>The first start after an update takes a little longer while FITRON updates its database.</p>
+      </section>
+      <section id="failed" role="alert" hidden>
+        <h2>FITRON could not start</h2>
+        <p id="reason"></p>
+        <p>Your data has not been changed. Close FITRON and open it again. If this keeps happening, send the file below to FITRON support (Settings › Help & support, or support's phone and email).</p>
+        <p class="small">Log: <code id="log"></code></p>
+      </section>
+    </main>
+  </body>
+</html>

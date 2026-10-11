@@ -1,0 +1,51 @@
+name: Desktop (Windows)
+
+# FITRON Gym Accounting for Windows (docs/local-windows/DESKTOP.md): the desktop shell, built and run on Windows.
+# The packaged server is checked as the shell starts it, the real program is started, closed and ended
+# (npm run desktop:smoke), and the installer is installed, updated over a running FITRON and uninstalled
+# (npm run desktop:installer-test, docs/local-windows/INSTALLER.md). The installer is kept as a download.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Shell tests
+        working-directory: src-tauri
+        run: |
+          cargo clippy --all-targets -- -D warnings
+          cargo test
+      - name: Package the server with this Node.js, and check it
+        run: npm run desktop:bundle
+      - name: Build the desktop program and its installer
+        run: npx tauri build --config src-tauri/tauri.bundle.conf.json
+      - name: Name the installer and write its checksum
+        run: npm run desktop:installer
+      - name: Start, close and end the desktop program
+        run: npm run desktop:smoke
+      - name: Install, update and uninstall as a customer does
+        run: npm run desktop:installer-test
+      - name: Keep the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: FITRON-Gym-Accounting-Setup
+          path: dist/desktop/
+          retention-days: 14

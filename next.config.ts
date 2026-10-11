@@ -1,7 +1,24 @@
 import type { NextConfig } from "next";
 import pkg from "./package.json";
 
+// FITRON for Windows (npm run desktop:bundle, docs/local-windows/DESKTOP.md): a self-contained server that the desktop
+// shell runs with the Node.js shipped inside FITRON. Images are served as they are: on one computer there is nothing to
+// gain from resizing them, and the resized copies would be written into the program folder, which is read-only.
+const desktop = process.env.FITRON_DESKTOP_BUILD === "1";
+
 const nextConfig: NextConfig = {
+  ...(desktop
+    ? {
+        output: "standalone" as const,
+        images: { unoptimized: true },
+        // Some server code reads files by computed paths (backups, the data folder), so Next.js would copy the whole
+        // project. Only the server runs on the customer's computer: never the shell's build, test output, development
+        // uploads, the website or the image resizer (images are not resized, above).
+        outputFileTracingExcludes: {
+          "/*": ["./src-tauri/**", "./storage/**", "./build/**", "./prototype/**", "./playwright-report/**", "./test-results/**", "./.local-e2e/**", "./public/site/**", "./public/trainer/**", "./node_modules/@img/**", "./node_modules/sharp/**"],
+        },
+      }
+    : {}),
   // Shown in Settings › Help & support › System details.
   env: {
     APP_VERSION: pkg.version,
@@ -11,6 +28,9 @@ const nextConfig: NextConfig = {
     // Data import sends up to 5,000 CSV rows, member documents up to 10 MB, and backup files
     // (Settings › Backup › Restore from file) up to 60 MB, to server actions.
     serverActions: { bodySizeLimit: "64mb" },
+    // FITRON for Windows: pages Next.js renders and keeps stay in memory, not in .next inside the program folder, which
+    // is read-only once installed (the bundle check refuses a server that writes there).
+    ...(desktop ? { isrFlushToDisk: false } : {}),
   },
   // The invoice PDF reads its font from disk; ship it with the server build.
   outputFileTracingIncludes: {
