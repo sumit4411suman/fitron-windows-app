@@ -63,9 +63,12 @@ function materializeLinks(dir: string, from: string) {
   walk(dir, (p) => lstatSync(p).isSymbolicLink() && links.push(p));
   for (const link of links) {
     let target = path.resolve(path.dirname(link), readlinkSync(link));
-    // On Windows the links can be junctions, which always name the full path inside .next/standalone.
-    if (target.startsWith(from + path.sep)) target = path.join(dir, path.relative(from, target));
-    if (!target.startsWith(dir + path.sep)) throw new Error(`${path.relative(dir, link)} points outside the server folder (${target})`);
+    // On Windows the links are junctions, which name a full path: inside .next/standalone, or the project itself
+    // (its node_modules). The standalone folder has the same layout, so either maps to the same place in the bundle.
+    for (const base of [from, root]) {
+      if (!target.startsWith(dir + path.sep) && target.startsWith(base + path.sep)) target = path.join(dir, path.relative(base, target));
+    }
+    if (!target.startsWith(dir + path.sep) || !existsSync(target)) throw new Error(`${path.relative(dir, link)} points outside the server folder (${target})`);
     rmSync(link);
     if (hasNativeCode(target)) {
       const name = path.relative(path.join(dir, "node_modules"), target).split(path.sep).join("/");
