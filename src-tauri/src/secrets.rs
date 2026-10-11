@@ -13,6 +13,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[cfg_attr(not(windows), allow(dead_code))] // sealed on Windows only
 const SEALED: &str = "secrets.dpapi";
 const PLAIN: &str = "secrets.json";
 
@@ -27,6 +28,7 @@ pub struct Secrets {
 
 /// How the secrets were obtained, for the log.
 #[derive(Debug, PartialEq)]
+#[cfg_attr(not(windows), allow(dead_code))] // the sealed variants are made on Windows only
 pub enum How {
     Sealed,
     SealedFromPlain,
