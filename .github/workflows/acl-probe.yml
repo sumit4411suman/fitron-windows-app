@@ -1,0 +1,18 @@
+# Temporary (removed with the fix): see .github/acl-probe/probe.cjs.
+name: ACL probe (temporary)
+
+on:
+  push:
+    branches: [claude/stoic-darwin-k9o1zg]
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node .github/acl-probe/probe.cjs
