@@ -8,3 +8,10 @@ export function edition(env: Record<string, string | undefined> = process.env): 
 }
 
 export const isLocal = () => edition() === "local";
+
+/**
+ * The fitron.in sign-up and its emailed-link sign-ins, on a Local server. Never in a shipped installation: only the
+ * end-to-end suite sets FITRON_LOCAL_ALLOW_SIGNUP, so its 300 specs can make a fresh gym per test the way they do on the
+ * Cloud Edition. The Local first-run setup has its own spec (e2e/local/startup.spec.ts).
+ */
+export const localSignupAllowed = (env: Record<string, string | undefined> = process.env) => env.FITRON_LOCAL_ALLOW_SIGNUP === "1";

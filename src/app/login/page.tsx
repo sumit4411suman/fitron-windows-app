@@ -17,6 +17,9 @@ import { DEFAULT_PLAN, findPlan, lowestGymPrice } from "@/lib/domain/pricing";
 import { formatInr } from "@/lib/format";
 import { GOOGLE_SIGNUP_COOKIE, googleReady, unsign } from "@/lib/integrations/google";
 import { TRAINER_HREF } from "@/lib/domain/site-links";
+import { isLocal, localSignupAllowed } from "@/lib/runtime/edition";
+import { localSetupNeeded } from "@/lib/services/local-setup";
+import { LocalAuthShell } from "./local-shell";
 
 export const metadata = { title: "Sign in · FITRON" };
 
@@ -26,6 +29,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const q = await searchParams;
   const next = safeNext(q.next, "");
   if (await getCurrentUser()) redirect(next || "/dashboard");
+  if (isLocal() && !localSignupAllowed()) return <LocalLogin q={q} next={next} />;
   const up = q.tab === "up";
   const planQ = one(q.plan);
   const plan = findPlan(planQ)?.product === "GYM_ACCOUNTING" ? planQ! : DEFAULT_PLAN;
@@ -123,5 +127,29 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
       </section>
       <CookieBanner />
     </main>
+  );
+}
+
+/**
+ * Sign-in on the Local Edition: email and password only. Google, emailed codes and links, and the fitron.in sign-up
+ * need the internet and a FITRON account, so they are not offered. A forgotten owner password is reset with the
+ * recovery key (/recover); staff passwords by a Super Admin. A computer with no gym yet goes to first-run setup.
+ */
+async function LocalLogin({ q, next }: { q: Record<string, string | string[] | undefined>; next: string }) {
+  if (await localSetupNeeded()) redirect("/setup");
+  const twoStep = q.step === "2" ? await readChallenge() : null;
+  if (twoStep)
+    return (
+      <LocalAuthShell title="Two-step sign-in" lead="Your password was right. Now enter the code from your authenticator app.">
+        <TwoStepForm />
+      </LocalAuthShell>
+    );
+  return (
+    <LocalAuthShell title="Sign in to FITRON" lead="Use the email and password of your FITRON login on this computer.">
+      {(q.twostep === "expired" || q.step === "2") && <Notice tone="alert">That sign-in took too long or could not be finished. Sign in again.</Notice>}
+      {typeof q.idle === "string" && /^\d+$/.test(q.idle) && <Notice tone="alert">You were signed out after {q.idle} minutes of inactivity.</Notice>}
+      {q.reset && <Notice tone="ok">Password changed. Sign in with your new password.</Notice>}
+      <LoginForm next={next} forgotHref="/recover" />
+    </LocalAuthShell>
   );
 }

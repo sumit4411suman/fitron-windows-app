@@ -15,7 +15,9 @@ console.log(`SQLite test database: ${file} (applied ${r.applied.join(", ")})`);
 
 const run = spawnSync(process.execPath, [path.join("node_modules", "vitest", "vitest.mjs"), "run", ...process.argv.slice(2)], {
   stdio: "inherit",
-  env: { ...process.env, FITRON_EDITION: "local", DATABASE_URL: `file:${file}`, FITRON_DATA_DIR: dir },
+  // FITRON_LOCAL_ALLOW_SIGNUP: the fitron.in sign-up tests (accounts.db.test.ts) run here too; a shipped Local Edition
+  // refuses sign-up, which local-setup.db.test.ts checks with the switch off.
+  env: { ...process.env, FITRON_EDITION: "local", DATABASE_URL: `file:${file}`, FITRON_DATA_DIR: dir, FITRON_LOCAL_ALLOW_SIGNUP: "1" },
 });
 rmSync(dir, { recursive: true, force: true });
 process.exit(run.status ?? 1);

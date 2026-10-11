@@ -5,7 +5,7 @@ import { useActionState } from "react";
 import { login } from "./actions";
 import { Button, Field, Input, Notice } from "@/components/ui";
 
-export function LoginForm({ next }: { next?: string }) {
+export function LoginForm({ next, forgotHref = "/forgot-password" }: { next?: string; forgotHref?: string }) {
   const [state, action, pending] = useActionState(login, undefined);
   return (
     <form action={action} className="flex flex-col gap-4">
@@ -30,7 +30,7 @@ export function LoginForm({ next }: { next?: string }) {
         <Field label="Password" error={state?.errors?.password}>
           <Input name="password" type="password" autoComplete="current-password" required />
         </Field>
-        <Link href="/forgot-password" className="self-start py-1 text-[13px] text-accent no-underline">Forgot password?</Link>
+        <Link href={forgotHref} className="self-start py-1 text-[13px] text-accent no-underline">Forgot password?</Link>
       </div>
       <Button variant="primary" disabled={pending} className="py-[11px] text-[15px]">
         {pending ? "Signing in…" : "Sign in"}

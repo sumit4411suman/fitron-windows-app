@@ -95,10 +95,10 @@ Classes:
 | Feature | Class | Notes |
 | --- | --- | --- |
 | Email + password sign-in (Argon2id, sessions, idle sign-out, rate limit) | LOCAL-SAFE | Unchanged. |
-| First-run: create gym + owner | NEEDS-ADAPTER | Local first-run wizard replaces fitron.in sign-up and email verification (Phase 8). |
+| First-run: create gym + owner | LOCAL-SAFE (done, Phase 8) | `/setup` creates the gym, branch, roles and owner offline, then opens the existing onboarding steps. A one-time recovery key replaces the email reset for the owner. |
 | Two-step sign-in (TOTP + recovery codes) | LOCAL-SAFE | Needs `BIOMETRIC_KEY`: generated once per installation and kept in the data folder with restricted ACL. |
 | Continue with Google | ONLINE-REQUIRED | Hidden in Local (no client id). |
-| Email sign-in link / code, forgot password by email | ONLINE-REQUIRED | Hidden in Local; password reset is done by a Super Admin from Staff, or by the recovery flow of the first-run owner. |
+| Email sign-in link / code, forgot password by email | ONLINE-REQUIRED | Hidden in Local and their routes redirect to sign-in (Phase 8). Owner: recovery key at `/recover`. Staff: reset by a Super Admin. |
 | Sign-up / trial / onboarding wizard | NOT-SUPPORTED-IN-LOCAL (sign-up) / LOCAL-SAFE (onboarding steps) | The onboarding steps (GST, branch, plans, team, opening balances) are reused by the first-run wizard. |
 
 ## Background jobs (`src/lib/services/jobs.ts`)

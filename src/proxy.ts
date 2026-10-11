@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { buildCsp, cspHeaderName, cspMode, type CspTier } from "@/lib/csp";
-import { isGuardedPath } from "@/lib/public-paths";
+import { isGuardedPath, isOnlineOnlyAuthPath } from "@/lib/public-paths";
 
 // Runs before every page. Two jobs:
 //  1. Optimistic check only: send visitors without a session cookie to sign-in when they ask for a console page or a
@@ -10,6 +10,10 @@ import { isGuardedPath } from "@/lib/public-paths";
 //     Next.js reads it from the request header set here and puts it on its own scripts.
 export function proxy(req: NextRequest) {
   const { pathname, search } = req.nextUrl;
+  // Local Edition: no fitron.in account, no email, maybe no internet. Its own sign-in handles everything.
+  if (process.env.FITRON_EDITION === "local" && process.env.FITRON_LOCAL_ALLOW_SIGNUP !== "1" && isOnlineOnlyAuthPath(pathname)) {
+    return NextResponse.redirect(new URL("/login", req.url));
+  }
   const guarded = isGuardedPath(pathname);
   if (guarded && !req.cookies.has("fitron_session")) {
     // Come back to the page they wanted after logging in.

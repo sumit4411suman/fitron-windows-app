@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dataDirs, defaultDataRoot, localDatabaseUrl } from "./paths";
 import { log } from "@/lib/log";
 import { migrateLocal } from "./local-migrate";
+import { ensureLocalSecrets } from "./local-secrets";
 
 // What the Local Edition does before serving: make the data folders, apply pending migrations. The result is kept so
 // /api/health can report it and refuse to say "ok" while the database is not ready.
@@ -20,6 +21,7 @@ export async function startLocalEdition(): Promise<LocalStartState> {
   g.fitronLocalStart = state;
   try {
     for (const d of [dirs.data, dirs.backups, dirs.documents, dirs.logs]) mkdirSync(d, { recursive: true });
+    ensureLocalSecrets(root);
     const file = localDatabaseUrl().replace(/^file:/, "");
     const r = migrateLocal(file);
     state.applied = r.applied;

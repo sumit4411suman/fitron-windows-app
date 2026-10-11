@@ -14,5 +14,7 @@ export const SERVER_ENV = {
   // Enforced, so a page that breaks under the policy fails here instead of in front of a customer.
   CSP_MODE: "enforce",
   NEXT_TELEMETRY_DISABLED: "1",
-  ...(EDITION === "local" ? { FITRON_EDITION: "local", FITRON_DATA_DIR: "./.local-e2e" } : {}),
+  // The suite makes a fresh gym per test through the fitron.in sign-up, which a shipped Local Edition never offers;
+  // FITRON_LOCAL_ALLOW_SIGNUP opens it for the suite only. First-run setup has its own spec (e2e/local/startup.spec.ts).
+  ...(EDITION === "local" ? { FITRON_EDITION: "local", FITRON_DATA_DIR: "./.local-e2e", FITRON_LOCAL_ALLOW_SIGNUP: "1" } : {}),
 };

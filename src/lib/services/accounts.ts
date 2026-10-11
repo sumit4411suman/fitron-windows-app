@@ -1,4 +1,5 @@
 import "server-only";
+import { isLocal, localSignupAllowed } from "@/lib/runtime/edition";
 import { createHash, randomBytes, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { db } from "@/lib/db";
 import { hashPassword } from "@/lib/auth/password";
@@ -91,6 +92,8 @@ export type GymSignup = { plan: string; cycle: Cycle; name: string; email: strin
  */
 /** `emailVerified`: Google has already confirmed the address, so no link is sent. */
 export async function createGymAccount(d: GymSignup, emailVerified = false) {
+  // A gym on a computer is created by its first-run setup (src/lib/services/local-setup.ts), never as a fitron.in trial.
+  if (isLocal() && !localSignupAllowed()) throw new UserError("Sign-up is not available in FITRON for Windows. Set up the gym on the first-run screen.");
   const plan = findPlan(d.plan);
   if (!plan || plan.product !== "GYM_ACCOUNTING") throw new UserError("Pick a Gym Accounting plan.", "plan");
   if (await db.user.findUnique({ where: { email: d.email } })) {

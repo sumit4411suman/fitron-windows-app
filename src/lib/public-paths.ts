@@ -10,6 +10,8 @@ import { TRAINER_PAGE } from "@/lib/domain/trainer-page";
 // A path matches by whole segments: "/contact" and "/contact/x", not "/contacts".
 const PUBLIC = [
   "auth", "login", "signin", "signup", "verify-email", "forgot-password", "reset-password",
+  // The Local Edition's first-run setup and owner recovery (they answer 404 on the Cloud Edition).
+  "setup", "recover",
   "contact", "about", "privacy", "terms", "refund", "c",
   "robots.txt", "sitemap.xml", "favicon.ico", "fitron-mark.png", "fitron-logo.png", "site", "_next",
   "trainer", "api/trainer", "api/coach", "api/gym-demo", "api/assistant",
@@ -41,4 +43,14 @@ export function isGuardedPath(pathname: string): boolean {
 export function isPublicPath(pathname: string): boolean {
   if (pathname === "/") return true;
   return PUBLIC.some((p) => pathname === `/${p}` || pathname.startsWith(`/${p}/`));
+}
+
+/**
+ * Sign-in routes that need the internet and a fitron.in account (Google, emailed links and codes, website sign-up).
+ * The Local Edition sends them to its own sign-in instead (src/proxy.ts).
+ */
+export const ONLINE_ONLY_AUTH = ["signup", "signin", "forgot-password", "reset-password", "verify-email", "auth", "login/email"] as const;
+
+export function isOnlineOnlyAuthPath(pathname: string): boolean {
+  return ONLINE_ONLY_AUTH.some((p) => pathname === `/${p}` || pathname.startsWith(`/${p}/`));
 }
