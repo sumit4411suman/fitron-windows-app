@@ -194,7 +194,7 @@ test("online-only features say they need the internet or WhatsApp, and never pre
   // Settings › Integrations & AI: every online service, each sending nothing on a fresh installation.
   await page.goto("/settings?tab=int");
   await expect(page.getByText("Online services on this computer")).toBeVisible();
-  for (const key of ["whatsapp", "email", "ai", "autopay", "licence", "updates"]) await expect(page.getByTestId(`online-${key}`), key).toContainText("Sends: Nothing.");
+  for (const key of ["whatsapp", "email", "ai", "autopay", "licence", "sync", "updates"]) await expect(page.getByTestId(`online-${key}`), key).toContainText("Sends: Nothing.");
 
   // Fitron AI answers from the books on this computer.
   const ai = await page.evaluate(async () => {

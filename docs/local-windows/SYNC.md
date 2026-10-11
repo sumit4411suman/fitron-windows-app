@@ -176,5 +176,7 @@ button, open conflicts with both versions and the actions of §6, a link to the 
 | Linking (one way) | **Two ways**: download a fitron.in gym into a new database, or create the fitron.in account from the computer; separate books on both sides cannot be merged | Ids differ between a gym set up on a computer and one made on fitron.in; one side must adopt the other's |
 | (not covered) | A linked computer leaves the **daily jobs** to fitron.in | Otherwise each member gets every reminder twice, and every member's risk score is written on both sides daily |
 | Page refresh through the page's data hooks | The header badge reads the computer's sync state every 5 seconds and re-renders the open page when new changes arrived (not while a form has focus) | The console renders on the server; a re-render keeps what was typed |
+| Fields compared one by one when both sides changed a record | The same, except a record's own `updatedAt`: never counted as a disagreement, the later one kept; a money record that differs only there is not set aside (`src/lib/sync/merge.ts`) | The database stamps it on every write, so both sides always "changed" it |
+| (not covered) | Settings › Integrations & AI on the computer lists **Cloud sync** with the other online services: linked or not, to which address, and what it sends | The gym sees every way its data leaves the computer in one place |
 | Outbox trimmed after 90 days | Not built yet | DEPLOY-SYNC.md §7 |
 | File bodies fetched by key when missing | Not built yet: files' records sync, the files do not | DEPLOY-SYNC.md §7 |

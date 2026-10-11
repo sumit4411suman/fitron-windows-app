@@ -119,4 +119,4 @@ without sync ignores the tables.
 | --- | --- |
 | `npm test` (PostgreSQL) incl. `src/lib/sync/server.db.test.ts` | linking, idempotent uploads, money rules, tenant isolation, conflicts, deletes, failed transactions, snapshot and resync |
 | `npm run test:local` incl. `src/lib/sync/client.db.test.ts` | capture only when linked, number ranges, one upload per record, refused and conflicting changes, checkpointed downloads, transaction failures, jobs on fitron.in, resync first |
-| `npm run e2e:sync` (after `npm run build`) | two real servers, linked as an owner links them: a gym coming down whole, website → computer within seconds, computer → website, offline with a restart, a connection cut mid-upload, the same member changed on both sides |
+| `npm run e2e:sync` (after `npm run build`; CI runs it after the other browser tests) | two real servers, linked as an owner links them: a gym coming down whole, website → computer within seconds, computer → website, offline with a restart, a connection cut mid-upload, the same member changed on both sides |

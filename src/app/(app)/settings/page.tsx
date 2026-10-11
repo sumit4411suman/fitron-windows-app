@@ -45,6 +45,7 @@ import { BranchesTab } from "./branches-tab";
 import { PARTNER_SHARE } from "@/lib/domain/pricing";
 import { aiReady } from "@/lib/integrations/ai";
 import { onlineServices } from "@/lib/domain/online-services";
+import { readState as readSyncState } from "@/lib/sync/client";
 import { licenceServer } from "@/lib/integrations/license";
 import { updateFeed } from "@/lib/integrations/updates";
 import { razorpayReady } from "@/lib/integrations/razorpay";
@@ -127,7 +128,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const integrations =
     tab === "int"
       ? await (async () => {
-          const [ai, devices, monthlyPl] = await Promise.all([getAiSettings(u.orgId), db.device.findMany({ where: { orgId: u.orgId, approved: true, branchId: { in: u.branchIds } }, orderBy: { createdAt: "asc" } }), monthlyPlOn(u.orgId)]);
+          const [ai, devices, monthlyPl, syncState] = await Promise.all([getAiSettings(u.orgId), db.device.findMany({ where: { orgId: u.orgId, approved: true, branchId: { in: u.branchIds } }, orderBy: { createdAt: "asc" } }), monthlyPlOn(u.orgId), local ? readSyncState() : null]);
           const now = new Date();
           const branchName = (id: string | null) => branches.find((b) => b.id === id)?.name ?? "—";
           return {
@@ -139,6 +140,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
               autopay: { mode: autopay.mode, keysSet: !razorpayReady() },
               licence: { configured: !!licenceServer() },
               updates: { configured: !!updateFeed() },
+              sync: { linkedTo: syncState?.linked ? new URL(syncState.cloudUrl).host : "" },
             }),
             devices: devices.map((d) => ({ id: d.id, name: `${d.name ?? d.serial} · ${branchName(d.branchId)}`, status: deviceStatusText(d, now) })),
             // No poster on FITRON for Windows: members' phones cannot reach the computer (attendance/page.tsx).
