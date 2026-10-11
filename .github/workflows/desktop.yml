@@ -39,6 +39,10 @@ jobs:
         run: npx tauri build --config src-tauri/tauri.bundle.conf.json
       - name: Name the installer and write its checksum
         run: npm run desktop:installer
+      # What Windows will say about the files' signatures. A build here is not signed (no certificate in CI); the signed
+      # release is .github/workflows/desktop-release.yml, which requires every file signed by FITRON.
+      - name: Signatures (report)
+        run: npm run desktop:signature
       - name: Start, close and end the desktop program
         run: npm run desktop:smoke
       - name: Install, update and uninstall as a customer does

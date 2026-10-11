@@ -122,7 +122,7 @@ export async function createLocalBackup(o: CreateOptions): Promise<CreatedBackup
       live.close();
     }
     const check = integrityCheck(snapshot);
-    if (!check.ok) throw new BackupError(`The database failed its integrity check, so it was not backed up: ${check.problems.slice(0, 3).join("; ")}. See TROUBLESHOOTING.md.`);
+    if (!check.ok) throw new BackupError(`The database failed its integrity check, so it was not backed up (${check.problems.slice(0, 2).join("; ")}). Close FITRON and open it again: it checks the database as it starts and offers to restore your latest good backup.`);
     const { migrations, gyms, counts } = describeDb(snapshot);
 
     // 2. What goes in, with each entry's size and hash.

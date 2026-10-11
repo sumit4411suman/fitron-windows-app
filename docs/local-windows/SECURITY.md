@@ -77,10 +77,13 @@ handling), with nothing about the gym in it.
 
 - Updates are signed with FITRON's update key and verified before anything is installed; a signature must name the
   version it was made for (UPDATES.md).
-- The program and the installer are built ready for Authenticode signing: `src-tauri/tauri.sign.conf.json` adds the
-  signing settings (a certificate thumbprint, or a `signCommand` for a hardware or cloud key, and a timestamp
-  server) to a release build. Until FITRON has its certificate, builds are unsigned and SmartScreen warns on first
-  run; FITRON never asks a customer to turn SmartScreen or any Windows protection off. Phase 25 finishes this.
+- The program, its Node.js runtime, the installer and the uninstaller are signed with FITRON's Authenticode
+  certificate in a release build (`.github/workflows/desktop-release.yml`, RELEASE.md): `src-tauri/tauri.sign.conf.json`
+  runs `scripts/desktop/fitron-sign.cmd` for every file (SHA-256, RFC 3161 timestamp), and
+  `npm run desktop:signature -- --require` fails the release unless Windows reports every file as signed by FITRON,
+  valid and timestamped. Windows then shows FITRON as the verified publisher. A release is never built unsigned (the
+  workflow stops without the certificate); development builds are unsigned and the check says so. FITRON never asks a
+  customer to turn SmartScreen or any Windows protection off.
 
 ## What leaves the computer
 

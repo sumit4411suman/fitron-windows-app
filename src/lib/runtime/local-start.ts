@@ -8,7 +8,7 @@ import { createLocalBackup, recoverDocuments, unpackBackup, type CreatedBackup }
 import { startLocalScheduler } from "./local-scheduler";
 import { startSyncWorker } from "@/lib/sync/worker";
 import { stopWhenShellCloses } from "./local-shutdown";
-import { clearDamage, markDamaged, quickCheck, type Damage } from "./local-damage";
+import { clearDamage, markDamaged, checkDatabase, type Damage } from "./local-damage";
 
 // What the Local Edition does before serving: make the data folders, back the database up if an update will change it,
 // apply pending migrations. The result is kept so
@@ -58,7 +58,7 @@ export async function startLocalEdition(): Promise<LocalStartState> {
     // A damaged database (a disk fault, a write the disk never finished) is found before anything opens it for work:
     // FITRON then serves only Recovery (/recovery), which restores a backup and keeps the damaged files.
     if (existsSync(file)) {
-      const check = quickCheck(file);
+      const check = checkDatabase(file);
       if (!check.ok) {
         state.damaged = markDamaged(check.problems, dirs);
         log.error("local.start.database_damaged", undefined, { problems: check.problems.slice(0, 3).join("; ") });

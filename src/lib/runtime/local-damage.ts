@@ -11,7 +11,7 @@ import { writeRestoredSecrets } from "./local-secrets";
 
 // A damaged database (a disk fault, a power cut in the middle of a write that the disk did not finish) on FITRON for
 // Windows, docs/local-windows/DISASTER-RECOVERY.md:
-//   detection  every start checks the database (SQLite's quick_check, about a second on years of records) before
+//   detection  every start checks the database (SQLite's integrity_check, about a second on years of records) before
 //              anything opens it for work. A damaged one is never written to; DAMAGED.json in the data folder says so.
 //   recovery   the window opens on Recovery (/recovery) instead of the app: it lists the backups on this computer and
 //              restores the one a Super Admin picks, with that Super Admin's password from the backup itself. The
@@ -19,13 +19,16 @@ import { writeRestoredSecrets } from "./local-secrets";
 
 export { DAMAGED_FILE, clearDamage, markDamaged, readDamage, type Damage } from "./local-damage-marker";
 
-/** SQLite's quick_check: "ok", or what is wrong. A file SQLite cannot open as a database counts as damaged too. */
-export function quickCheck(file: string): { ok: boolean; problems: string[] } {
+/**
+ * SQLite's integrity_check (the same check a backup makes, so the two never disagree): "ok", or what is wrong. A file
+ * SQLite cannot open as a database counts as damaged too. About a second on years of records.
+ */
+export function checkDatabase(file: string): { ok: boolean; problems: string[] } {
   let db: Database.Database | undefined;
   try {
     db = new Database(file, { readonly: true, fileMustExist: true, timeout: 10_000 });
-    const rows = db.prepare("PRAGMA quick_check").all() as { quick_check: string }[];
-    const problems = rows.map((r) => r.quick_check).filter((s) => s !== "ok");
+    const rows = db.prepare("PRAGMA integrity_check").all() as { integrity_check: string }[];
+    const problems = rows.map((r) => r.integrity_check).filter((s) => s !== "ok");
     return { ok: problems.length === 0, problems };
   } catch (e) {
     const code = (e as { code?: string }).code ?? "";

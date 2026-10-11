@@ -1,0 +1,114 @@
+name: Desktop release (Windows, signed)
+
+# A signed release of FITRON Gym Accounting for Windows (docs/local-windows/RELEASE.md, Phase 25). Run by hand from the
+# Actions tab. It builds the program and installer with FITRON's Authenticode certificate and FITRON's update key, checks
+# that Windows sees every file as signed by FITRON and timestamped (npm run desktop:signature -- --require), runs the
+# same start, install, update and uninstall tests as every build, and keeps the files to upload with their update feed.
+#
+# Set up once, in the repository's Settings > Environments > "release" (protected: only the people allowed to release):
+#   secret    FITRON_SIGN_PFX_BASE64       FITRON's code-signing certificate (.pfx), base64. Or, for a certificate on a
+#   secret    FITRON_SIGN_PFX_PASSWORD     hardware token or cloud HSM, replace scripts/desktop/fitron-sign.cmd with
+#                                          that service's own command (never put a private key in the repository).
+#   secret    TAURI_SIGNING_PRIVATE_KEY    FITRON's update key (UPDATES.md), and its password if it has one:
+#   secret    TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#   variable  FITRON_UPDATE_URL            where latest.json is published (…/latest.json)
+#   variable  FITRON_UPDATE_PUBKEY         the update key's public half, built into the program
+#   variable  FITRON_PUBLISHER             the publisher name on the certificate (default FITRON)
+# Without the certificate the release stops with a message. It never ships an unsigned build, and never asks anyone to
+# turn SmartScreen off.
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: Release notes (shown in FITRON's update dialog)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    environment: release
+    timeout-minutes: 90
+    env:
+      FITRON_UPDATE_URL: ${{ vars.FITRON_UPDATE_URL }}
+      FITRON_UPDATE_PUBKEY: ${{ vars.FITRON_UPDATE_PUBKEY }}
+      FITRON_PUBLISHER: ${{ vars.FITRON_PUBLISHER || 'FITRON' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the signing settings are there
+        shell: pwsh
+        env:
+          PFX: ${{ secrets.FITRON_SIGN_PFX_BASE64 }}
+          UPDATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          $missing = @()
+          if (-not $env:PFX) { $missing += "secret FITRON_SIGN_PFX_BASE64" }
+          if (-not $env:UPDATE_KEY) { $missing += "secret TAURI_SIGNING_PRIVATE_KEY" }
+          if (-not $env:FITRON_UPDATE_URL) { $missing += "variable FITRON_UPDATE_URL" }
+          if (-not $env:FITRON_UPDATE_PUBKEY) { $missing += "variable FITRON_UPDATE_PUBKEY" }
+          if ($missing.Count) { Write-Output "::error::Not set in the release environment: $($missing -join ', '). A release is never built unsigned."; exit 1 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      - name: Put signtool on the PATH (Windows SDK)
+        shell: pwsh
+        run: |
+          $st = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $st) { Write-Output "::error::signtool.exe not found (Windows SDK)"; exit 1 }
+          $st.DirectoryName >> $env:GITHUB_PATH
+      - name: Import FITRON's certificate into this runner's user store
+        shell: pwsh
+        env:
+          PFX: ${{ secrets.FITRON_SIGN_PFX_BASE64 }}
+          PFX_PASSWORD: ${{ secrets.FITRON_SIGN_PFX_PASSWORD }}
+        run: |
+          $file = Join-Path $env:RUNNER_TEMP "fitron-sign.pfx"
+          [IO.File]::WriteAllBytes($file, [Convert]::FromBase64String($env:PFX))
+          try {
+            $cert = Import-PfxCertificate -FilePath $file -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString $env:PFX_PASSWORD -AsPlainText -Force)
+          } finally {
+            Remove-Item $file -Force
+          }
+          "FITRON_SIGN_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+      - name: Package the server with this Node.js, and check it
+        run: npm run desktop:bundle
+      - name: Build, signed (Authenticode) and with signed update files
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build --config src-tauri/tauri.bundle.conf.json --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.sign.conf.json
+      - name: Name the installer and write its checksum
+        run: npm run desktop:installer
+      - name: Every file signed by FITRON, valid and timestamped
+        run: npm run desktop:signature -- --require
+      - name: Start, close and end the desktop program
+        run: npm run desktop:smoke
+      - name: Install, update and uninstall as a customer does
+        run: npm run desktop:installer-test
+      - name: The update feed
+        shell: pwsh
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: |
+          $env:NOTES | Out-File -Encoding utf8 RELEASE-NOTES.md
+          npm run desktop:release -- --notes-file RELEASE-NOTES.md
+      - name: Remove the certificate from the runner
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:FITRON_SIGN_THUMBPRINT) { Remove-Item "Cert:\CurrentUser\My\$env:FITRON_SIGN_THUMBPRINT" -ErrorAction SilentlyContinue }
+      - name: Keep the release files
+        uses: actions/upload-artifact@v4
+        with:
+          name: FITRON-Gym-Accounting-release
+          path: dist/desktop/
+          retention-days: 30

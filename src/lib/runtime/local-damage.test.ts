@@ -8,7 +8,7 @@ import { dataDirs, type DataDirs } from "./paths";
 import { migrateLocal } from "./local-migrate";
 import { makeLocalClient } from "./local-client";
 import { createLocalBackup } from "./fitron-backup";
-import { damagedCopies, markDamaged, quickCheck, readDamage, recoverFromBackup, RecoveryRefused } from "./local-damage";
+import { damagedCopies, markDamaged, checkDatabase, readDamage, recoverFromBackup, RecoveryRefused } from "./local-damage";
 import { createLocalGym } from "@/lib/services/local-setup";
 
 // A damaged database on FITRON for Windows (docs/local-windows/DISASTER-RECOVERY.md): found by the start-up check,
@@ -48,21 +48,21 @@ describe.skipIf(!isLocal())("a damaged database on FITRON for Windows", () => {
   });
 
   it("finds damage in the pages and in the file's header, and passes a healthy database", () => {
-    expect(quickCheck(inst.dirs.database)).toEqual({ ok: true, problems: [] });
+    expect(checkDatabase(inst.dirs.database)).toEqual({ ok: true, problems: [] });
     damagePages(inst.dirs.database);
-    const pages = quickCheck(inst.dirs.database);
+    const pages = checkDatabase(inst.dirs.database);
     expect(pages.ok).toBe(false);
     expect(pages.problems.length).toBeGreaterThan(0);
     const fd = openSync(inst.dirs.database, "r+");
     writeSync(fd, Buffer.from("this is not a database at all!!"), 0, 31, 0);
     closeSync(fd);
-    expect(quickCheck(inst.dirs.database)).toMatchObject({ ok: false, problems: [expect.stringMatching(/not a database/i)] });
+    expect(checkDatabase(inst.dirs.database)).toMatchObject({ ok: false, problems: [expect.stringMatching(/not a database/i)] });
   });
 
   it("restores a backup only for a Super Admin of that backup, keeps the damaged files, and leaves a working database", async () => {
     damagePages(inst.dirs.database);
     const damagedBytes = readFileSync(inst.dirs.database);
-    markDamaged(quickCheck(inst.dirs.database).problems, inst.dirs);
+    markDamaged(checkDatabase(inst.dirs.database).problems, inst.dirs);
     const base = { file: inst.backup, dirs: inst.dirs, migrations: MIGRATIONS };
 
     await expect(recoverFromBackup({ ...base, email: OWNER.email, password: "wrong-password-123" })).rejects.toThrow(RecoveryRefused);
@@ -75,7 +75,7 @@ describe.skipIf(!isLocal())("a damaged database on FITRON for Windows", () => {
     const r = await recoverFromBackup({ ...base, email: OWNER.email.toUpperCase(), password: OWNER.password });
     expect(r.by).toBe("Owner");
     expect(readDamage(inst.dirs)).toBeNull();
-    expect(quickCheck(inst.dirs.database).ok).toBe(true);
+    expect(checkDatabase(inst.dirs.database).ok).toBe(true);
     const db = new Database(inst.dirs.database, { readonly: true });
     expect((db.prepare(`SELECT name FROM "Organization"`).get() as { name: string }).name).toBe("Damage Gym");
     expect(db.prepare(`SELECT COUNT(*) AS n FROM "Session"`).get()).toEqual({ n: 0 });
