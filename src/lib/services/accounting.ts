@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
+import { balanceDue } from "@/lib/domain/billing";
 import { addDays, addMonths } from "@/lib/domain/dates";
 import { audit } from "./audit";
 import { UserError } from "./errors";
@@ -247,7 +248,7 @@ async function owed(u: CurrentUser, invoiceDate: { gte?: Date; lte?: Date }, upT
     where: { orgId: u.orgId, branchId: { in: u.branchIds }, status: "ISSUED", date: invoiceDate },
     select: { total: true, payments: { where: { status: "SUCCESS", ...(upTo ? { date: { lte: fromIso(upTo) } } : {}) }, select: { amount: true } } },
   });
-  return invs.reduce((s, i) => s + Math.max(0, i.total - i.payments.reduce((a, p) => a + p.amount, 0)), 0);
+  return invs.reduce((s, i) => s + balanceDue(i.total, i.payments.reduce((a, p) => a + p.amount, 0)), 0);
 }
 
 /** Money on hand across every method at the end of `upTo`: the cash and bank books' closing balances added up. */
@@ -354,7 +355,7 @@ export async function ledgerTable(u: CurrentUser, kind: LedgerKind) {
   const invs = await db.invoice.findMany({ where: { ...scope, status: "ISSUED" }, orderBy: { dueDate: "asc" }, include: { member: { select: { name: true } }, payments: { where: { status: "SUCCESS" }, select: { amount: true } } } });
   const rows = invs
     .map((i) => ({ i, paid: i.payments.reduce((a, p) => a + p.amount, 0) }))
-    .filter((x) => x.paid < x.i.total)
-    .map(({ i, paid }) => [i.number, i.member.name, i.date, i.dueDate, i.total, paid, i.total - paid] as (string | number | Date)[]);
+    .filter((x) => balanceDue(x.i.total, x.paid) > 0)
+    .map(({ i, paid }) => [i.number, i.member.name, i.date, i.dueDate, i.total, paid, balanceDue(i.total, paid)] as (string | number | Date)[]);
   return { cols: ["Invoice", "Member", "Invoice date", "Due", "Total", "Paid", "Balance"], money: [4, 5, 6], rows, note: `${rows.length} invoices with a balance` };
 }

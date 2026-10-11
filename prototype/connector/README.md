@@ -1,3 +1,5 @@
+> **Superseded for WhatsApp.** The production WhatsApp connector now lives in `whatsapp-connector/` at the repository root (multi-tenant, Postgres + Redis, Docker, consent and pacing). This folder remains for the Razorpay UPI Autopay helper and for reference.
+
 # Fitron WhatsApp connector
 
 Links the gym's WhatsApp by QR code (like WhatsApp Web) so Fitron can send reminders and invoices automatically. No Meta API key.

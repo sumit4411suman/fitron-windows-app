@@ -1,0 +1,26 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# WhatsApp authentication data and uploaded media: never in git
+.whatsapp-session/
+*.session
+data/
+sessions/
+media/
+
+# generated Prisma client
+src/generated/
+
+# docker
+docker/certbot/
+docker/letsencrypt/
+
+.DS_Store
+npm-debug.log*

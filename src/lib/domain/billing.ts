@@ -55,6 +55,10 @@ export type PaymentLike = { amount: number; status: "SUCCESS" | "REVERSED" };
 
 export type InvoiceStatus = "CANCELLED" | "PAID" | "PARTIALLY_PAID" | "UNPAID";
 
+/** One name for each state everywhere: "Part paid" in sentences, "PART PAID" on tags and exports. */
+export const INVOICE_STATUS_LABEL: Record<InvoiceStatus, string> = { PAID: "Paid", PARTIALLY_PAID: "Part paid", UNPAID: "Unpaid", CANCELLED: "Cancelled" };
+export const INVOICE_STATUS_TAG: Record<InvoiceStatus, string> = { PAID: "PAID", PARTIALLY_PAID: "PART PAID", UNPAID: "UNPAID", CANCELLED: "CANCELLED" };
+
 export type InvoiceState = {
   paid: number;
   balance: number;
@@ -64,7 +68,19 @@ export type InvoiceState = {
 };
 
 /**
- * Paid state is never stored (rule 3): balance = total − successful payments.
+ * Less than a rupee left after a payment is a round-off, not a due: a GST invoice of ₹2,557.06 paid as ₹2,557 is
+ * settled. Nobody can hand over six paise, and the balance would show as ₹0 while the invoice sat in Receivables.
+ */
+export const ROUND_OFF_PAISE = 100;
+
+/** What is still owed on an invoice of `total` after `paid` has come in: 0 once only a round-off is left. */
+export function balanceDue(total: number, paid: number): number {
+  const left = Math.max(0, total - paid);
+  return paid > 0 && left < ROUND_OFF_PAISE ? 0 : left;
+}
+
+/**
+ * Paid state is never stored (rule 3): balance = total − successful payments, less any round-off (balanceDue).
  * A cancelled invoice has no balance.
  */
 export function invoiceState(
@@ -73,7 +89,7 @@ export function invoiceState(
   today: IsoDate,
 ): InvoiceState {
   const paid = payments.filter((p) => p.status === "SUCCESS").reduce((s, p) => s + p.amount, 0);
-  const balance = invoice.cancelled ? 0 : Math.max(0, invoice.total - paid);
+  const balance = invoice.cancelled ? 0 : balanceDue(invoice.total, paid);
   const status: InvoiceStatus = invoice.cancelled
     ? "CANCELLED"
     : balance <= 0

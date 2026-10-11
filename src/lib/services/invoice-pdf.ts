@@ -2,8 +2,7 @@ import "server-only";
 import type { CurrentUser } from "@/lib/auth/current";
 import { db } from "@/lib/db";
 import { getInvoice } from "./billing";
-import { getGymProfile } from "./settings";
-import { getTax } from "./tax";
+import { sellerOf } from "./invoice-seller";
 import { readGymLogo } from "./gym-logo";
 import { renderInvoicePdf } from "@/lib/pdf/invoice";
 import { renderReceiptPdf } from "@/lib/pdf/receipt";
@@ -14,19 +13,22 @@ import { INVOICE_STATUS_LABEL } from "@/components/invoice-status";
 
 type Invoice = NonNullable<Awaited<ReturnType<typeof getInvoice>>>;
 
-/** Who a document is from: the gym's profile, with a branch's own address, phone and GSTIN where it has them. */
+/**
+ * Who a document is from: the seller as it was when the invoice was made (Invoice.seller, written with the invoice), so a
+ * later change in Settings never alters an old invoice or its receipts. Invoices made before the snapshot was kept fall
+ * back to the live settings, which is all that was ever printed on them.
+ */
 async function gymHeader(u: CurrentUser, inv: Invoice): Promise<GymHeader> {
-  const [gym, tax, logo] = await Promise.all([getGymProfile(u.orgId), getTax(u.orgId), readGymLogo(u.orgId).catch(() => null)]);
+  const [gym, logo] = await Promise.all([sellerOf(inv), readGymLogo(u.orgId).catch(() => null)]);
   return {
     name: gym.name || inv.org.name,
-    tagline: gym.tagline || undefined,
-    address: gym.address || inv.branch.address,
-    phone: gym.phone || inv.branch.phone,
-    email: gym.email || undefined,
-    // A branch's own registration wins; else the gym-level one from Billing & GST.
-    gstin: inv.branch.gstin || tax.gstin || null,
-    sac: tax.sac,
-    instagram: gym.instagram || undefined,
+    tagline: gym.tagline,
+    address: gym.address ?? "",
+    phone: gym.phone ?? "",
+    email: gym.email,
+    gstin: gym.gstin,
+    sac: gym.sac,
+    instagram: gym.instagram,
     logo: logo && (logo.mime === "image/png" || logo.mime === "image/jpeg") ? { bytes: logo.body, mime: logo.mime } : null,
   };
 }

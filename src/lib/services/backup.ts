@@ -34,7 +34,7 @@ export type BackupKind = "MANUAL" | "AUTO" | "PRE_RESTORE";
 export const MAX_RESTORE_BYTES = 60 * 1024 * 1024;
 const PAGE = 2000;
 const CHUNK = 500;
-const STORAGE_FULL = "Could not write the backup to the server's storage (full or not writable). Check STORAGE_DIR or the S3 settings.";
+const STORAGE_FULL = "Could not save the backup: the server's file storage is full or not writable. Ask whoever hosts Fitron (or support) to check the storage folder or the bucket settings.";
 
 type Client = Prisma.TransactionClient | typeof db;
 type Loose = {
@@ -174,7 +174,9 @@ export async function createBackup(actor: Actor, kind: BackupKind, now = new Dat
   const bytes = new Uint8Array(Buffer.from(x.text, "utf8"));
   try {
     await putObject(storageKey, bytes, "application/json");
-  } catch {
+  } catch (e) {
+    if (e instanceof UserError) throw e;
+    log.error("backup.write_failed", e, { orgId: actor.orgId });
     throw new UserError(STORAGE_FULL);
   }
   const fileName = backupFileName(x.gymName, now);

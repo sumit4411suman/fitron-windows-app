@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { BrandMark } from "@/components/logo";
 
 /**
  * The sidebar logo from the prototype: the gym's own logo when one is uploaded in Settings, else
@@ -15,9 +16,9 @@ export function SideLogo({ src, name }: { src?: string | null; name?: string } =
   }
   return (
     <>
-      <Image src="/fitron-logo.png" alt="FITRON" width={599} height={218} className="block h-auto w-full light:hidden" />
+      <Image src="/fitron-logo-v2.png" alt="FITRON" width={599} height={218} className="block h-auto w-full light:hidden" />
       <span className="hidden items-center gap-2.5 py-2 light:inline-flex">
-        <Image src="/fitron-mark.png" alt="" width={40} height={40} />
+        <BrandMark size={40} />
         <span className="text-2xl font-bold tracking-[0.18em]">FITRON</span>
       </span>
     </>

@@ -85,7 +85,7 @@ export async function installationInfo(orgId: string) {
     db.invoice.count({ where: { orgId } }),
     db.payment.count({ where: { orgId } }),
   ]);
-  return { version: pkg.version, members, invoices, payments, storage: storageMode() === "S3" ? "S3" : "local disk" };
+  return { version: pkg.version, members, invoices, payments, storage: { S3: "S3", DISK: "local disk", DATABASE: "database" }[storageMode()] };
 }
 
 /**

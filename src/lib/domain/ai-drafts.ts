@@ -13,6 +13,11 @@ export const isDraftKind = (k: string): k is DraftKind => (DRAFT_KINDS as readon
 export const DRAFT_TTL_MS = 2 * 60 * 60 * 1000;
 export const draftExpired = (createdAt: Date, now = Date.now()) => now - createdAt.getTime() > DRAFT_TTL_MS;
 
+/** Starts the result of a draft that failed a check when its button was pressed, so the card and the model know nothing was saved. */
+export const NOT_SAVED = "Not saved:";
+/** Starts the result of a draft retired because another card for the same action on the same member was confirmed. */
+export const NO_LONGER = "No longer available:";
+
 /** The button label for each kind. */
 export const CONFIRM_LABEL: Record<DraftKind, string> = {
   INVOICE: "Create invoice",

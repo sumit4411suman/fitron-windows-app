@@ -32,7 +32,7 @@ export default async function SellPage({ params }: PageProps<"/members/[id]/sell
       {plans.length === 0 ? (
         <Empty>There are no active plans. Create one under Plans &amp; offers first.</Empty>
       ) : (
-        <SellForm memberId={m.id} plans={plans} defaultPlanId={plans.find((p) => p.name === m.planName)?.id ?? defaultPlanFor(plans, defaultMonths)?.id} defaultStart={start} isNew={isNew} taxRate={tax.enabled ? tax.rate : 0} />
+        <SellForm memberId={m.id} member={{ gender: m.gender, tags: m.tags, occupation: m.occupation }} plans={plans} defaultPlanId={plans.find((p) => p.name === m.planName)?.id ?? defaultPlanFor(plans, defaultMonths)?.id} defaultStart={start} isNew={isNew} taxRate={tax.enabled ? tax.rate : 0} />
       )}
     </>
   );

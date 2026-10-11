@@ -2,7 +2,8 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import type { Prisma } from "@/generated/prisma/client";
-import { normaliseCode, offerUsable } from "@/lib/domain/offers";
+import { normaliseCode, offerState } from "@/lib/domain/offers";
+import { fmtDate } from "@/lib/format";
 import type { OfferInput } from "@/lib/validation/plan";
 import { audit } from "./audit";
 import { isUniqueViolation, UserError } from "./errors";
@@ -39,7 +40,12 @@ export async function setOfferStatus(u: CurrentUser, id: string, status: "ACTIVE
 export async function usableOffer(orgId: string, raw: string) {
   const code = normaliseCode(raw);
   const o = await db.offer.findFirst({ where: { orgId, code } });
-  if (!o || !offerUsable({ ...o, validTill: toIso(o.validTill) }, todayIso())) throw new UserError(`Offer code ${code} is not valid or has expired.`, "offerCode");
+  if (!o) throw new UserError(`Offer code ${code} was not found.`, "offerCode");
+  const validTill = toIso(o.validTill);
+  const state = offerState({ ...o, validTill }, todayIso());
+  if (state === "Expired") throw new UserError(`Offer code ${code} expired on ${fmtDate(validTill)}.`, "offerCode");
+  if (state === "Paused") throw new UserError(`Offer code ${code} is paused.`, "offerCode");
+  if (state === "Used up") throw new UserError(`Offer code ${code} has reached its usage limit.`, "offerCode");
   return o;
 }
 

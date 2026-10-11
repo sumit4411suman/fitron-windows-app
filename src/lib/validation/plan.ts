@@ -1,6 +1,7 @@
 import * as z from "zod";
 import "@/lib/zod-config";
 import { optionalText, rupees } from "./common";
+import { todayIso } from "@/lib/services/time";
 
 export const PLAN_KINDS = ["Membership", "Personal Training", "Add-on"] as const;
 
@@ -42,6 +43,10 @@ export const offerInput = z
     usageLimit: z.preprocess((v) => (v === "" || v == null ? null : v), z.coerce.number().int().min(1, { error: "At least 1 use." }).max(100000).nullable()),
   })
   .transform((o, ctx) => {
+    if (o.validTill < todayIso()) {
+      ctx.addIssue({ code: "custom", path: ["validTill"], message: "The end date is in the past." });
+      return z.NEVER;
+    }
     const n = Number(o.value.replace(/[₹,%\s]/g, ""));
     if (!Number.isFinite(n) || n <= 0) {
       ctx.addIssue({ code: "custom", path: ["value"], message: "Enter the discount." });

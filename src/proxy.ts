@@ -45,5 +45,5 @@ export const config = {
   // Everything except what has nothing to protect or needs no policy: Next.js and the public pages' own files, robots and
   // sitemap, and the machine routes (health check, webhooks, job runner, door devices, the AI Trainer's APIs, error and
   // violation reports). They are public: src/lib/public-paths.ts, kept equal to this list by proxy.test.ts.
-  matcher: ["/((?!_next/|site/|trainer/|auth/|iclock/|api/webhooks/|api/jobs/|api/trainer/|api/coach|api/gym-demo|api/assistant|api/health|api/local/shell/|api/analytics-config|api/client-error|api/csp-report|robots.txt|sitemap.xml|manifest.webmanifest|favicon.ico|fitron-mark.png|fitron-logo.png).*)"],
+  matcher: ["/((?!_next/|site/|trainer/|auth/|iclock/|api/webhooks/|api/jobs/|api/trainer/|api/coach|api/gym-demo|api/assistant|api/health|api/local/shell/|api/analytics-config|api/client-error|api/csp-report|robots.txt|sitemap.xml|manifest.webmanifest|favicon.ico|fitron-mark.png|fitron-mark-v2.png|fitron-mark-light-v2.png|fitron-logo.png|fitron-logo-v2.png).*)"],
 };

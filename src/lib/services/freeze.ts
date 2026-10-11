@@ -12,11 +12,11 @@ import { fromIso, todayIso, toIso } from "./time";
 
 const like = (f: { fromDate: Date; days: number; endedOn: Date | null }): FreezeLike => ({ fromDate: toIso(f.fromDate), days: f.days, endedOn: f.endedOn ? toIso(f.endedOn) : null });
 
-/** The member's freeze that is still on hold (today or later), if any. */
+/** The member's freeze that is still on hold (today or later), if any. `running` is false while it is only scheduled. */
 export async function openFreeze(memberId: string, today = todayIso()) {
   const all = await db.membershipFreeze.findMany({ where: { memberId, endedOn: null }, orderBy: { fromDate: "desc" } });
   const f = all.find((x) => freezeOpen(like(x), today));
-  return f ? { ...f, lastDay: freezeLastDay(like(f)) } : null;
+  return f ? { ...f, lastDay: freezeLastDay(like(f)), running: freezeCovers(like(f), today) } : null;
 }
 
 /** Entry blocks for members frozen today ("Membership frozen till 14 Oct"), for check-in and door devices. */
@@ -35,6 +35,12 @@ export async function frozenMemberIds(memberIds: string[], today = todayIso()): 
     select: { memberId: true, fromDate: true, days: true, endedOn: true },
   });
   return new Set(fs.filter((f) => freezeOpen(like(f), today)).map((f) => f.memberId));
+}
+
+/** Members frozen today (a freeze scheduled to start later doesn't count), for the dashboard's "Frozen" card. */
+export async function frozenTodayIds(memberIds: string[], today = todayIso()): Promise<Set<string>> {
+  if (memberIds.length === 0) return new Set();
+  return new Set([...(await frozenBlocks(memberIds, today)).keys()]);
 }
 
 async function ownMember(u: CurrentUser, memberId: string) {

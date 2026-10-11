@@ -34,3 +34,13 @@ export const daysBetween = (a: IsoDate, b: IsoDate): number =>
 /** A plan of `months` starting on `start` ends the day before the same date `months` later. */
 export const membershipEndDate = (start: IsoDate, months: number): IsoDate =>
   addDays(addMonths(start, months), -1);
+
+/**
+ * Age in whole years on `today`, counted by the calendar: a member born on 10 Oct 1989 turns 37 on 10 Oct 2026, the
+ * birthday itself (dividing days by 365.25 is a day late around birthdays). Someone born on 29 Feb has their birthday
+ * on 1 Mar in other years.
+ */
+export const ageOn = (dob: IsoDate, today: IsoDate): number => {
+  const years = Number(today.slice(0, 4)) - Number(dob.slice(0, 4));
+  return today.slice(5) >= dob.slice(5) ? years : years - 1;
+};

@@ -40,10 +40,11 @@ export async function findMemberByCode(u: CurrentUser, code: string) {
   return db.member.findFirst({ where: { orgId: u.orgId, branchId: { in: u.branchIds }, walkIn: false, code: ciEquals(c) } });
 }
 
-/** "{n} of {n} members have given consent": registration consent is taken on the member form, so every member counts. */
+/** "{n} of {n} members have given consent": only members with a recorded consent date (member form, import or "Record consent") count. */
 export async function countConsented(u: CurrentUser) {
-  const total = await db.member.count({ where: { orgId: u.orgId, deletedAt: null, walkIn: false } });
-  return { consented: total, total };
+  const where = { orgId: u.orgId, deletedAt: null, walkIn: false };
+  const [total, consented] = await Promise.all([db.member.count({ where }), db.member.count({ where: { ...where, consentAt: { not: null } } })]);
+  return { consented, total };
 }
 
 /** Everything the gym holds about one member, as a file (biometric templates and device PINs never leave the system). */

@@ -69,7 +69,7 @@ export default async function RolesPage({ searchParams }: PageProps<"/settings/r
             <div key={r.id} className="rounded-lg bg-surface px-3.5 py-3">
               <div className="text-sm font-semibold">{r.name}</div>
               <div className="text-xs text-muted">
-                {counts.find((c) => c.roleId === r.id)?._count ?? 0} people · {r.permissions.length} of {total} permissions
+                {counts.find((c) => c.roleId === r.id)?._count ?? 0} {(counts.find((c) => c.roleId === r.id)?._count ?? 0) === 1 ? "person" : "people"} · {r.permissions.length} of {total} permissions
               </div>
             </div>
           ))}

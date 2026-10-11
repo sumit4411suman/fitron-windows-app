@@ -278,7 +278,9 @@ export default async function ClassesPage({ searchParams }: PageProps<"/classes"
                 <div className={cx("h-full rounded", sel.held >= sel.slot.capacity ? "bg-alert-700" : "bg-accent")} style={{ width: pct(sel.held, sel.slot.capacity) }} />
               </div>
             </div>
-            {sel.date >= today && sel.slot.active && <SessionBook slotId={sel.slot.id} date={sel.date} members={panel.bookable} full={sel.held >= sel.slot.capacity} />}
+            {sel.date >= today && sel.slot.active && (
+              <SessionBook key={`${sel.slot.id}-${sel.date}-${sel.held}-${sel.bookings.length}-${panel.waiting}`} slotId={sel.slot.id} date={sel.date} members={panel.bookable} full={sel.held >= sel.slot.capacity} />
+            )}
             <div className="flex flex-wrap gap-2">
               {u.can("whatsapp.send") && sel.date >= today && panel.anyBooked && (
                 <form action={remindClassAction.bind(null, sel.slot.id, sel.date, backQ)}>

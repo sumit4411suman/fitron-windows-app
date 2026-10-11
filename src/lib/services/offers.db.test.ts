@@ -6,7 +6,7 @@ import { createMember } from "./members";
 import { createPlan } from "./plans";
 import { sellMembership } from "./billing";
 import { createOffer, setOfferStatus } from "./offers";
-import { todayIso } from "./time";
+import { fromIso, todayIso } from "./time";
 
 describe.skipIf(!hasDb)("offer codes (database)", () => {
   it("adds the offer's discount to a sale, counts the use, and refuses paused, expired or used-up codes", async () => {
@@ -25,11 +25,14 @@ describe.skipIf(!hasDb)("offer codes (database)", () => {
     expect(r.invoice.total).toBe(130000);
     expect((await db.offer.findUniqueOrThrow({ where: { id: offer.id } })).uses).toBe(1);
 
-    await expect(sellMembership(admin, m2.id, { ...sale, offerCode: "DIWALI10" })).rejects.toThrow(/not valid/);
+    await expect(sellMembership(admin, m2.id, { ...sale, offerCode: "DIWALI10" })).rejects.toThrow(/Offer code DIWALI10 has reached its usage limit/);
     await db.offer.update({ where: { id: offer.id }, data: { usageLimit: null } });
     await setOfferStatus(admin, offer.id, "PAUSED");
-    await expect(sellMembership(admin, m2.id, { ...sale, offerCode: "DIWALI10" })).rejects.toThrow(/not valid/);
-    await expect(sellMembership(admin, m2.id, { ...sale, offerCode: "NOPE" })).rejects.toThrow(/not valid/);
+    await expect(sellMembership(admin, m2.id, { ...sale, offerCode: "DIWALI10" })).rejects.toThrow(/Offer code DIWALI10 is paused/);
+    await setOfferStatus(admin, offer.id, "ACTIVE");
+    await db.offer.update({ where: { id: offer.id }, data: { validTill: fromIso(addDays(today, -1)) } });
+    await expect(sellMembership(admin, m2.id, { ...sale, offerCode: "DIWALI10" })).rejects.toThrow(/Offer code DIWALI10 expired on \d+ \w+ \d{4}/);
+    await expect(sellMembership(admin, m2.id, { ...sale, offerCode: "NOPE" })).rejects.toThrow(/Offer code NOPE was not found/);
   });
 
   it("charges the category price when one is picked, and remembers the category", async () => {

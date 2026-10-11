@@ -5,6 +5,7 @@ import path from "node:path";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BackupError, createLocalBackup, listLocalBackups, pruneLocalBackups, readManifest, recoverDocuments, restoreLocalBackup, unpackBackup, backupPath } from "./fitron-backup";
+import { listMigrations } from "./local-migrate";
 import { migrateLocal } from "./local-migrate";
 import { dataDirs, type DataDirs } from "./paths";
 import { ensureLocalSecrets } from "./local-secrets";
@@ -74,7 +75,7 @@ describe("a .fitronbackup", () => {
     const b = await make("manual", undefined, new Date("2026-10-11T06:00:00Z"));
     expect(b.name).toBe("FITRON-Backup-2026-10-11.fitronbackup");
     expect(path.dirname(b.file)).toBe(path.join(dirs.backups, "manual"));
-    expect(b.manifest).toMatchObject({ format: "fitronbackup", formatVersion: 1, appVersion: "1.0.0", kind: "manual", migrations: ["0001_init"], gyms: [{ id: "org1", name: "Power Haus Gym" }] });
+    expect(b.manifest).toMatchObject({ format: "fitronbackup", formatVersion: 1, appVersion: "1.0.0", kind: "manual", migrations: listMigrations(path.join(process.cwd(), "prisma", "local-migrations")).map((m) => m.name), gyms: [{ id: "org1", name: "Power Haus Gym" }] });
     expect(b.manifest.counts).toMatchObject({ Member: 1, Invoice: 1, Payment: 1 });
     expect(b.manifest.files.map((f) => f.path).sort()).toEqual(["data/fitron.db", "documents/org1/members/m1/aadhaar.pdf", "keys/biometric.key"]);
     expect(b.manifest.files.every((f) => /^[0-9a-f]{64}$/.test(f.sha256))).toBe(true);

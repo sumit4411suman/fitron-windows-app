@@ -9,6 +9,7 @@ import { daysBetween } from "@/lib/domain/dates";
 import { LinkButton, Notice, Pager, Select, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
 import { AutoFilter } from "@/components/auto-filter";
 import { MemberStatus } from "@/components/status";
+import { Tag } from "@/components/tag";
 import { fmtDate, fmtStamp, formatRupees, initials } from "@/lib/format";
 import { bringBackMember } from "./actions";
 
@@ -19,7 +20,9 @@ const STATUS_OPTS = [
   ["", "All statuses"],
   ["ACTIVE", "Active"],
   ["EXPIRING_SOON", "Expiring soon"],
+  ["UPCOMING", "Starts later"],
   ["EXPIRED", "Expired"],
+  ["NO_PLAN", "No plan"],
   ["PAYMENT_PENDING", "Payment pending"],
   ["DUE", "Any balance due"],
   ["SUSPENDED", "Suspended"],
@@ -27,7 +30,7 @@ const STATUS_OPTS = [
 ] as const;
 
 const left = (end: string | null, today: string) => {
-  if (!end) return "No membership";
+  if (!end) return "No plan yet";
   const d = daysBetween(end, today);
   return d < 0 ? `Expired ${-d} days ago` : d === 0 ? "Ends today" : `${d} days left`;
 };
@@ -144,7 +147,15 @@ export default async function MembersPage({ searchParams }: PageProps<"/members"
                         <span className="grid size-8 flex-none place-items-center rounded-full bg-neutral-200 text-xs font-semibold">{initials(m.name)}</span>
                         <span>
                           <span className="block">{m.name}</span>
-                          <span className="block text-xs text-muted">{m.code}</span>
+                          <span className="block text-xs text-muted">
+                            {m.code}
+                            {!m.consentAt && (
+                              <>
+                                {" "}
+                                <Tag label="No consent" style={3} className="ml-1 px-1.5 py-0 text-[10px]" />
+                              </>
+                            )}
+                          </span>
                         </span>
                       </Link>
                     </td>
@@ -174,6 +185,7 @@ export default async function MembersPage({ searchParams }: PageProps<"/members"
                   <span className="block text-[15px]">{m.name}</span>
                   <span className="block truncate text-xs text-muted">
                     {m.code} · {m.planName ?? "—"} · {fmtDate(m.latestEnd)}
+                    {!m.consentAt && " · No consent recorded"}
                   </span>
                 </span>
                 <MemberStatus status={m.status} />

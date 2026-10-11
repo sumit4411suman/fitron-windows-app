@@ -4,6 +4,7 @@ import { useActionState, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { LightningIcon } from "@phosphor-icons/react";
 import { campaignAction, saveRuleAction, saveTemplateAction, sendOneAction } from "./actions";
+import { useConfirmSubmit } from "@/components/confirm-dialog";
 import { Button, Field, Input, Notice, ScrollRegion, Select, Textarea } from "@/components/ui";
 import { WHEN } from "@/lib/domain/wa-rules";
 
@@ -83,14 +84,10 @@ export function CampaignForm({ audiences }: { audiences: { key: string; label: s
   const [state, action, pending] = useActionState(campaignAction, undefined);
   const [aud, setAud] = useState(audiences[0]?.key ?? "active");
   const n = audiences.find((a) => a.key === aud)?.count ?? 0;
+  const [onSubmit, dialog] = useConfirmSubmit(() => ({ title: `Send this message to ${n} member${n === 1 ? "" : "s"}?`, label: "Send" }));
   return (
-    <form
-      action={action}
-      onSubmit={(e) => {
-        if (!window.confirm(`Send this message to ${n} member${n === 1 ? "" : "s"}?`)) e.preventDefault();
-      }}
-      className="flex flex-col gap-3"
-    >
+    <form action={action} onSubmit={onSubmit} className="flex flex-col gap-3">
+      {dialog}
       {state?.message && <Notice tone={state.ok ? "ok" : "alert"}>{state.message}</Notice>}
       <Field label="Send to">
         <Select name="audience" value={aud} onChange={(e) => setAud(e.target.value)}>

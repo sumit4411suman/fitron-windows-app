@@ -3,6 +3,7 @@ import { ClockCounterClockwiseIcon, DatabaseIcon } from "@phosphor-icons/react/d
 import { requirePermission } from "@/lib/auth/current";
 import { backupStatus, lastAutoFailure, lastRestoreTest, listBackups } from "@/lib/services/backup";
 import { ageText, sizeText, summarise } from "@/lib/domain/backup";
+import { storageProblem } from "@/lib/integrations/storage";
 import { Badge, Button, Card, Empty, Field, Input, LinkButton, Notice, TABLE, TD, TH, TR, ScrollRegion } from "@/components/ui";
 import { Dialog, DialogButtons } from "@/components/dialog";
 import { SettingsShell } from "@/components/section-tabs";
@@ -43,6 +44,7 @@ export default async function BackupPage({ searchParams }: PageProps<"/settings/
   const restore = typeof sp.restore === "string" && superAdmin ? sp.restore : null;
   const restoring = restore && restore !== "file" ? backups.find((b) => b.id === restore) : null;
   const now = new Date();
+  const storageIssue = storageProblem();
 
   return (
     <SettingsShell u={u} current="/settings/backup">
@@ -57,9 +59,10 @@ export default async function BackupPage({ searchParams }: PageProps<"/settings/
         )}
         {typeof sp.restored === "string" && <Notice tone="ok">Backup restored. Everything now matches the backup taken {sp.restored}. A safety copy of what was there before is in the list below.</Notice>}
         {typeof sp.error === "string" && !restore && <Notice tone="alert">{sp.error}</Notice>}
+        {storageIssue && <Notice tone="alert">{storageIssue} Until then backups and uploads cannot be saved.</Notice>}
         {failure && (
           <Notice tone="alert">
-            The automatic backup failed on {fmtDate(failure.day)}: {failure.error}. Back up now and check the server&apos;s storage (STORAGE_DIR or the S3 settings).
+            The automatic backup failed on {fmtDate(failure.day)}: {failure.error} Back up now; if it fails again, ask whoever hosts Fitron (or support) to check the server&apos;s file storage.
           </Notice>
         )}
 

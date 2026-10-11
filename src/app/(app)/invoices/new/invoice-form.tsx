@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import Link from "next/link";
 import { newInvoice } from "../../billing-actions";
 import { Button, Card, Field, Input, LinkButton, Notice, Select } from "@/components/ui";
 import { invoiceTotals } from "@/lib/domain/billing";
@@ -14,7 +15,8 @@ const paise = (s: string) => {
   return Number.isFinite(n) ? Math.round(n * 100) : 0;
 };
 
-export function InvoiceForm({ members, memberId, today, taxRate }: { members: { id: string; label: string }[]; memberId?: string; today: string; taxRate: number }) {
+/** `gstEnabled` is Settings › Tax; when it is off the GST tick box and totals row stay hidden so nothing suggests tax is charged. */
+export function InvoiceForm({ members, memberId, today, taxRate, gstEnabled = taxRate > 0 }: { members: { id: string; label: string }[]; memberId?: string; today: string; taxRate: number; gstEnabled?: boolean }) {
   const [state, action, pending] = useActionState(newInvoice, undefined);
   const [lines, setLines] = useState<Line[]>([blank()]);
   const [pay, setPay] = useState<string | null>(null);
@@ -62,10 +64,12 @@ export function InvoiceForm({ members, memberId, today, taxRate }: { members: { 
               <Input name="rate" inputMode="decimal" placeholder="Rate ₹" value={l.rate} onChange={(ev) => set(i, { rate: ev.target.value })} aria-label="Rate" />
               <Input name="lineDiscount" inputMode="decimal" placeholder="Discount ₹" value={l.discount} onChange={(ev) => set(i, { discount: ev.target.value })} aria-label="Discount" />
               <div className="flex items-center gap-3">
-                <label className="flex items-center gap-1.5 text-sm">
-                  <input type="checkbox" name="taxable" value={i} checked={l.taxable} onChange={(ev) => set(i, { taxable: ev.target.checked })} className="size-4" />
-                  GST
-                </label>
+                {gstEnabled && (
+                  <label className="flex items-center gap-1.5 text-sm">
+                    <input type="checkbox" name="taxable" value={i} checked={l.taxable} onChange={(ev) => set(i, { taxable: ev.target.checked })} className="size-4" />
+                    GST
+                  </label>
+                )}
                 {lines.length > 1 && (
                   <button type="button" className="text-sm text-alert" onClick={() => setLines((ls) => ls.filter((_, k) => k !== i))}>
                     Remove
@@ -74,18 +78,31 @@ export function InvoiceForm({ members, memberId, today, taxRate }: { members: { 
               </div>
             </div>
           ))}
-          <div>
+          <div className="flex flex-wrap items-center gap-3">
             <Button type="button" onClick={() => setLines((ls) => [...ls, blank()])}>
               Add line
             </Button>
+            {!gstEnabled && (
+              <span className="text-sm text-muted">
+                GST is off in{" "}
+                <Link href="/settings?tab=billing&section=tax" className="text-accent underline">
+                  Settings › Tax
+                </Link>
+                , so no tax is added.
+              </span>
+            )}
           </div>
           <dl className="ml-auto grid w-full max-w-xs grid-cols-2 gap-y-1 text-sm">
             <dt className="text-muted">Subtotal</dt>
             <dd className="text-right">{formatInr(t.subtotal)}</dd>
             <dt className="text-muted">Discount</dt>
             <dd className="text-right">− {formatInr(t.discount)}</dd>
-            <dt className="text-muted">GST</dt>
-            <dd className="text-right">{formatInr(t.tax)}</dd>
+            {gstEnabled && (
+              <>
+                <dt className="text-muted">GST</dt>
+                <dd className="text-right">{formatInr(t.tax)}</dd>
+              </>
+            )}
             <dt className="font-semibold">Total</dt>
             <dd className="text-right text-lg font-semibold">{formatInr(t.total)}</dd>
           </dl>

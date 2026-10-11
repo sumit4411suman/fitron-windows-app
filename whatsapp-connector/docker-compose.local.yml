@@ -1,0 +1,8 @@
+# Running the connector on a computer at the gym instead of a server (install-windows.ps1 uses it):
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d app worker postgres redis
+# The API is published only on this computer (127.0.0.1:3000); Tailscale Funnel gives it its public https address, so
+# nginx and certbot are not used and no port is opened on the router.
+services:
+  app:
+    ports:
+      - "127.0.0.1:3000:3000"

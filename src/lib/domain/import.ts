@@ -21,6 +21,7 @@ export const IMPORTS: Record<ImportKind, { label: string; blurb: string; fields:
       ["gender", "Gender", false, ["gender", "sex"]],
       ["dob", "Date of birth", false, ["dob", "date of birth", "birthday", "birth date"]],
       ["oldId", "Old member ID", false, ["id", "member id", "membership id", "member no", "code", "client id"]],
+      ["joined", "Joined on", false, ["joined on", "join date", "member since", "registration date", "admission date", "enrolled on"]],
       ["plan", "Plan", false, ["plan", "package", "membership", "plan name", "scheme"]],
       ["months", "Plan months", false, ["months", "duration", "duration months", "period", "validity"]],
       ["start", "Start date", false, ["start", "start date", "joining", "joining date", "joined", "from", "date of joining", "doj"]],
@@ -32,6 +33,7 @@ export const IMPORTS: Record<ImportKind, { label: string; blurb: string; fields:
       ["city", "City", false, ["city", "town"]],
       ["pin", "PIN code", false, ["pin", "pincode", "pin code", "postal code", "zip"]],
       ["notes", "Notes", false, ["notes", "remarks", "comment", "comments"]],
+      ["consent", "Privacy consent", false, ["consent", "consent date", "privacy consent", "dpdp consent", "consented", "consent given"]],
     ],
     sample:
       'Member ID,Name,Mobile,Gender,Plan,Duration,Start Date,Expiry Date,Fees,Paid,Balance,Address,City\nM-101,Ravi Kumar,9876543210,Male,Gold Quarterly,3,01-07-2026,30-09-2026,4500,4500,0,"Qr. 12/B, Sector 4",Bokaro\nM-102,Sita Devi,9123456780,Female,Monthly,1,15-09-2026,14-10-2026,1500,1000,500,Chas,Bokaro\n',
@@ -100,6 +102,18 @@ export const IMPORTS: Record<ImportKind, { label: string; blurb: string; fields:
 };
 
 export const MAX_ROWS = 5000;
+
+/** What one row of each import is called, one and many: "Imported 28 payments", not "28 payment history". */
+export const IMPORT_NOUN: Record<ImportKind, readonly [string, string]> = {
+  members: ["member", "members"],
+  payments: ["payment", "payments"],
+  expenses: ["expense", "expenses"],
+  products: ["product", "products"],
+  assets: ["asset", "assets"],
+};
+
+/** "1 member", "28 payments". */
+export const countOf = (kind: ImportKind, n: number) => `${n.toLocaleString("en-IN")} ${IMPORT_NOUN[kind][n === 1 ? 0 : 1]}`;
 
 /** RFC 4180 CSV: quoted fields, doubled quotes, commas and newlines inside quotes, CRLF, a BOM. */
 export function parseCsv(text: string): string[][] {
@@ -241,8 +255,8 @@ export function matchExpenseCategory(v: string, cats: { id: string; name: string
   }
   const kw: [RegExp, string][] = [
     [/trainer/, "Trainer Salary"],
-    [/salary|wages|staff/, "Staff Salary"],
-    [/electric|power|bijli/, "Electricity"],
+    [/salar|wage|staff|payroll/, "Staff Salary"],
+    [/electric|power|bijli|utilit/, "Electricity"],
     [/rent/, "Rent"],
     [/water/, "Water"],
     [/net|wifi|broadband/, "Internet"],
@@ -304,7 +318,13 @@ export type Ctx = {
   oldIds: Set<string>;
   /** Settings › Reminders: months assumed when a member row has neither expiry nor duration. */
   defaultMonths?: number;
+  /** Member id → what they still owe on their invoices, for payments: a receipt settles that first. */
+  openDues?: Map<string, number>;
 };
+
+/** A plan the import creates starts inactive, so a ₹0 or guessed price can't be sold until an admin sets it (bug 10). */
+export const newPlanWarning = (planName: string, amount: number) =>
+  `Plan "${planName}" will be created as inactive at ₹${(amount / 100).toLocaleString("en-IN")}; set its price and activate it in Plans before selling`;
 
 export type CheckedRow = { n: number; errors: string[]; warnings: string[]; data: Record<string, unknown>; raw: Record<string, string> };
 
@@ -348,14 +368,28 @@ export function checkRows(kind: ImportKind, rows: Record<string, string>[], ctx:
       if (!months) months = Math.max(1, Math.round((new Date(end).getTime() - new Date(start).getTime()) / (30.4 * 86_400_000)));
       const plan = ctx.plans.find((p) => p.name.toLowerCase() === g("plan").toLowerCase());
       const planName = plan?.name ?? (g("plan") || (months === 12 ? "Yearly" : months === 6 ? "Half-yearly" : months === 3 ? "Quarterly" : months === 1 ? "Monthly" : `${months} months`));
-      if (!plan) warnings.push(`Plan "${planName}" will be created`);
       const amount = parsePaise(g("amount")) ?? plan?.price ?? 0;
+      if (!plan) warnings.push(newPlanWarning(planName, amount));
       const paidRaw = parsePaise(g("paid"));
       const dueRaw = parsePaise(g("due"));
-      const paid = Math.min(amount, Math.max(0, paidRaw ?? (dueRaw != null ? amount - dueRaw : amount)));
+      // With neither "Amount paid" nor "Balance due" to go on, nothing is assumed paid: marking it paid would hide a real
+      // due, while an unpaid invoice shows up in Receivables where it can be collected or settled.
+      const paid = Math.min(amount, Math.max(0, paidRaw ?? (dueRaw != null ? amount - dueRaw : 0)));
+      if (paidRaw == null && dueRaw == null && amount > 0) warnings.push(`No amount paid or balance; recorded as unpaid (₹${(amount / 100).toLocaleString("en-IN")} due)`);
       const invDate = start <= ctx.today ? start : ctx.today;
       if (ctx.lockedMonths.has(invDate.slice(0, 7))) errors.push(lockMsg(invDate));
+      // Join date: the file's own, else the start of the plan being imported; never today by default, or every
+      // migrated member would count as a new member on the day of the import.
+      const joinedRaw = parseDate(g("joined"));
+      if (g("joined") && !joinedRaw) errors.push(`Can't read join date "${g("joined")}"`);
+      const joinedOn = joinedRaw || start;
+      const joined = joinedOn < ctx.today ? joinedOn : ctx.today;
       const dob = parseDate(g("dob"));
+      // "yes", "true", "1" or a date mean the member gave consent; a date says when. Anything else leaves it unrecorded.
+      const consentRaw = g("consent");
+      const consentDate = consentRaw ? parseDate(consentRaw) : "";
+      const consentAt = consentDate || (/^(yes|y|true|1|given|done|ok)$/i.test(consentRaw) ? ctx.today : null);
+      if (consentRaw && !consentAt) warnings.push(`Consent "${consentRaw}" not understood; left unrecorded`);
       data = {
         name: g("name"),
         phone,
@@ -368,6 +402,7 @@ export function checkRows(kind: ImportKind, rows: Record<string, string>[], ctx:
         months,
         start,
         end,
+        joined,
         amount,
         paid,
         invDate,
@@ -375,6 +410,7 @@ export function checkRows(kind: ImportKind, rows: Record<string, string>[], ctx:
         city: g("city") || null,
         pin: g("pin").replace(/\D/g, "") || null,
         notes: g("notes") || null,
+        consentAt,
       };
     }
 
@@ -389,6 +425,15 @@ export function checkRows(kind: ImportKind, rows: Record<string, string>[], ctx:
       else if (ctx.lockedMonths.has(date.slice(0, 7))) errors.push(lockMsg(date));
       const amount = parsePaise(g("amount")) ?? 0;
       if (amount <= 0) errors.push("Amount missing");
+      // The receipt goes against what the member owes first (the importer does the same, oldest invoice first); only
+      // what is left over becomes an invoice of its own. Later rows for the same member see what earlier ones settled.
+      const owed = memberId ? (ctx.openDues?.get(memberId) ?? 0) : 0;
+      if (memberId && amount > 0 && owed > 0 && errors.length === 0) {
+        const settles = Math.min(owed, amount);
+        ctx.openDues!.set(memberId, owed - settles);
+        const rupees = (p: number) => `₹${(p / 100).toLocaleString("en-IN")}`;
+        warnings.push(`Settles ${rupees(settles)} of unpaid invoices${amount > settles ? `; ${rupees(amount - settles)} recorded as a separate receipt` : ""}`);
+      }
       data = { memberId, date, amount, method: parseMethod(g("method")), txn: g("txn") || null, desc: g("desc") || "Payment" };
     }
 

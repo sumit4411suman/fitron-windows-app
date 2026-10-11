@@ -11,7 +11,7 @@ export default async function NewOfferPage() {
   return (
     <div className="flex max-w-xl flex-col gap-6 pt-4">
       <ListHeader kicker="Plans & offers" title="New offer code" />
-      <OfferForm validTill={addDays(todayIso(), 30)} />
+      <OfferForm validTill={addDays(todayIso(), 30)} today={todayIso()} />
     </div>
   );
 }

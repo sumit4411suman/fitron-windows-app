@@ -11,6 +11,7 @@ import { createMember } from "@/lib/services/members";
 import { createPlan } from "@/lib/services/plans";
 import { todayIso } from "@/lib/services/time";
 import { listLocalBackups } from "./fitron-backup";
+import { listMigrations } from "./local-migrate";
 import { startLocalEdition } from "./local-start";
 import { dataDirs } from "./paths";
 
@@ -19,6 +20,8 @@ import { dataDirs } from "./paths";
 
 let root: string;
 let migrations: string;
+/** The migrations every FITRON ships with today; the tests add their own after them. */
+const BASE = listMigrations(path.join(process.cwd(), "prisma", "local-migrations")).map((m) => m.name);
 const dirs = () => dataDirs(root);
 const applied = () => {
   const db = new Database(dirs().database, { readonly: true });
@@ -56,7 +59,7 @@ function nextVersion(name = "9999_update_test") {
 describe("starting FITRON after an update", () => {
   it("makes no safety backup on a first start, or a start with nothing to update", async () => {
     const first = await startLocalEdition();
-    expect(first).toMatchObject({ ready: true, applied: ["0001_init"] });
+    expect(first).toMatchObject({ ready: true, applied: BASE });
     expect(first.safetyBackup).toBeUndefined();
     const again = await startLocalEdition();
     expect(again).toMatchObject({ ready: true, applied: [] });
@@ -72,9 +75,9 @@ describe("starting FITRON after an update", () => {
     const [b] = await safety();
     expect(b.name).toBe(s.safetyBackup);
     // The backup holds the database as it was before the update.
-    expect(b.manifest?.migrations).toEqual(["0001_init"]);
+    expect(b.manifest?.migrations).toEqual(BASE);
     expect(b.manifest?.note).toContain(name);
-    expect(applied()).toEqual(["0001_init", name]);
+    expect(applied()).toEqual([...BASE, name]);
   });
 
   it("changes nothing when the safety backup cannot be made", async () => {
@@ -85,7 +88,7 @@ describe("starting FITRON after an update", () => {
     const s = await startLocalEdition();
     expect(s.ready).toBe(false);
     expect(s.error).toBeTruthy();
-    expect(applied()).toEqual(["0001_init"]);
+    expect(applied()).toEqual(BASE);
     expect(readdirSync(dirs().backups)).toEqual(["safety"]);
   });
 });
@@ -145,9 +148,9 @@ describe.skipIf(!local)("updating FITRON with a gym's data in it", () => {
     expect(second.safetyBackup).toBeTruthy();
     const after110 = counts();
     expect(after110).toEqual({ ...before, tables: ["_v1_1_0"] });
-    expect(applied()).toEqual(["0001_init", "0002_v1_1_0"]);
+    expect(applied()).toEqual([...BASE, "0002_v1_1_0"]);
     const [backup110] = await safety();
-    expect(backup110.manifest?.migrations).toEqual(["0001_init"]);
+    expect(backup110.manifest?.migrations).toEqual(BASE);
 
     // 1.2.0: a migration that fails half-way. Nothing of it stays, the database is put back from the safety backup,
     // and FITRON does not serve until the previous version is installed again.
@@ -160,8 +163,8 @@ describe.skipIf(!local)("updating FITRON with a gym's data in it", () => {
     expect(third.error).toMatch(/put back as it was before/);
     expect(third.error).toContain(third.safetyBackup);
     expect(counts()).toEqual(after110);
-    expect(applied()).toEqual(["0001_init", "0002_v1_1_0"]);
-    expect((await safety()).map((b) => b.manifest?.migrations)).toEqual([["0001_init"], ["0001_init", "0002_v1_1_0"]].reverse());
+    expect(applied()).toEqual([...BASE, "0002_v1_1_0"]);
+    expect((await safety()).map((b) => b.manifest?.migrations)).toEqual([BASE, [...BASE, "0002_v1_1_0"]].reverse());
 
     // 1.2.1 fixes the migration: it applies, on the data put back.
     writeFileSync(path.join(migrations, "0003_v1_2_0", "migration.sql"), `CREATE TABLE "_v1_2_0" ("id" INTEGER PRIMARY KEY);\n`);

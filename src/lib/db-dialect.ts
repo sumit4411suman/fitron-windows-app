@@ -18,7 +18,7 @@ export async function lockKey(tx: Tx, key: string): Promise<void> {
 }
 
 /** Locks one row until the transaction ends (SELECT … FOR UPDATE). SQLite: see lockKey. The table name is a model name, never user input. */
-export async function lockRow(tx: Tx, table: "ClassSlot" | "Purchase" | "BranchSubscription" | "TrainerPayment", id: string): Promise<void> {
+export async function lockRow(tx: Tx, table: "Member" | "ClassSlot" | "Purchase" | "BranchSubscription" | "TrainerPayment", id: string): Promise<void> {
   if (isLocal()) return;
   await tx.$queryRawUnsafe(`SELECT id FROM "${table}" WHERE id = $1 FOR UPDATE`, id);
 }
@@ -40,6 +40,15 @@ export function ciEquals(text: string): { equals: string; mode?: "insensitive" }
 /** Filter "list column contains value" (Member.tags and the like). PostgreSQL: `has`; SQLite: a LIKE on the JSON text. */
 export function listHas(value: string): Record<string, unknown> {
   return isLocal() ? { contains: JSON.stringify(value) } : { has: value };
+}
+
+/**
+ * Filter "list column holds any of these values" (AiProposal.memberIds), spread into a `where`. PostgreSQL: `hasSome`;
+ * SQLite: one LIKE per value on the JSON text. No values match nothing on both.
+ */
+export function listHasSome(field: string, values: string[]): Record<string, unknown> {
+  if (!isLocal()) return { [field]: { hasSome: values } };
+  return { OR: values.map((v) => ({ [field]: { contains: JSON.stringify(v) } })) };
 }
 
 /** Filter "list column is empty". */

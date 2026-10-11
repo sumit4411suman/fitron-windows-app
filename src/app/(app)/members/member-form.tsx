@@ -4,7 +4,8 @@ import { useActionState } from "react";
 import { saveMember } from "./actions";
 import { Button, Card, Field, Input, LinkButton, Notice, Select, Textarea } from "@/components/ui";
 import { Avatar, memberPhotoUrl } from "@/components/avatar";
-import { GENDERS, SOURCES } from "@/lib/validation/member";
+import { CONSENT_LABEL, GENDERS, SOURCES } from "@/lib/validation/member";
+import { fmtStamp } from "@/lib/format";
 
 type Values = Partial<Record<string, string | null>>;
 
@@ -131,6 +132,17 @@ export function MemberForm({ id, values = {}, trainers }: { id?: string; values?
 
           <Field label="Internal staff notes" error={e.staffNotes} className="sm:col-span-3">
             <Textarea name="staffNotes" defaultValue={v("staffNotes")} />
+          </Field>
+
+          <Field label="Privacy consent" error={e.consent} className="sm:col-span-3" hint={id ? undefined : "Required. Read the notice to the member or show it to them on the screen."}>
+            {values.consentAt ? (
+              <p className="m-0 text-sm">Consent given on {fmtStamp(new Date(values.consentAt))}.</p>
+            ) : (
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" name="consent" defaultChecked={sent?.consent === "on"} required={!id} className="mt-0.5 size-4" />
+                <span>{CONSENT_LABEL}</span>
+              </label>
+            )}
           </Field>
         </div>
       </Card>

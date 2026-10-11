@@ -13,6 +13,7 @@ import { memberScope, summarize } from "./members";
 import { notify } from "./notifications";
 import { nextNumber } from "./sequence";
 import { fromIso, nowHHMM, todayIso } from "./time";
+import { fmtStamp, fmtTime } from "@/lib/format";
 
 type Device = Prisma.DeviceGetPayload<object>;
 
@@ -51,13 +52,17 @@ export async function deviceFor(serial: string, ip: string | null) {
   return d.approved && d.orgId && d.branchId ? d : null;
 }
 
-async function queue(tx: Prisma.TransactionClient | typeof db, deviceId: string, command: string) {
+/** A remote door-open command is only worth sending for this long; after that it is dropped unsent. */
+export const DOOR_COMMAND_TTL_MS = 30_000;
+
+async function queue(tx: Prisma.TransactionClient | typeof db, deviceId: string, command: string, expiresAt: Date | null = null) {
   const last = await tx.deviceCommand.findFirst({ where: { deviceId }, orderBy: { cmdNo: "desc" }, select: { cmdNo: true } });
-  return tx.deviceCommand.create({ data: { deviceId, cmdNo: (last?.cmdNo ?? 0) + 1, command } });
+  return tx.deviceCommand.create({ data: { deviceId, cmdNo: (last?.cmdNo ?? 0) + 1, command, expiresAt } });
 }
 
-/** Commands for the device's next poll, oldest first. */
-export async function pendingCommands(d: Device) {
+/** Commands for the device's next poll, oldest first. Commands past their expiry (door openings) are marked EXPIRED and never sent. */
+export async function pendingCommands(d: Device, now = new Date()) {
+  await db.deviceCommand.updateMany({ where: { deviceId: d.id, status: "PENDING", expiresAt: { lte: now } }, data: { status: "EXPIRED" } });
   const list = await db.deviceCommand.findMany({ where: { deviceId: d.id, status: "PENDING" }, orderBy: { cmdNo: "asc" }, take: 20 });
   if (!list.length) return "OK";
   await db.deviceCommand.updateMany({ where: { id: { in: list.map((c) => c.id) } }, data: { status: "SENT", sentAt: new Date() } });
@@ -230,13 +235,24 @@ export async function removeDevice(u: CurrentUser, id: string) {
   });
 }
 
-export async function openDoor(u: CurrentUser, id: string) {
+/** "last seen 2 Oct 2026, 10:15" or "never called in", for messages about an offline device. */
+export const lastSeenLabel = (d: { lastSeenAt: Date | null }) => (d.lastSeenAt ? `last seen ${fmtStamp(d.lastSeenAt)}, ${fmtTime(d.lastSeenAt)}` : "never called in");
+
+/**
+ * Open the door from the app. Refused when the device is offline: the command would sit in the queue
+ * and open the door whenever the device next called in, long after anyone meant it to. The queued
+ * command also expires after 30 seconds for the same reason.
+ */
+export async function openDoor(u: CurrentUser, id: string, now = new Date()) {
   const d = await db.device.findFirst({ where: { id, orgId: u.orgId, approved: true, branchId: { in: u.branchIds } } });
   if (!d) throw new UserError("Device not found.");
+  const name = d.name ?? d.serial;
+  if (!isDeviceOnline(d, now.getTime())) throw new UserError(`${name} is offline (${lastSeenLabel(d)}), so the door cannot be opened from here.`);
+  const branch = await db.branch.findUnique({ where: { id: d.branchId! }, select: { name: true } });
   await db.$transaction(async (tx) => {
-    await queue(tx, id, cmd.openDoor(d.relaySeconds));
-    await tx.accessLog.create({ data: { deviceId: id, branchId: d.branchId, memberId: null, pin: "", method: "Remote", result: "ALLOWED", reason: `Door opened remotely by ${u.name}`, at: new Date() } });
-    await audit(tx, { orgId: u.orgId, userId: u.id, action: "device.open-door", entity: "Device", entityId: id });
+    await queue(tx, id, cmd.openDoor(d.relaySeconds), new Date(now.getTime() + DOOR_COMMAND_TTL_MS));
+    await tx.accessLog.create({ data: { deviceId: id, branchId: d.branchId, memberId: null, pin: "", method: "Remote", result: "ALLOWED", reason: `Door opened remotely by ${u.name}`, at: now } });
+    await audit(tx, { orgId: u.orgId, userId: u.id, action: "device.open-door", entity: "Device", entityId: id, after: { name, serial: d.serial, branch: branch?.name ?? null, relaySeconds: d.relaySeconds } });
   });
 }
 
@@ -321,7 +337,7 @@ export async function syncDevice(u: CurrentUser, deviceId: string) {
       }
       await tx.deviceUser.upsert({ where: { deviceId_memberId: { deviceId: d.id, memberId: m.id } }, create: { deviceId: d.id, memberId: m.id, allowed }, update: { allowed } });
     }
-    await audit(tx, { orgId: u.orgId, userId: u.id, action: "device.sync", entity: "Device", entityId: d.id, after: { members: members.length, allowed: allowedCount, removed: members.length - allowedCount, commands } });
+    await audit(tx, { orgId: u.orgId, userId: u.id, action: "device.sync", entity: "Device", entityId: d.id, after: { name: d.name ?? d.serial, members: members.length, allowed: allowedCount, removed: members.length - allowedCount, commands } });
   });
   return { members: members.length, commands, device: d.name ?? d.serial };
 }

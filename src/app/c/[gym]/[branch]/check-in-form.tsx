@@ -29,7 +29,7 @@ export function CheckInForm({ branchId }: { branchId: string }) {
       {state?.status === "desk" && <Notice tone="alert">We couldn&apos;t check you in. Please ask at the front desk.</Notice>}
       {state?.status === "error" && <Notice tone="alert">{state.message}</Notice>}
       <Field label="Your mobile number" hint="The number you gave the gym when you joined.">
-        <Input name="phone" type="tel" inputMode="numeric" autoComplete="tel-national" placeholder="10-digit mobile" defaultValue={state?.phone ?? ""} maxLength={30} required />
+        <Input name="phone" type="tel" inputMode="numeric" autoComplete="tel-national" placeholder="10-digit mobile" defaultValue={state?.status === "error" ? (state.phone ?? "") : ""} maxLength={30} required />
       </Field>
       <Button variant="primary" disabled={pending} className="min-h-12">
         {pending ? "Checking in…" : "Check in"}

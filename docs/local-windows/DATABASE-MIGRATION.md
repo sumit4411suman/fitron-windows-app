@@ -1,6 +1,6 @@
 # FITRON Local Windows Edition: database migration design
 
-How the Cloud Edition's PostgreSQL schema (`prisma/schema.prisma`, 72 models, 47 migrations) becomes the
+How the Cloud Edition's PostgreSQL schema (`prisma/schema.prisma`, 75 models, 52 migrations) becomes the
 Local Edition's SQLite schema (`prisma/schema.local.prisma`), what changes, what does not, and why.
 
 ## 1. Approach
@@ -249,3 +249,15 @@ A change to `prisma/schema.prisma` is followed by:
    `prisma/local-migrations/<NNNN>_<name>/migration.sql`.
 4. The updater runs the new migration after taking a pre-update backup (Phase 18); a failure restores
    it.
+
+## 9. Migrations after the first
+
+Each Cloud migration gets a SQLite twin in `prisma/local-migrations/<nnnn>_<name>/migration.sql`, applied by the same
+runner in name order. The SQL is generated with `prisma migrate diff --from-schema <the previous schema.local.prisma>
+--to-schema prisma/schema.local.prisma --script` (Prisma 7 no longer diffs against a database file), then any data step
+is written by hand and marked `-- fitron:`. Dates in a data step are compared with `julianday()`, never as text: Prisma
+writes ISO-8601 text with a zone, `CURRENT_TIMESTAMP` writes another form.
+
+| Local migration | Cloud migrations it mirrors | Hand-written part |
+| --- | --- | --- |
+| `0002_ai_chats_invoice_seller_stored_files` | `20261008190000_ai_chat_history`, `20261009100000_invoice_seller_member_consent`, `20261009120000_device_command_expiry`, `20261010090000_imported_member_join_date`, `20261010091000_stored_files` | the imported members' join date (`UPDATE … FROM` rewritten as a correlated subquery); row-level security dropped |

@@ -1,0 +1,127 @@
+# Fitron WhatsApp Connector on one server: api + worker + Postgres + Redis + nginx (HTTPS with Let's Encrypt).
+# Settings come from .env (copy .env.example). Run:  docker compose up -d
+name: wa-connector
+
+x-app: &app
+  build: .
+  image: fitron/wa-connector:latest
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql://wa:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/wa_connector
+    REDIS_URL: redis://redis:6379
+    SESSION_STORAGE_PATH: /data/whatsapp-sessions
+    MEDIA_STORAGE_PATH: /data/media
+    PORT: "3000"
+    HOST: 0.0.0.0
+  volumes:
+    # WhatsApp logins and files waiting to be sent live in named volumes, never in the container filesystem.
+    - wa_sessions:/data/whatsapp-sessions
+    - wa_media:/data/media
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  app:
+    <<: *app
+    environment:
+      DATABASE_URL: postgresql://wa:${POSTGRES_PASSWORD}@postgres:5432/wa_connector
+      REDIS_URL: redis://redis:6379
+      SESSION_STORAGE_PATH: /data/whatsapp-sessions
+      MEDIA_STORAGE_PATH: /data/media
+      PORT: "3000"
+      HOST: 0.0.0.0
+      RUN_MODE: api
+      RUN_MIGRATIONS: "true"
+    expose: ["3000"]
+
+  worker:
+    <<: *app
+    environment:
+      DATABASE_URL: postgresql://wa:${POSTGRES_PASSWORD}@postgres:5432/wa_connector
+      REDIS_URL: redis://redis:6379
+      SESSION_STORAGE_PATH: /data/whatsapp-sessions
+      MEDIA_STORAGE_PATH: /data/media
+      PORT: "3000"
+      HOST: 0.0.0.0
+      RUN_MODE: worker
+      RUN_MIGRATIONS: "false"
+    command: ["node", "dist/queue/messageWorker.js"]
+    depends_on:
+      app:
+        condition: service_healthy
+    # Exactly one worker owns the WhatsApp sockets (a Redis lock enforces it); do not scale this service.
+    deploy:
+      replicas: 1
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wa
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: wa_connector
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wa -d wa_connector"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Not published on the host: only the compose network can reach it.
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction", "--save", "60", "1"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/templates:/etc/nginx/templates:ro
+      - ./docker/nginx/snippets:/etc/nginx/snippets:ro
+      - certbot_www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Issues and renews the Let's Encrypt certificate. First run: see README "HTTPS".
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    volumes:
+      - certbot_www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    entrypoint: ["/bin/sh", "-c", "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"]
+
+volumes:
+  pgdata:
+  redisdata:
+  wa_sessions:
+  wa_media:
+  certbot_www:
+  letsencrypt:

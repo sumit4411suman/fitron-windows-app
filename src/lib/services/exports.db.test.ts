@@ -56,7 +56,7 @@ describe.skipIf(!hasDb)("export all data (database)", () => {
     expect(r.columns.map((c) => c.label)).toEqual(["ID", "Name", "Phone", "Email", "Gender", "Plan", "Start", "End", "Status", "Outstanding"]);
     const row = r.rows.find((x) => x.id === a.code)!;
     expect(row).toMatchObject({ name: "Export Alpha", email: "alpha@test.local", plan: "Monthly Export", start: today, end: sold.membership.endDate.toISOString().slice(0, 10), outstanding: 150000 });
-    expect(["ACTIVE", "EXPIRING SOON", "PAYMENT PENDING", "EXPIRED", "SUSPENDED"]).toContain(row.status);
+    expect(["ACTIVE", "EXPIRING SOON", "PAYMENT PENDING", "EXPIRED", "NO PLAN", "SUSPENDED"]).toContain(row.status);
     expect(String(row.status)).not.toContain("_");
     expect(r.rows.some((x) => x.id === b.code)).toBe(true);
     expect(r.rows.some((x) => x.name === "Foreign")).toBe(false);
@@ -70,7 +70,7 @@ describe.skipIf(!hasDb)("export all data (database)", () => {
     const r = await buildExport(admin, "invoices");
     expect(r.columns.map((c) => c.label)).toEqual(["Invoice", "Date", "Member", "Total", "Paid", "Balance", "Status"]);
     const part = r.rows.find((x) => x.invoice === partInvoice.number)!;
-    expect(part).toMatchObject({ member: "Export Alpha", total: 200000, paid: 50000, balance: 150000, status: "PARTIALLY PAID" });
+    expect(part).toMatchObject({ member: "Export Alpha", total: 200000, paid: 50000, balance: 150000, status: "PART PAID" });
     expect(part.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(r.rows.find((x) => x.invoice === cancelled.number)).toMatchObject({ status: "CANCELLED", balance: 0 });
   });

@@ -8,6 +8,7 @@ import { couponInput } from "@/lib/validation/coupon";
 import { UserError } from "@/lib/services/errors";
 import { Badge, Button, Card, Empty, Field, Input, Notice, PageHeader, Select, TABLE, TD, TH, TR, ScrollRegion, type Tone } from "@/components/ui";
 import { fmtDate, fmtStamp, formatInr } from "@/lib/format";
+import { todayIso } from "@/lib/services/time";
 import { AdminTabs } from "../tabs";
 
 export const metadata = { title: "Coupons · FITRON" };
@@ -100,7 +101,7 @@ export default async function CouponsPage({ searchParams }: PageProps<"/fitron-a
                 </Select>
               </Field>
               <Field label="Last day (optional)" hint="Leave empty for no end date">
-                <Input name="validTill" type="date" />
+                <Input name="validTill" type="date" min={todayIso()} />
               </Field>
               <Field label="Most uses (optional)" hint="In all, one per gym or member. Empty for no limit.">
                 <Input name="usageLimit" type="number" min={1} step={1} inputMode="numeric" />

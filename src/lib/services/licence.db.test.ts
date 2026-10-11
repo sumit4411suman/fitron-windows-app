@@ -38,7 +38,8 @@ describe.skipIf(!hasDb || !isLocal())("the licence on FITRON for Windows (databa
 
     installedDaysAgo(45);
     await expect(createMember(owner, { name: "After Trial", gender: "Male", phone: "9866640002", source: "Walk-in", tags: [] })).rejects.toThrow(LICENCE_ENDED_MESSAGE);
-    await expect(sellMembership(owner, m.id, { planId: plan.id, startDate: new Date().toISOString().slice(0, 10), discount: 0, includeRegFee: false, payAmount: 0 })).rejects.toThrow(LICENCE_ENDED_MESSAGE);
+    // Starting after the trial sale's plan, so the only reason to refuse it is the licence (an overlap is refused first).
+    await expect(sellMembership(owner, m.id, { planId: plan.id, startDate: new Date(Date.now() + 40 * 86_400_000).toISOString().slice(0, 10), discount: 0, includeRegFee: false, payAmount: 0 })).rejects.toThrow(LICENCE_ENDED_MESSAGE);
     // The balance of the sale made in the trial can still be collected.
     await collectPayment(owner, sale.invoice.id, { amount: 60000, method: "UPI", date: new Date().toISOString().slice(0, 10) });
     expect((await db.payment.aggregate({ where: { invoiceId: sale.invoice.id, status: "SUCCESS" }, _sum: { amount: true } }))._sum.amount).toBe(100000);

@@ -41,11 +41,12 @@ import { trainerStatusFor } from "@/lib/services/trainer-gym";
 import { findPlan } from "@/lib/domain/pricing";
 import { openFreeze } from "@/lib/services/freeze";
 import { todayIso, toIso } from "@/lib/services/time";
-import { addDays, daysBetween } from "@/lib/domain/dates";
+import { addDays, ageOn, daysBetween } from "@/lib/domain/dates";
 import { FREEZE_REASONS } from "@/lib/domain/freeze";
 import { InvoiceStatusBadge } from "@/components/invoice-status";
 import { MemberStatus } from "@/components/status";
 import { Tag } from "@/components/tag";
+import { ConsentRow } from "./consent-row";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Dialog, DialogButtons } from "@/components/dialog";
 import { Button, Field, Input, Notice, toneOf, Select, Textarea, TABLE, TD, TH, TR, cx, ScrollRegion } from "@/components/ui";
@@ -161,7 +162,7 @@ export default async function MemberPage({ params, searchParams }: PageProps<"/m
     ...(risk ? ([["Fitron AI", risk, "text-alert-700"]] as [string, string, string][]) : []),
   ];
 
-  const age = m.dob ? Math.floor(daysBetween(today, toIso(m.dob)) / 365.25) : null;
+  const age = m.dob ? ageOn(toIso(m.dob), today) : null;
   const sections: { title: string; rows: [string, ReactNode][] }[] = [
     {
       title: "Personal",
@@ -175,6 +176,7 @@ export default async function MemberPage({ params, searchParams }: PageProps<"/m
         ["Tags", m.tags.join(", ") || "—"],
         ["Trainer", m.trainerName ?? "—"],
         ["Branch", m.branch.name],
+        ["Privacy consent", <ConsentRow key="consent" memberId={m.id} consentAt={m.consentAt} canRecord={u.can("members.edit") && !m.walkIn} />],
       ],
     },
     { title: "Contact", rows: [["Mobile", m.phone], ["WhatsApp", m.whatsapp ?? m.phone], ["Email", m.email || "—"]] },
@@ -219,7 +221,7 @@ export default async function MemberPage({ params, searchParams }: PageProps<"/m
               ["Pending", currentInvoice ? formatRupees(currentInvoice.balance) : "—"],
               ["Payment status", currentInvoice ? <InvoiceStatusBadge key="p" status={currentInvoice.status} overdueDays={currentInvoice.overdueDays} /> : "—"],
               ["Renewal date", fmtDate(addDays(toIso(current.endDate), 1))],
-              ...(freeze ? ([["Frozen", `${fmtDate(freeze.fromDate)} – ${fmtDate(freeze.lastDay)} · ${freeze.reason}`]] as [string, string][]) : []),
+              ...(freeze ? ([[freeze.running ? "Frozen" : "Freeze scheduled", `${fmtDate(freeze.fromDate)} – ${fmtDate(freeze.lastDay)} · ${freeze.reason}`]] as [string, string][]) : []),
             ] as [string, ReactNode][],
           },
         ]
@@ -244,7 +246,8 @@ export default async function MemberPage({ params, searchParams }: PageProps<"/m
         <div className="min-w-[240px] flex-1">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="m-0 text-[28px] lg:text-[38px]">{m.name}</h1>
-            {freeze ? <Tag label="Paused">FROZEN</Tag> : <MemberStatus status={m.status} className="text-xs!" />}
+            {freeze?.running ? <Tag label="Paused">FROZEN</Tag> : <MemberStatus status={m.status} className="text-xs!" />}
+            {freeze && !freeze.running && <Tag label="Paused">FREEZE SCHEDULED · from {fmtDate(freeze.fromDate)}</Tag>}
           </div>
           <div className="mt-1.5 flex flex-wrap gap-[18px] text-sm text-muted">
             <span>{m.code}</span>

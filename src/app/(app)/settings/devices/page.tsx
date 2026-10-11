@@ -162,8 +162,8 @@ export default async function DevicesPage({ searchParams }: PageProps<"/settings
                 </span>
               </div>
               <div className="flex flex-wrap gap-1.5">
-                <form action={openDoorAction.bind(null, d.id)}>
-                  <Button>
+                <form action={openDoorAction.bind(null, d.id)} title={isOnline(d) ? "Opens the door on the device's next call in (within a few seconds)" : `${d.name ?? d.serial} is offline (${d.lastSeenAt ? `last seen ${fmtStamp(d.lastSeenAt)}, ${fmtTime(d.lastSeenAt)}` : "never called in"}), so the door cannot be opened from here`}>
+                  <Button disabled={!isOnline(d)}>
                     <DoorOpenIcon size={16} weight="duotone" />
                     Open door
                   </Button>
@@ -281,7 +281,7 @@ export default async function DevicesPage({ searchParams }: PageProps<"/settings
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <h3 className="text-[17px]">Member enrolment</h3>
-            <div className="mt-0.5 text-xs text-muted">Press Face or Finger, then the member looks at the camera or places a finger three times.</div>
+            <div className="mt-0.5 text-xs text-muted">Use the face or fingerprint icon in the member&apos;s row to start enrolment; the member then looks at the device&apos;s camera or places a finger on it three times.</div>
           </div>
           <AutoFilter className="relative w-full max-w-[280px]">
             <MagnifyingGlassIcon size={16} weight="duotone" className="absolute top-1/2 left-3 -translate-y-1/2 text-muted" />

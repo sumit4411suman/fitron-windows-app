@@ -137,7 +137,7 @@ export async function setBookingStatus(u: CurrentUser, bookingId: string, status
           orgId: u.orgId,
           branchId: before.classSlot.branchId,
           type: "WAITLIST",
-          text: `${next.member.name} moved off the waitlist into ${before.classSlot.name} on ${date}.`,
+          text: `${next.member.name} moved off the waitlist into ${before.classSlot.name} on ${fmtDate(date)}.`,
           link: `/classes?week=${weekStart(date)}&sel=${before.classSlotId}&date=${date}`,
         });
         promoted = next.member.name;

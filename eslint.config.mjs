@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "prototype/**",
     // FITRON for Windows: the desktop shell's build output.
     "src-tauri/target/**",
+    // The WhatsApp connector is its own package with its own lint and tsconfig (whatsapp-connector/).
+    "whatsapp-connector/**",
     // The marketing site is exported from the design tool as-is (it bundles three.js).
     "public/site/**",
     // The AI Trainer member app is the design tool's export too, with React bundled in vendor/.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useConfirmSubmit } from "@/components/confirm-dialog";
 import { Button, Field, Input, Notice, Select, Textarea } from "@/components/ui";
 import { ReasonForm } from "@/components/reason-form";
 import { ASSET_CATEGORIES, DEP_DEFAULT, type AssetCategory } from "@/lib/domain/assets";
@@ -100,16 +101,11 @@ export function DisposeForm({ id, today, minDate }: { id: string; today: string;
   const [type, setType] = useState("SOLD");
   const e = state?.errors ?? {};
   const v = (state?.values as Values | undefined) ?? {};
+  const [onSubmit, dialog] = useConfirmSubmit(() => ({ title: "Record this disposal?", message: "Depreciation stops after this month.", label: "Record disposal", danger: true }));
   if (state?.ok) return <Notice tone="ok">{state.message}</Notice>;
   return (
-    <form
-      action={action}
-      key={state?.nonce}
-      onSubmit={(ev) => {
-        if (!window.confirm("Record this disposal? Depreciation stops after this month.")) ev.preventDefault();
-      }}
-      className="flex flex-col gap-3"
-    >
+    <form action={action} key={state?.nonce} onSubmit={onSubmit} className="flex flex-col gap-3">
+      {dialog}
       {state?.message && <Notice tone="alert">{state.message}</Notice>}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="What happened">
@@ -150,14 +146,10 @@ export function DisposeForm({ id, today, minDate }: { id: string; today: string;
 
 export function UndoDisposal({ id }: { id: string }) {
   const [state, action, pending] = useActionState(undoDisposalAction.bind(null, id), undefined);
+  const [onSubmit, dialog] = useConfirmSubmit(() => ({ title: "Put this asset back in use?", message: "The sale or scrapping is undone.", label: "Undo disposal" }));
   return (
-    <form
-      action={action}
-      onSubmit={(ev) => {
-        if (!window.confirm("Put this asset back in use? The sale or scrapping is undone.")) ev.preventDefault();
-      }}
-      className="flex items-center gap-2"
-    >
+    <form action={action} onSubmit={onSubmit} className="flex items-center gap-2">
+      {dialog}
       <Button disabled={pending}>Undo disposal</Button>
       {state?.message && !state.ok && <span className="text-sm text-alert">{state.message}</span>}
     </form>

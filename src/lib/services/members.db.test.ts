@@ -73,10 +73,14 @@ describe.skipIf(!hasDb)("members (database)", () => {
     expect(seen).not.toContain(notMine.id);
   });
 
-  it("treats a member with no membership as expired", async () => {
+  it("shows a member with no membership as NO_PLAN, apart from the expired ones", async () => {
     const admin = pick(await gym.user("Super Admin"), gym.a.id);
     const m = await createMember(admin, input({ phone: "9876500061" }));
-    expect((await getMember(admin, m.id))?.status).toBe("EXPIRED");
+    expect((await getMember(admin, m.id))?.status).toBe("NO_PLAN");
+    expect((await listMembers(admin, { status: "EXPIRED", all: true })).rows.map((r) => r.id)).not.toContain(m.id);
+    const noPlan = await listMembers(admin, { status: "NO_PLAN", all: true });
+    expect(noPlan.rows.map((r) => r.id)).toContain(m.id);
+    expect(noPlan.counts.NO_PLAN).toBeGreaterThanOrEqual(1);
   });
 
   it("lets unsold plans be deleted", async () => {

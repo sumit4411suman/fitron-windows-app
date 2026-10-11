@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { lockKey } from "@/lib/db-dialect";
 import { cookies, headers } from "next/headers";
 import type { Prisma } from "@/generated/prisma/client";
@@ -10,11 +11,8 @@ type Tx = Prisma.TransactionClient;
 
 const json = (v: unknown) => (v === undefined ? undefined : (JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue));
 
-/** Rule 10: every write to core tables leaves an audit row in the same transaction, chained by hash onto the organisation's previous entry. */
-export async function audit(
-  tx: Tx,
-  a: { orgId: string; userId: string | null; action: string; entity: string; entityId: string; before?: unknown; after?: unknown; branchId?: string | null },
-) {
+/** Who is writing, from the request: read once per request (React cache), not once per audit row, so a bulk import doesn't await headers() and cookies() per row. */
+const requestMeta = cache(async (): Promise<{ ip: string | null; userAgent: string | null; cookieBranch: string | null }> => {
   let ip: string | null = null;
   let userAgent: string | null = null;
   let cookieBranch: string | null = null;
@@ -31,6 +29,15 @@ export async function audit(
   } catch {
     // No request.
   }
+  return { ip, userAgent, cookieBranch };
+});
+
+/** Rule 10: every write to core tables leaves an audit row in the same transaction, chained by hash onto the organisation's previous entry. */
+export async function audit(
+  tx: Tx,
+  a: { orgId: string; userId: string | null; action: string; entity: string; entityId: string; before?: unknown; after?: unknown; branchId?: string | null },
+) {
+  const { ip, userAgent, cookieBranch } = await requestMeta();
   // Serialise writers per organisation so two transactions cannot chain onto the same previous hash.
   await lockKey(tx, a.orgId);
   const prev = await tx.auditLog.findFirst({ where: { orgId: a.orgId, hash: { not: null } }, orderBy: { id: "desc" }, select: { hash: true } });

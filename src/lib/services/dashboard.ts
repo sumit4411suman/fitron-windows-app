@@ -4,7 +4,7 @@ import type { CurrentUser } from "@/lib/auth/current";
 import { addDays, daysBetween } from "@/lib/domain/dates";
 import { monthEnd, monthsBack, periodRange, type PeriodKey } from "@/lib/domain/periods";
 import { memberScope } from "./members";
-import { frozenMemberIds } from "./freeze";
+import { frozenTodayIds } from "./freeze";
 import { listReceivables } from "./billing";
 import { profitAndLoss } from "./accounting";
 import { fromIso, todayIso, toIso } from "./time";
@@ -24,6 +24,8 @@ export type DashMember = {
   branchId: string;
   planName: string | null;
   daysLeft: number | null;
+  /** A membership covers today. A member whose plan starts later isn't active yet. */
+  current: boolean;
   /** Price after discount of the latest membership, the renewal value. */
   curFinal: number;
   curMonths: number;
@@ -48,11 +50,14 @@ async function loadMembers(u: CurrentUser, today: string) {
       trainerId: true, workoutPlanId: true, dietPlanId: true, riskScore: true, riskReasons: true,
     },
   });
-  const memberships = await db.membership.findMany({
+  const rows0 = await db.membership.findMany({
     where: { memberId: { in: members.map((m) => m.id) }, status: "VALID" },
-    select: { memberId: true, type: true, startDate: true, endDate: true, price: true, discount: true, branchId: true, plan: { select: { name: true, months: true } } },
+    select: { memberId: true, type: true, startDate: true, endDate: true, price: true, discount: true, branchId: true, plan: { select: { name: true, months: true } }, invoice: { select: { date: true } } },
     orderBy: { startDate: "asc" },
   });
+  // Sale date: the invoice date. Selling in Fitron dates the invoice today; a migrated row carries the old sale date.
+  // The start date can be weeks away (a backdated or future-dated plan), which is why "sold this month" doesn't use it.
+  const memberships = rows0.map(({ invoice, ...x }) => ({ ...x, soldOn: toIso(invoice.date) }));
   const byMember = new Map<string, typeof memberships>();
   for (const ms of memberships) byMember.set(ms.memberId, [...(byMember.get(ms.memberId) ?? []), ms]);
   const rows: DashMember[] = members.map((m) => {
@@ -68,9 +73,11 @@ async function loadMembers(u: CurrentUser, today: string) {
       branchId: m.branchId,
       planName: plan?.name ?? null,
       daysLeft: latest ? daysBetween(toIso(latest.endDate), today) : null,
+      current: !!covering,
       curFinal: latest ? latest.price - latest.discount : 0,
       curMonths: latest?.plan.months || 1,
-      joined: list[0] ? toIso(list[0].startDate) : istDate(m.createdAt),
+      // Join date: when the member was added to Fitron (IST), not the first plan's start, which may be backdated.
+      joined: istDate(m.createdAt),
       suspended: m.suspended,
       dob: m.dob ? toIso(m.dob) : null,
       trainerId: m.trainerId,
@@ -83,6 +90,9 @@ async function loadMembers(u: CurrentUser, today: string) {
   return { rows, memberships };
 }
 
+/** Active: a membership covers today and the member isn't suspended. A plan that starts next week doesn't count yet. */
+const isActive = (m: DashMember) => m.current && !m.suspended;
+
 const riskLevel = (score: number | null) => (score === null ? null : score >= 60 ? "High risk" : score >= 40 ? "Medium risk" : null);
 
 /** Everything the dashboard shows, for the picked branch(es) and period. */
@@ -93,9 +103,11 @@ export async function dashboardData(u: CurrentUser, period: PeriodKey, custom: {
   const seesMoney = u.can("invoices.view");
   const branch = { orgId: u.orgId, branchId: { in: u.branchIds } };
 
-  // Same days of last month, for the "+12%" chips (prototype: only on This month).
+  // Same days of last month, for the "+12%" chips (prototype: only on This month). Clamped to the end of that
+  // month: on the 31st there is no "31 Feb", so the comparison runs to its last day instead.
   const last = periodRange("last", today);
-  const sameLast: Range = { from: last.from, to: addDays(last.from, Number(today.slice(8, 10)) - 1) };
+  const sameTo = addDays(last.from, Number(today.slice(8, 10)) - 1);
+  const sameLast: Range = { from: last.from, to: sameTo > last.to ? last.to : sameTo };
   const months = monthsBack(today);
   const year: Range = { from: `${months[0]}-01`, to: today };
 
@@ -117,14 +129,19 @@ export async function dashboardData(u: CurrentUser, period: PeriodKey, custom: {
     }),
   ]);
 
-  const active = M.filter((m) => m.daysLeft !== null && m.daysLeft >= 0 && !m.suspended);
+  const active = M.filter(isActive);
   const exp7 = M.filter((m) => m.daysLeft !== null && m.daysLeft >= 0 && m.daysLeft <= 7);
   const expired = M.filter((m) => m.daysLeft !== null && m.daysLeft < 0);
   const open = recv?.list ?? [];
   const inRange = (d: string) => d >= range.from && d <= range.to;
-  const msRange = memberships.filter((x) => inRange(toIso(x.startDate)));
-  const newMs = msRange.filter((x) => x.type === "NEW");
-  const renMs = msRange.filter((x) => x.type === "RENEWAL");
+  const inSameLast = (d: string) => d >= sameLast.from && d <= sameLast.to;
+  // A first plan (sold here or migrated) is a new membership; a renewal, by hand or by autopay, is a renewal.
+  const isNew = (x: { type: string }) => x.type === "NEW" || x.type === "IMPORT";
+  const isRenewal = (x: { type: string }) => x.type === "RENEWAL" || x.type === "AUTOPAY";
+  const msRange = memberships.filter((x) => inRange(x.soldOn));
+  const msSameLast = memberships.filter((x) => inSameLast(x.soldOn));
+  const newMs = msRange.filter(isNew);
+  const renMs = msRange.filter(isRenewal);
   const collected = sum(payRange, (p) => p.amount);
   const delta = (now: number, prev: number | undefined) => {
     if (period !== "month" || !prev) return null;
@@ -137,14 +154,14 @@ export async function dashboardData(u: CurrentUser, period: PeriodKey, custom: {
     const r = sum(items12.filter((i) => toIso(i.invoice.date).startsWith(k)), (i) => i.amount);
     const e = sum(exp12.filter((x) => toIso(x.date).startsWith(k)), (x) => x.amount);
     const me = monthEnd(k) > today ? today : monthEnd(k);
-    const started = memberships.filter((x) => toIso(x.startDate).startsWith(k));
+    const sold = memberships.filter((x) => x.soldOn.startsWith(k));
     return {
       month: k,
       revenue: r,
       expenses: e,
       net: r - e,
-      newCount: started.filter((x) => x.type === "NEW").length,
-      renewCount: started.filter((x) => x.type === "RENEWAL").length,
+      newCount: sold.filter(isNew).length,
+      renewCount: sold.filter(isRenewal).length,
       active: new Set(memberships.filter((x) => toIso(x.startDate) <= me && toIso(x.endDate) >= me).map((x) => x.memberId)).size,
     };
   });
@@ -189,7 +206,7 @@ export async function dashboardData(u: CurrentUser, period: PeriodKey, custom: {
     },
     kpis: {
       newMembers: M.filter((m) => inRange(m.joined)).length,
-      newMembersLast: M.filter((m) => m.joined >= sameLast.from && m.joined <= sameLast.to).length,
+      newMembersLast: M.filter((m) => inSameLast(m.joined)).length,
       todayCollected: payToday?._sum.amount ?? 0,
       todayCount: payToday?._count ?? 0,
       expenses: pl?.totalExpenses ?? 0,
@@ -197,8 +214,13 @@ export async function dashboardData(u: CurrentUser, period: PeriodKey, custom: {
       mrr: Math.round(sum(active, (m) => m.curFinal / m.curMonths)),
       newMemberships: newMs.length,
       newMembershipsValue: sum(newMs, (x) => x.price - x.discount),
+      newMembershipsLast: msSameLast.filter(isNew).length,
       renewals: renMs.length,
       renewalsValue: sum(renMs, (x) => x.price - x.discount),
+      renewalsLast: msSameLast.filter(isRenewal).length,
+      /** Which date the counts above use, for the cards' labels. */
+      joinedBy: "join date",
+      soldBy: "sale date",
       pending: open.length,
       expired: expired.length,
     },
@@ -240,7 +262,7 @@ async function branchComparison(
     return {
       id: b.id,
       name: b.name,
-      active: mine.filter((m) => m.daysLeft !== null && m.daysLeft >= 0 && !m.suspended).length,
+      active: mine.filter(isActive).length,
       total: mine.length,
       today: checkins.find((c) => c.branchId === b.id)?._count ?? 0,
       exp7: mine.filter((m) => m.daysLeft !== null && m.daysLeft >= 0 && m.daysLeft <= 7).length,
@@ -258,7 +280,7 @@ async function frontDesk(u: CurrentUser, today: string, M: DashMember[], open: {
     db.attendance.findMany({ where: { branchId: { in: u.branchIds }, date: fromIso(today) }, select: { checkOut: true } }),
     db.lead.count({ where: { orgId: u.orgId, branchId: { in: u.branchIds }, stage: { notIn: ["Won", "Lost"] }, followUpOn: { lte: fromIso(today) } } }),
     db.booking.count({ where: { date: fromIso(today), status: { not: "Cancelled" }, classSlot: { orgId: u.orgId, branchId: { in: u.branchIds } } } }),
-    frozenMemberIds(M.map((m) => m.id), today),
+    frozenTodayIds(M.map((m) => m.id), today),
   ]);
   return {
     checkins: att.length,

@@ -1,14 +1,16 @@
 import { notFound } from "next/navigation";
 import { requirePermission } from "@/lib/auth/current";
 import { getInvoice } from "@/lib/services/billing";
-import { getGymProfile } from "@/lib/services/settings";
-import { getTax } from "@/lib/services/tax";
+import { sellerOf } from "@/lib/services/invoice-seller";
 import { todayIso } from "@/lib/services/time";
-import { Badge, Card, LinkButton, Notice, ScrollRegion } from "@/components/ui";
+import { Badge, Button, Card, LinkButton, Notice, ScrollRegion, toneOf } from "@/components/ui";
 import { PrintButton } from "@/components/print-button";
 import { PaperPrint, ReceiptLink } from "@/components/paper-print";
 import { gymLogoUrl } from "@/components/gym-logo";
+import { WhatsappLogoIcon } from "@phosphor-icons/react/dist/ssr";
+import { sendInvoiceAction } from "../../reminder-actions";
 import { fmtDate, formatInr, formatRupees, initials } from "@/lib/format";
+import { INVOICE_STATUS_TAG } from "@/lib/domain/billing";
 import { CancelInvoice, CollectForm, ReversePayment } from "./invoice-forms";
 import { amountInWords } from "@/lib/domain/words";
 
@@ -24,24 +26,26 @@ export const metadata = { title: "Invoice · Fitron" };
 export default async function InvoicePage({ params, searchParams }: PageProps<"/invoices/[id]">) {
   const u = await requirePermission("invoices.view");
   const { id } = await params;
-  const { created, receipt } = await searchParams;
+  const { created, receipt, msg, tone } = await searchParams;
   const inv = await getInvoice(u, id);
   if (!inv) notFound();
-  const [profile, tax] = await Promise.all([getGymProfile(u.orgId), getTax(u.orgId)]);
+  // "From" is the seller as it was when the invoice was made; a later Settings change never alters it.
+  const profile = await sellerOf(inv);
   // The receipt to hand over after a payment: the latest one received (the desk prints it right after collecting).
   const lastReceipt = [...inv.payments].reverse().find((p) => p.status === "SUCCESS");
   // Just recorded (the collect action comes back here with ?receipt=): offer its receipt at the top.
   const justPaid = typeof receipt === "string" ? inv.payments.find((p) => p.id === receipt) : undefined;
-  // What the PDF prints as "From": a branch's own GSTIN wins over the gym-level one.
   const cancelled = inv.status === "CANCELLED";
   const half = inv.gstType === "CGST+SGST";
-  const gstin = inv.branch.gstin || tax.gstin;
   const rate = Number(inv.gstRate ?? 0);
+  const gstin = profile.gstin;
   const paid = inv.balance <= 0 && !cancelled;
   const statusBg = cancelled ? "#aa0b56" : paid ? "#146c43" : inv.paid > 0 ? "#8a6612" : "#aa0b56";
-  const statusLabel = cancelled ? "CANCELLED" : paid ? "PAID" : inv.paid > 0 ? "PART PAID" : "UNPAID";
+  const statusLabel = INVOICE_STATUS_TAG[inv.status];
   const logo = gymLogoUrl(profile.logoKey);
   const okPays = inv.payments;
+  // Remount the money forms when a payment is reversed, so the collect box shows the new balance and no stale notice.
+  const moneyKey = `${inv.balance}-${inv.payments.filter((p) => p.status === "REVERSED").length}`;
   const totals: [string, string, boolean?, string?][] = [
     ["Subtotal", money(inv.subtotal)],
     ["Discount", `− ${money(inv.discount)}`],
@@ -63,10 +67,19 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
           Payment recorded ({justPaid.code}). <ReceiptLink paymentId={justPaid.id} code={justPaid.code} />
         </Notice>
       )}
+      {typeof msg === "string" && <Notice tone={toneOf(tone)}>{msg}</Notice>}
       <div className="flex flex-wrap justify-end gap-2 rounded-lg bg-bg p-2.5 print:hidden" data-testid="invoice-from">
         <PaperPrint href={`/invoices/${inv.id}/pdf`} kind="invoice" label="Print invoice" papers={["a4", "a5", "80mm", "58mm"]} fallback="a4" />
         {lastReceipt && <PaperPrint href={`/payments/${lastReceipt.id}/receipt`} kind="receipt" label="Print receipt" papers={["80mm", "58mm", "a5", "a4"]} fallback="80mm" />}
         <PrintButton label="Print page" />
+        {!cancelled && u.can("whatsapp.send") && u.has("whatsapp") && (
+          <form action={sendInvoiceAction.bind(null, inv.id, `/invoices/${inv.id}`)}>
+            <Button type="submit" title="Send this invoice with its PDF to the member on WhatsApp">
+              <WhatsappLogoIcon size={16} weight="duotone" />
+              Send on WhatsApp
+            </Button>
+          </form>
+        )}
         {!cancelled && inv.balance > 0 && u.can("payments.collect") && (
           <LinkButton href="#collect" variant="primary">
             Collect balance
@@ -103,9 +116,9 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
             <div className="text-[13.5px] leading-[1.6]">
               <strong>{profile.name}</strong>
               <br />
-              <span className="whitespace-pre-line">{profile.address || inv.branch.address}</span>
+              <span className="whitespace-pre-line">{profile.address}</span>
               <br />
-              {[profile.phone || inv.branch.phone, profile.email].filter(Boolean).join(" · ")}
+              {[profile.phone, profile.email].filter(Boolean).join(" · ")}
               {gstin && (
                 <>
                   <br />
@@ -250,7 +263,7 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
       <div className="mt-2 flex flex-col gap-4 print:hidden">
         {!cancelled && inv.balance > 0 && u.can("payments.collect") && (
           <Card title="Collect payment" className="scroll-mt-24" id="collect">
-            <CollectForm invoiceId={inv.id} balance={inv.balance} today={todayIso()} />
+            <CollectForm key={`collect-${inv.payments.filter((p) => p.status === "REVERSED").length}`} invoiceId={inv.id} balance={inv.balance} today={todayIso()} />
           </Card>
         )}
         {inv.payments.length > 0 && (
@@ -272,7 +285,7 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
                   <div>
                     <PaperPrint href={`/payments/${p.id}/receipt`} kind="receipt" label="Receipt" papers={["80mm", "58mm", "a5", "a4"]} fallback="80mm" compact />
                   </div>
-                  {p.status === "SUCCESS" && !cancelled && u.can("payments.reverse") && <ReversePayment paymentId={p.id} invoiceId={inv.id} />}
+                  {p.status === "SUCCESS" && !cancelled && u.can("payments.reverse") && <ReversePayment key={moneyKey} paymentId={p.id} invoiceId={inv.id} />}
                 </li>
               ))}
             </ul>
@@ -280,7 +293,7 @@ export default async function InvoicePage({ params, searchParams }: PageProps<"/
         )}
         {!cancelled && u.can("invoices.cancel") && (
           <Card>
-            <CancelInvoice invoiceId={inv.id} />
+            <CancelInvoice key={moneyKey} invoiceId={inv.id} />
           </Card>
         )}
       </div>

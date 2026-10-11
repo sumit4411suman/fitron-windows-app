@@ -6,7 +6,7 @@ import { createMember, summarize } from "./members";
 import { createPlan } from "./plans";
 import { sellMembership } from "./billing";
 import { checkIn } from "./attendance";
-import { freezeMembership, frozenMemberIds, openFreeze, transferMember, unfreezeMembership } from "./freeze";
+import { freezeMembership, frozenMemberIds, frozenTodayIds, openFreeze, transferMember, unfreezeMembership } from "./freeze";
 import { todayIso } from "./time";
 
 describe.skipIf(!hasDb)("freeze and transfer (database)", () => {
@@ -59,5 +59,9 @@ describe.skipIf(!hasDb)("freeze and transfer (database)", () => {
     const ids = await frozenMemberIds([m1.id, m2.id, m3.id, m4.id]);
     expect([...ids].sort()).toEqual([m1.id, m2.id].sort());
     expect((await frozenMemberIds([])).size).toBe(0);
+    // Only m1 is frozen today; m2's freeze starts in two days and shows as scheduled.
+    expect([...(await frozenTodayIds([m1.id, m2.id, m3.id, m4.id]))]).toEqual([m1.id]);
+    expect(await openFreeze(m1.id)).toMatchObject({ running: true });
+    expect(await openFreeze(m2.id)).toMatchObject({ running: false });
   });
 });

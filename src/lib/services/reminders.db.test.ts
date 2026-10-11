@@ -4,8 +4,8 @@ import { addDays, daysBetween } from "@/lib/domain/dates";
 import { hasDb, makeGym, pick } from "@/test/db";
 import { createMember, summarize } from "./members";
 import { createPlan } from "./plans";
-import { sellMembership } from "./billing";
-import { expiryKey, lastRenewalReminders, remindAllOverdue, remindDue, remindRenewal, renewalAmounts } from "./reminders";
+import { cancelInvoice, sellMembership } from "./billing";
+import { expiryKey, lastRenewalReminders, remindAllOverdue, remindDue, remindRenewal, renewalAmounts, sendInvoiceWhatsApp } from "./reminders";
 import { todayIso } from "./time";
 import { putSetting } from "./settings";
 
@@ -66,6 +66,7 @@ describe.skipIf(!hasDb)("reminders (database)", () => {
     const admin = pick(await gym.user("Super Admin"), gym.a.id);
     await putSetting(admin, "whatsapp", { mode: "connector" });
     vi.stubEnv("WA_CONNECTOR_URL", "http://127.0.0.1:9");
+    vi.stubEnv("WA_CONNECTOR_KEY", "x");
     try {
       const before = await db.whatsAppMessage.count({ where: { orgId: gym.org.id } });
       await expect(remindAllOverdue(admin)).rejects.toThrow(/^Nothing was sent\. Nothing is answering at http:\/\/127\.0\.0\.1:9/);
@@ -74,5 +75,71 @@ describe.skipIf(!hasDb)("reminders (database)", () => {
       vi.unstubAllEnvs();
       await putSetting(admin, "whatsapp", { mode: "demo" });
     }
+  });
+
+  it("doesn't count a reminder only logged before WhatsApp was linked as a repeat, and reports a failed send", async () => {
+    const desk = await gym.user("Receptionist", [gym.a.id]);
+    const admin = pick(await gym.user("Super Admin"), gym.a.id);
+    // The due reminder above was logged in demo mode. Now the gym switches to the connector, which is not set up here.
+    await putSetting(admin, "whatsapp", { mode: "connector" });
+    try {
+      const r = await remindDue(desk, owing);
+      expect(r?.status).toBe("Failed");
+      expect(r?.error).toBeTruthy();
+      // "Remind all" checks once first, and sends nothing rather than recording a failure against everyone.
+      await expect(remindAllOverdue(desk)).rejects.toThrow(/^Nothing was sent\./);
+    } finally {
+      await putSetting(admin, "whatsapp", { mode: "demo" });
+    }
+  });
+});
+
+describe.skipIf(!hasDb)("send an invoice on WhatsApp (database)", () => {
+  let gymA: Awaited<ReturnType<typeof makeGym>>;
+  let gymB: Awaited<ReturnType<typeof makeGym>>;
+  let invoiceA: string;
+  let invoiceB: string;
+
+  beforeAll(async () => {
+    gymA = await makeGym();
+    gymB = await makeGym();
+    for (const [g, set] of [
+      [gymA, (id: string) => (invoiceA = id)],
+      [gymB, (id: string) => (invoiceB = id)],
+    ] as const) {
+      const admin = pick(await g.user("Super Admin"), g.a.id);
+      const plan = await createPlan(admin, { name: "Monthly", kind: "Membership", months: 1, price: 150000, regFee: 0, discount: 0, gstApplicable: false, features: [] });
+      const m = await createMember(admin, { name: "Invoice Member", gender: "Female", phone: g === gymA ? "9876522101" : "9876522102", source: "Walk-in", tags: [] });
+      set((await sellMembership(admin, m.id, { planId: plan.id, startDate: todayIso(), discount: 0, includeRegFee: false, payAmount: 0 })).invoice.id);
+    }
+  });
+
+  it("sends the invoice with its PDF to the invoice's own member", async () => {
+    const desk = await gymA.user("Receptionist", [gymA.a.id]);
+    // Not linked (demo mode): saved with the PDF attached, and the desk is told it was not sent.
+    expect(await sendInvoiceWhatsApp(desk, invoiceA)).toMatchObject({ status: "Logged", templateKey: "invoice" });
+    const msg = await db.whatsAppMessage.findFirst({ where: { attachment: `invoice:${invoiceA}` }, orderBy: { sentAt: "desc" }, include: { member: true } });
+    expect(msg).toMatchObject({ orgId: desk.orgId, templateKey: "invoice", status: "Logged" });
+    expect(msg!.member!.name).toBe("Invoice Member");
+  });
+
+  it("another gym's invoice is not found, and nothing is recorded for it", async () => {
+    const deskA = await gymA.user("Receptionist", [gymA.a.id]);
+    await expect(sendInvoiceWhatsApp(deskA, invoiceB)).rejects.toThrow("Invoice not found.");
+    expect(await db.whatsAppMessage.count({ where: { attachment: `invoice:${invoiceB}` } })).toBe(0);
+  });
+
+  it("a second press moments after a real send is not sent again", async () => {
+    const desk = await gymA.user("Receptionist", [gymA.a.id]);
+    // As if the first press had gone out through a linked phone.
+    await db.whatsAppMessage.updateMany({ where: { attachment: `invoice:${invoiceA}` }, data: { status: "Sent" } });
+    expect(await sendInvoiceWhatsApp(desk, invoiceA)).toBeNull();
+    expect(await db.whatsAppMessage.count({ where: { attachment: `invoice:${invoiceA}` } })).toBe(1);
+  });
+
+  it("a cancelled invoice is not sent", async () => {
+    const admin = pick(await gymB.user("Super Admin"), gymB.a.id);
+    await cancelInvoice(admin, invoiceB, "Entered by mistake");
+    await expect(sendInvoiceWhatsApp(admin, invoiceB)).rejects.toThrow("cancelled");
   });
 });

@@ -180,7 +180,7 @@ body.logo-on #scene{opacity:1!important}
 @media (max-width:560px){.twin-card .checks.two{grid-template-columns:minmax(0,1fr)}}
 /* The assistant is a small round button on phones. */
 @media (max-width:640px){body .fa-launcher{padding:8px}body .fa-launcher span{display:none}}
-img[src="/site/fitron-ring.png"]{object-fit:cover}
+img[src="/site/fitron-ring-v2.png"]{object-fit:cover}
 
 /* How the partnership works (scripts/site/partner-earnings.html) */
 .pe-steps{list-style:none;padding:0;margin:0;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}

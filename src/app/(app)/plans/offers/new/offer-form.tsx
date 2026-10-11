@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { Button, Card, Field, Input, LinkButton, Notice, Select } from "@/components/ui";
 import { saveOffer } from "../../actions";
 
-export function OfferForm({ validTill }: { validTill: string }) {
+export function OfferForm({ validTill, today }: { validTill: string; today: string }) {
   const [state, action, pending] = useActionState(saveOffer, undefined);
   const e = state?.errors ?? {};
   const v = (k: string, d = "") => ((state?.values?.[k] as string | undefined) ?? d);
@@ -29,7 +29,7 @@ export function OfferForm({ validTill }: { validTill: string }) {
             <Input name="value" inputMode="decimal" defaultValue={v("value")} required />
           </Field>
           <Field label="Valid till" error={e.validTill}>
-            <Input name="validTill" type="date" defaultValue={v("validTill", validTill)} required />
+            <Input name="validTill" type="date" min={today} defaultValue={v("validTill", validTill)} required />
           </Field>
           <Field label="Usage limit (optional)" error={e.usageLimit} hint="Leave empty for no limit">
             <Input name="usageLimit" type="number" min={1} defaultValue={v("usageLimit")} />

@@ -28,7 +28,7 @@ export function GET(req: NextRequest) {
   button{width:100%;min-height:52px;border:0;border-radius:14px;background:linear-gradient(135deg,#f0d27a,#c9a24a 55%,#9c7428);color:#1a1307;font:700 17px system-ui,sans-serif;cursor:pointer}
 </style></head>
 <body><main>
-  <img src="/fitron-mark.png" alt="FITRON">
+  <img src="/fitron-mark-v2.png" alt="FITRON">
   <h1>Sign in to your AI Trainer</h1>
   <p>Tap below to finish signing in on this device.</p>
   <form method="post" action="/api/trainer/auth/verify">

@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
+import { balanceDue } from "@/lib/domain/billing";
 import { addDays, daysBetween } from "@/lib/domain/dates";
 import { riskScore } from "@/lib/domain/risk";
 import { summarize } from "./members";
@@ -64,7 +65,7 @@ export async function dailyBrief(u: CurrentUser, today = todayIso()): Promise<Al
 
   if (u.can("invoices.view")) {
     const invs = await db.invoice.findMany({ where: { ...scope, status: "ISSUED", dueDate: { lt: fromIso(today) } }, select: { total: true, payments: { where: { status: "SUCCESS" }, select: { amount: true } } } });
-    const overdue = invs.map((i) => i.total - i.payments.reduce((s, p) => s + p.amount, 0)).filter((b) => b > 0);
+    const overdue = invs.map((i) => balanceDue(i.total, i.payments.reduce((s, p) => s + p.amount, 0))).filter((b) => b > 0);
     const total = overdue.reduce((s, b) => s + b, 0);
     if (total >= 1_000_000) out.push({ tone: "alert", title: `₹${Math.round(total / 100).toLocaleString("en-IN")} overdue`, detail: `${overdue.length} unpaid invoices are past their due date.`, href: "/receivables" });
   }

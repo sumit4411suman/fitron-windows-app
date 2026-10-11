@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { indianPhone, rupees } from "./common";
 import { memberInput } from "./member";
-import { planInput } from "./plan";
+import { offerInput, planInput } from "./plan";
+import { couponInput } from "./coupon";
+import { todayIso } from "@/lib/services/time";
 import { cookieNoticeInput, gymInput, privacyOfficerInput, taxInput } from "./settings";
 
 describe("indianPhone", () => {
@@ -49,6 +51,27 @@ describe("planInput", () => {
     const p = planInput.parse({ name: "Quarterly", kind: "Membership", months: "3", price: "4,000", regFee: "", discount: "", gstApplicable: "on", features: "Locker\n\nDiet chart" });
     expect(p).toMatchObject({ months: 3, price: 400000, regFee: 0, discount: 0, gstApplicable: true, features: ["Locker", "Diet chart"] });
     expect(planInput.parse({ name: "X Plan", kind: "Membership", months: "1", price: "1" }).gstApplicable).toBe(false);
+  });
+});
+
+describe("offerInput", () => {
+  it("refuses an end date in the past and accepts today", () => {
+    const base = { code: "diwali 25", description: "", type: "PERCENT", value: "10", usageLimit: "" };
+    const past = offerInput.safeParse({ ...base, validTill: "2020-01-01" });
+    expect(past.success).toBe(false);
+    expect(past.success ? "" : past.error.issues[0]?.message).toBe("The end date is in the past.");
+    expect(past.success ? [] : past.error.issues[0]?.path).toEqual(["validTill"]);
+    const ok = offerInput.parse({ ...base, validTill: todayIso() });
+    expect(ok).toMatchObject({ code: "DIWALI25", value: 10, usageLimit: null });
+  });
+});
+
+describe("couponInput", () => {
+  it("refuses an end date in the past but allows no end date", () => {
+    const base = { code: "WELCOME99", percentOff: "10", payRupees: "", appliesTo: "ALL", usageLimit: "" };
+    expect(couponInput.safeParse({ ...base, validTill: "2020-01-01" }).success).toBe(false);
+    expect(couponInput.parse({ ...base, validTill: "" }).validTill).toBeNull();
+    expect(couponInput.parse({ ...base, validTill: todayIso() }).validTill).toBe(todayIso());
   });
 });
 

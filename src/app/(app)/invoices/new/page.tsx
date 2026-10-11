@@ -22,6 +22,7 @@ export default async function NewInvoicePage({ searchParams }: PageProps<"/invoi
         memberId={typeof member === "string" ? member : undefined}
         today={todayIso()}
         taxRate={tax.enabled ? tax.rate : 0}
+        gstEnabled={tax.enabled}
       />
     </>
   );
