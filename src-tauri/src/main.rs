@@ -57,10 +57,12 @@ fn data_root(app: &AppHandle) -> tauri::Result<PathBuf> {
 /// The Node.js runtime and the server, both installed with FITRON. The runtime sits beside the FITRON program
 /// (`fitron-node.exe`); the server in its resources (`server\`).
 fn launch(app: &AppHandle, data_root: PathBuf) -> Result<Launch, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    // Windows can name these folders `\\?\C:\...`, which Node.js cannot resolve its script from: plain paths only.
+    let exe = dunce::simplified(&std::env::current_exe().map_err(|e| e.to_string())?).to_path_buf();
     let dir = exe.parent().ok_or("FITRON's program folder could not be found.")?;
     let node = dir.join(if cfg!(windows) { "fitron-node.exe" } else { "fitron-node" });
-    let server_dir = app.path().resource_dir().map_err(|e| e.to_string())?.join("server");
+    let server_dir = dunce::simplified(&app.path().resource_dir().map_err(|e| e.to_string())?).join("server");
+    let data_root = dunce::simplified(&data_root).to_path_buf();
     if !node.is_file() {
         return Err(format!("A part of FITRON is missing ({}). Install FITRON again; your data is kept.", node.display()));
     }
