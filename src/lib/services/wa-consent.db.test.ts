@@ -16,8 +16,8 @@ import { createMandate } from "./autopay";
 
 beforeEach(() => {
   vi.stubEnv("FITRON_LOCAL_ALLOW_SIGNUP", "");
-  // A linked phone whose connector is not running: anything that tried to send would fail at once, never leave.
-  vi.stubEnv("WA_CONNECTOR_URL", "http://127.0.0.1:9");
+  // A linked phone with no connector entered (Settings › WhatsApp › Connector): anything that tried to send would fail
+  // at once, and never leave the computer.
 });
 afterEach(() => vi.unstubAllEnvs());
 

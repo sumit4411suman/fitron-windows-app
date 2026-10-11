@@ -1,3 +1,4 @@
+import { saveConnectorSite } from "./wa-connector-store";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { hasDb, makeGym, pick } from "@/test/db";
@@ -47,8 +48,8 @@ describe.skipIf(!hasDb)("the computer's timer (database)", () => {
     const g = await makeGym();
     const owner = pick(await g.user("Super Admin"), g.a.id);
     await putSetting(owner, "whatsapp", { mode: "connector" });
-    vi.stubEnv("WA_CONNECTOR_URL", "http://127.0.0.1:9");
-    vi.stubEnv("WA_CONNECTOR_KEY", "x");
+    // A connector entered under Settings › WhatsApp › Connector that is not running.
+    await saveConnectorSite(g.org.id, { url: "http://127.0.0.1:9", key: "x" });
     const today = todayIso();
     const out = await runLocalDailyJobs(g.org.id, today);
     const waiting = out.filter((j) => j.status === "waiting").map((j) => j.name);
