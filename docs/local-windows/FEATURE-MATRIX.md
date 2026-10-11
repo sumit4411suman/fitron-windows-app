@@ -29,6 +29,7 @@ Classes:
 | Attendance: manual check-in/out, guest, day pass, override, close day, busy hours | `/attendance` | NEEDS-ADAPTER | `pg_advisory_xact_lock` in self check-in → dialect no-op. QR scan uses the device camera in WebView2 (works). |
 | Front-desk QR poster / member self check-in page | `/c/[gym]/[branch]` | NEEDS-ADAPTER | The page is served by the local server; a member's phone can only reach it on the gym's LAN if the owner opts in. Default: localhost only, so the poster is replaced by a note in Local. |
 | Classes & bookings, waitlist | `/classes`, `/classes/[id]` | NEEDS-ADAPTER | `SELECT … FOR UPDATE` → dialect no-op. |
+| Member consent (`Member.consentAt`, upstream Oct 2026) | add member | LOCAL-SAFE | The privacy notice is ticked when a member is added; stored with the member, printed nowhere. |
 
 ## Billing
 
@@ -42,6 +43,8 @@ Classes:
 | POS & inventory: counter sale, products, stock movements, low-stock notices | `/pos`, `/products`, `/products/[id]`, `/products/new` | LOCAL-SAFE | Walk-in member per branch. |
 | UPI Autopay (Razorpay mandates, demo mode) | `/autopay`, `/autopay/[id]` | ONLINE-REQUIRED (done, Phase 11) | Live mode needs Razorpay and the internet; every live action checks first. Razorpay's webhooks cannot reach a computer, so charges are recorded by Sync with Razorpay (by hand, and once a day when online). Demo mode is local-safe; its simulated debits run only from "Run today's debits", never on the timer. |
 | Offers (gym's own promo codes) | `/plans/offers/new` | LOCAL-SAFE | |
+| Invoice seller snapshot (`Invoice.seller`, upstream Oct 2026) | invoice page, invoice and receipt PDFs | LOCAL-SAFE | Who issued the invoice is written with it; the page, the PDF and every receipt print that, so a later change in Settings never alters an old invoice. Invoices from before fall back to the live settings. |
+| Send an invoice on WhatsApp (upstream Oct 2026) | invoice page | ONLINE-REQUIRED | The invoice message with its PDF, under the same rules as reminders: "Not linked" saves it and says "saved, not sent"; a second press within two minutes of a real send is not sent again. |
 
 ## Accounts
 
@@ -62,10 +65,11 @@ Classes:
 | Feature | Route | Class | Notes |
 | --- | --- | --- | --- |
 | Fitron AI (chat, tools over the books, drafted actions, daily brief, churn risk) | `/ai`, `/api/ai/chat` | LOCAL-SAFE without a model key / ONLINE-REQUIRED with one (done, Phase 11) | Without an Anthropic key (the Windows default) it answers from the books on the computer and nothing leaves it. With a key, a question and the figures needed go to Anthropic; offline it answers from the books and says so. Settings › Integrations & AI says which. Churn risk (`computeRisk`) is pure code, run by the daily jobs. |
-| WhatsApp: templates, send, automation rules, quiet hours, campaign | `/whatsapp`, `/whatsapp/send`, `/whatsapp/templates` | ONLINE-REQUIRED (done, Phase 11) | "Not linked" (demo) saves messages and every screen says "saved, not sent". Meta Cloud API checks the internet first. The phone connector is not shipped in the Windows app yet (it needs Node.js). Results are worded by what really happened (OFFLINE.md). |
+| WhatsApp: templates, send, automation rules, quiet hours, campaign | `/whatsapp`, `/whatsapp/send`, `/whatsapp/templates` | ONLINE-REQUIRED (done, Phase 11) | "Not linked" (demo) saves messages and every screen says "saved, not sent". Meta Cloud API checks the internet first. The phone connector (`whatsapp-connector/`, one deployment serving every gym, each gym linked by QR with its own key kept sealed in the gym's settings) is not shipped in the Windows app yet; upstream runs it on a gym PC with `install-windows.ps1` (Node.js), and its Settings wording still speaks of a hosted server. Results are worded by what really happened (OFFLINE.md). |
 | Workouts & diet programs, progress logs, personal records | `/programs` and member profile | LOCAL-SAFE | `WorkoutPlan.days` / `DietPlan.meals` JSON, supported. |
 | Gym Partnership (AI Trainer linking, payouts) | `/partnership` | NOT-SUPPORTED-IN-LOCAL | Depends on the hosted AI Trainer service. |
 | Notifications (in-app) | `/notifications` | LOCAL-SAFE | |
+| Fitron AI chat history and attachments (upstream Oct 2026) | `/ai`, `/api/ai/chat`, `/api/ai/chats` | LOCAL-SAFE | Saved chats live in the gym's own database (`AiChat`, `AiChatMessage`); a chat is one person's own. Files attached to a question are read for that answer and never stored. Without the model (no key, or "Use Claude" off) a question with files is answered with a plain refusal; questions without files are answered from the books. Offline with the model on: answered from the books, and the chat says so. |
 
 ## Admin and settings
 

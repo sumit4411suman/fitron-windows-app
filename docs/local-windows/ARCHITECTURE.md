@@ -30,7 +30,7 @@ page (`/c/<gym>/<branch>`), and `/api/health`.
 | Database | PostgreSQL 16, 72 models, 47 migrations | See `DATABASE-MIGRATION.md` |
 | Auth | Argon2id (`@node-rs/argon2`), server-side sessions (SHA-256 of a cookie token in `Session`), TOTP two-step, Google OAuth, email links and codes | Password + session parts are local-safe; Google and email are online. |
 | Permissions | Role → RolePermission → Permission, 35 keys, 5 default roles, custom roles on Enterprise | Fully local. |
-| Files | `src/lib/integrations/storage.ts`: S3-compatible bucket or `STORAGE_DIR` on disk | Disk mode is already a local file storage; the Local Edition points it at the app data folder. |
+| Files | `src/lib/integrations/storage.ts` over `src/lib/storage`: S3-compatible bucket, `STORAGE_DIR` on disk, or (hosted, no disk and no bucket) `StoredFile` rows in the database | Disk mode is already a local file storage; the Local Edition always points it at the app data folder and never uses the database store. |
 | PDF | `pdf-lib` + DejaVu fonts, server-rendered invoice PDF | Local-safe |
 | Excel/CSV | own `src/lib/xlsx.ts` | Local-safe |
 | Email | nodemailer (SMTP) | Online |

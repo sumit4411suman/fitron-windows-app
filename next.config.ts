@@ -13,9 +13,9 @@ const nextConfig: NextConfig = {
         images: { unoptimized: true },
         // Some server code reads files by computed paths (backups, the data folder), so Next.js would copy the whole
         // project. Only the server runs on the customer's computer: never the shell's build, test output, development
-        // uploads, the website or the image resizer (images are not resized, above).
+        // uploads, the website, the WhatsApp connector package or the image resizer (images are not resized, above).
         outputFileTracingExcludes: {
-          "/*": ["./src-tauri/**", "./storage/**", "./build/**", "./prototype/**", "./playwright-report/**", "./test-results/**", "./.local-e2e/**", "./public/site/**", "./public/trainer/**", "./node_modules/@img/**", "./node_modules/sharp/**"],
+          "/*": ["./src-tauri/**", "./storage/**", "./build/**", "./prototype/**", "./playwright-report/**", "./test-results/**", "./.local-e2e/**", "./public/site/**", "./public/trainer/**", "./whatsapp-connector/**", "./node_modules/@img/**", "./node_modules/sharp/**"],
         },
       }
     : {}),
