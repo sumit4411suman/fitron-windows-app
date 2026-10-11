@@ -149,6 +149,7 @@ async function LocalLogin({ q, next }: { q: Record<string, string | string[] | u
       {(q.twostep === "expired" || q.step === "2") && <Notice tone="alert">That sign-in took too long or could not be finished. Sign in again.</Notice>}
       {typeof q.idle === "string" && /^\d+$/.test(q.idle) && <Notice tone="alert">You were signed out after {q.idle} minutes of inactivity.</Notice>}
       {q.reset && <Notice tone="ok">Password changed. Sign in with your new password.</Notice>}
+      {typeof q.restored === "string" && <Notice tone="ok">Backup restored. Everyone was signed out; sign in again to continue.</Notice>}
       <LoginForm next={next} forgotHref="/recover" />
     </LocalAuthShell>
   );

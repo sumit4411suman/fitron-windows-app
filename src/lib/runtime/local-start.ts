@@ -3,6 +3,8 @@ import { dataDirs, defaultDataRoot, localDatabaseUrl } from "./paths";
 import { log } from "@/lib/log";
 import { migrateLocal } from "./local-migrate";
 import { ensureLocalSecrets } from "./local-secrets";
+import { recoverDocuments } from "./fitron-backup";
+import { startLocalScheduler } from "./local-scheduler";
 
 // What the Local Edition does before serving: make the data folders, apply pending migrations. The result is kept so
 // /api/health can report it and refuse to say "ok" while the database is not ready.
@@ -20,12 +22,17 @@ export async function startLocalEdition(): Promise<LocalStartState> {
   const state: LocalStartState = { ready: false, applied: [], dataRoot: root, startedAt: new Date().toISOString() };
   g.fitronLocalStart = state;
   try {
+    // A restore that stopped half-way through swapping the documents folder: put the old one back, before anything
+    // makes a new, empty documents folder.
+    mkdirSync(dirs.root, { recursive: true });
+    if (await recoverDocuments(dirs)) log.warn("local.start.documents_recovered");
     for (const d of [dirs.data, dirs.backups, dirs.documents, dirs.logs]) mkdirSync(d, { recursive: true });
     ensureLocalSecrets(root);
     const file = localDatabaseUrl().replace(/^file:/, "");
     const r = migrateLocal(file);
     state.applied = r.applied;
     state.ready = true;
+    if (process.env.FITRON_LOCAL_SCHEDULER !== "off") startLocalScheduler();
     log.info("local.start", { applied: r.applied.join(",") || null });
   } catch (e) {
     state.error = e instanceof Error ? e.message : String(e);
