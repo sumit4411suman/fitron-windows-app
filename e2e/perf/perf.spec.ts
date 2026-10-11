@@ -28,6 +28,7 @@ async function timed(what: string, budget: number, fn: () => Promise<unknown>) {
   await fn();
   const ms = Date.now() - t;
   results.push({ what, ms, budget });
+  writeFileSync(path.join(root, "perf-results.json"), JSON.stringify(results, null, 2));
   test.info().annotations.push({ type: what, description: `${ms} ms (budget ${budget} ms)` });
   return ms;
 }
@@ -60,27 +61,29 @@ test("every daily screen opens within its budget on a gym with years of records"
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/dashboard/, { timeout: 60_000 });
   });
-  const h = (name: string | RegExp) => (p: Page) => p.getByRole("heading", { name });
+  // Ready: the page's title is on screen, and for a list or report its table (the rows are server-rendered with it).
+  const titled = (p: Page) => p.getByRole("heading", { level: 1 });
+  const table = (p: Page) => p.locator("table");
   const screens: [string, string, (p: Page) => ReturnType<Page["getByRole"]>, number][] = [
-    ["Dashboard", "/dashboard", (p) => p.getByRole("main"), BUDGET.screen],
-    ["Members list", "/members", h(/Members/), BUDGET.screen],
+    ["Dashboard", "/dashboard", titled, BUDGET.screen],
+    ["Members list", "/members", table, BUDGET.screen],
     ["Member search by name", "/members?q=Sharma", (p) => p.getByRole("link", { name: /Sharma/ }), BUDGET.screen],
     ["Member search by phone", "/members?q=9700001234", (p) => p.getByText("9700001234"), BUDGET.screen],
-    ["Invoices", "/invoices", h(/Invoices/), BUDGET.screen],
-    ["Payments", "/payments", h(/Payments/), BUDGET.screen],
-    ["Receivables", "/receivables", h(/Receivables|Dues/), BUDGET.screen],
-    ["Renewals", "/renewals", h(/Renewals/), BUDGET.screen],
-    ["Expenses", "/expenses", h(/Expenses/), BUDGET.screen],
-    ["Attendance", "/attendance", h(/Attendance/), BUDGET.screen],
-    ["Audit log", "/audit", h(/Audit/), BUDGET.screen],
-    ["Profit & loss", "/accounting", h(/Accounting/), BUDGET.report],
-    ["Ledgers", "/accounting?tab=ledger", h(/Accounting/), BUDGET.report],
-    ["GST report", "/reports/gst", h(/GST/), BUDGET.report],
-    ["Collections report", "/reports/collections", h(/Collections|collect/i), BUDGET.report],
-    ["Dues report", "/reports/dues", h(/Dues|Receivable/i), BUDGET.report],
-    ["Revenue by month", "/reports/rev-month", h(/Revenue/), BUDGET.report],
-    ["Members by plan", "/reports/m-plan", h(/plan/i), BUDGET.report],
-    ["Reports centre", "/reports", h(/Reports/), BUDGET.screen],
+    ["Invoices", "/invoices", table, BUDGET.screen],
+    ["Payments", "/payments", table, BUDGET.screen],
+    ["Outstanding payments", "/receivables", titled, BUDGET.screen],
+    ["Renewals", "/renewals", titled, BUDGET.screen],
+    ["Expenses (this month)", "/expenses", titled, BUDGET.screen],
+    ["Attendance", "/attendance", titled, BUDGET.screen],
+    ["Audit log", "/audit", table, BUDGET.screen],
+    ["Profit & loss", "/accounting", titled, BUDGET.report],
+    ["Ledgers", "/accounting?tab=ledger", titled, BUDGET.report],
+    ["GST summary", "/reports/gst", table, BUDGET.report],
+    ["Collections report", "/reports/collections", table, BUDGET.report],
+    ["Outstanding dues report", "/reports/dues", table, BUDGET.report],
+    ["Revenue by month", "/reports/rev-month", table, BUDGET.report],
+    ["Members by plan", "/reports/m-plan", table, BUDGET.report],
+    ["Reports centre", "/reports", titled, BUDGET.screen],
   ];
   for (const [what, url, ready, budget] of screens) await timed(what, budget, screen(url, ready));
 

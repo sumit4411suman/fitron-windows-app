@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import path from "node:path";
 import { dataDirs, defaultDataRoot, localDatabaseUrl } from "./paths";
 import { log } from "@/lib/log";
@@ -8,13 +8,14 @@ import { createLocalBackup, recoverDocuments, unpackBackup, type CreatedBackup }
 import { startLocalScheduler } from "./local-scheduler";
 import { startSyncWorker } from "@/lib/sync/worker";
 import { stopWhenShellCloses } from "./local-shutdown";
+import { clearDamage, markDamaged, quickCheck, type Damage } from "./local-damage";
 
 // What the Local Edition does before serving: make the data folders, back the database up if an update will change it,
 // apply pending migrations. The result is kept so
 // /api/health can report it and refuse to say "ok" while the database is not ready.
-export type LocalStartState = { ready: boolean; error?: string; applied: string[]; safetyBackup?: string; rolledBack?: boolean; dataRoot: string; startedAt: string };
+export type LocalStartState = { ready: boolean; error?: string; applied: string[]; safetyBackup?: string; rolledBack?: boolean; dataRoot: string; startedAt: string; damaged?: Damage };
 
-const g = globalThis as unknown as { fitronLocalStart?: LocalStartState };
+const g = globalThis as unknown as { fitronLocalStart?: LocalStartState; fitronShellWatch?: boolean };
 
 export function localStartState(): LocalStartState | undefined {
   return g.fitronLocalStart;
@@ -42,7 +43,10 @@ export async function startLocalEdition(): Promise<LocalStartState> {
   g.fitronLocalStart = state;
   // Started by the desktop shell: stop cleanly when FITRON closes (src/lib/runtime/local-shutdown.ts). First, so a
   // start that fails still stops when asked.
-  if (process.env.FITRON_SHELL === "1") stopWhenShellCloses(localDatabaseUrl().replace(/^file:/, ""));
+  if (process.env.FITRON_SHELL === "1" && !g.fitronShellWatch) {
+    g.fitronShellWatch = true;
+    stopWhenShellCloses(localDatabaseUrl().replace(/^file:/, ""));
+  }
   try {
     // A restore that stopped half-way through swapping the documents folder: put the old one back, before anything
     // makes a new, empty documents folder.
@@ -51,6 +55,17 @@ export async function startLocalEdition(): Promise<LocalStartState> {
     for (const d of [dirs.data, dirs.backups, dirs.documents, dirs.logs]) mkdirSync(d, { recursive: true });
     ensureLocalSecrets(root);
     const file = localDatabaseUrl().replace(/^file:/, "");
+    // A damaged database (a disk fault, a write the disk never finished) is found before anything opens it for work:
+    // FITRON then serves only Recovery (/recovery), which restores a backup and keeps the damaged files.
+    if (existsSync(file)) {
+      const check = quickCheck(file);
+      if (!check.ok) {
+        state.damaged = markDamaged(check.problems, dirs);
+        log.error("local.start.database_damaged", undefined, { problems: check.problems.slice(0, 3).join("; ") });
+        return state;
+      }
+    }
+    clearDamage(dirs);
     // The first start after an update changes the database only after a safety backup of it (Settings › Backup lists
     // it under "safety"). If the backup cannot be made, nothing is migrated and FITRON says so.
     const pending = pendingUpdate(file);
@@ -101,3 +116,14 @@ export async function startLocalEdition(): Promise<LocalStartState> {
   }
   return state;
 }
+
+/**
+ * After Recovery restored a backup over a damaged database: the same start as any other (the restored database is
+ * already at this version and checked), then FITRON serves as usual.
+ */
+export async function resumeAfterRecovery(): Promise<LocalStartState> {
+  const state = g.fitronLocalStart;
+  if (state) state.damaged = undefined;
+  return startLocalEdition();
+}
+

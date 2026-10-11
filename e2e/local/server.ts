@@ -4,9 +4,10 @@ import path from "node:path";
 
 // A Local Edition server of its own, started much as the desktop shell starts it (src-tauri): the production build,
 // FITRON_EDITION=local, a data folder, 127.0.0.1 only, and nothing else. No test-only switches, no shared database.
-export type LocalServer = { url: string; dataDir: string; stop: () => Promise<void> };
+export type LocalServer = { url: string; dataDir: string; stop: () => Promise<void>; kill: () => Promise<void> };
 
-export async function startLocalServer(dataDir: string, port: number, extra: Record<string, string> = {}): Promise<LocalServer> {
+/** `acceptFailure`: a start that reports why it could not open the database (a failed update) counts as started. */
+export async function startLocalServer(dataDir: string, port: number, extra: Record<string, string> = {}, opts: { acceptFailure?: boolean } = {}): Promise<LocalServer> {
   // A server left running by an interrupted run would answer instead of this one and make every check meaningless.
   const taken = await fetch(`http://127.0.0.1:${port}/api/health`).then(
     () => true,
@@ -41,7 +42,8 @@ export async function startLocalServer(dataDir: string, port: number, extra: Rec
   for (;;) {
     try {
       const r = await fetch(`${url}/api/health`);
-      if (r.ok && ((await r.json()) as { ok: boolean }).ok) break;
+      const h = (await r.json()) as { ok: boolean; error?: string };
+      if (h.ok || (opts.acceptFailure && h.error === "Database migration failed")) break;
     } catch {
       // not listening yet
     }
@@ -51,6 +53,13 @@ export async function startLocalServer(dataDir: string, port: number, extra: Rec
   return {
     url,
     dataDir,
+    // As a power cut: the process ends at once, mid-request, with nothing written on the way out.
+    kill: () =>
+      new Promise<void>((resolve) => {
+        if (child.exitCode !== null || child.signalCode !== null) return resolve();
+        child.once("exit", () => resolve());
+        child.kill("SIGKILL");
+      }),
     // Ask it to stop, and stop it after 5 seconds if it is still waiting for the browser's open connections to close.
     // Every committed change is already on disk (WAL, synchronous=FULL). The desktop shell stops its server by closing
     // standard input instead (src/lib/runtime/local-shutdown.ts, npm run desktop:smoke).

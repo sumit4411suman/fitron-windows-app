@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { buildCsp, cspHeaderName, cspMode, type CspTier } from "@/lib/csp";
 import { isGuardedPath, isNotInLocal, isOnlineOnlyAuthPath } from "@/lib/public-paths";
 import { isLoopbackHost } from "@/lib/runtime/loopback";
+import { readDamage } from "@/lib/runtime/local-damage-marker";
 
 // Runs before every page. Two jobs:
 //  1. Optimistic check only: send visitors without a session cookie to sign-in when they ask for a console page or a
@@ -20,6 +21,10 @@ export function proxy(req: NextRequest) {
     if (isOnlineOnlyAuthPath(pathname)) return NextResponse.redirect(new URL("/login", req.url));
     // The website's contact page (an error screen's "Contact support") becomes the console's own Help & support.
     if (isNotInLocal(pathname)) return pathname.startsWith("/api/") ? new NextResponse("Not part of FITRON for Windows.", { status: 404 }) : NextResponse.redirect(new URL(pathname === "/contact" ? "/settings?tab=help" : "/dashboard", req.url));
+  }
+  // Local Edition with a damaged database (src/lib/runtime/local-damage.ts): every page is Recovery until a backup is in.
+  if (process.env.FITRON_EDITION === "local" && pathname !== "/recovery" && readDamage()) {
+    return pathname.startsWith("/api/") ? new NextResponse("FITRON's database is damaged. Open FITRON to restore a backup.", { status: 503 }) : NextResponse.redirect(new URL("/recovery", req.url));
   }
   const guarded = isGuardedPath(pathname);
   if (guarded && !req.cookies.has("fitron_session")) {
