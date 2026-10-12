@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Notice } from "@/components/ui";
 import { formatInr } from "@/lib/format";
-import { collectLicenceAction, markBuyOpenedAction } from "./actions";
+import { collectLicenceAction, openBuyAction } from "./actions";
 
 export type PlanPrice = { key: string; name: string; monthly: number; yearly: number; limit: string };
 
@@ -13,15 +13,48 @@ const FOR_MS = 30 * 60_000;
 const rupees = (p: number) => formatInr(p).replace(/\.00$/, "");
 
 /**
- * Buy or renew on fitron.in: the link opens the buy page in the computer's browser; this page then asks fitron.in every
- * few seconds for the licence (for half an hour), and installs it when it is paid. FITRON also looks every hour.
+ * Buy or renew on fitron.in: the button opens the buy page in the computer's browser (FITRON's server starts it, so it
+ * does not depend on the window opening links); this page then asks fitron.in every few seconds for the licence (for
+ * half an hour), and installs it when it is paid. FITRON also looks every hour. The address is always there to copy,
+ * for a computer where the browser does not open.
  */
 export function BuyLicence({ url, plans, waitingAlready }: { url: string; plans: PlanPrice[]; waitingAlready: boolean }) {
   const router = useRouter();
   const [since, setSince] = useState<number | null>(null);
   const [msg, setMsg] = useState<{ tone: "ok" | "alert" | "neutral"; text: string } | null>(waitingAlready ? { tone: "neutral", text: "Waiting for a payment started on fitron.in. FITRON installs the licence by itself when it is paid." } : null);
   const [pending, start] = useTransition();
+  const [opening, setOpening] = useState(false);
+  const [showUrl, setShowUrl] = useState(false);
+  const [copied, setCopied] = useState(false);
   const busy = useRef(false);
+
+  const open = async () => {
+    setOpening(true);
+    try {
+      const r = await openBuyAction();
+      setSince(Date.now());
+      if (r.opened) setMsg({ tone: "neutral", text: "fitron.in is opening in your browser. Pay there; this page installs the licence as soon as it is paid." });
+      else {
+        setShowUrl(true);
+        setMsg({ tone: "alert", text: "Your browser did not open. Copy the address below into Chrome or Edge and pay there; this page installs the licence as soon as it is paid." });
+      }
+    } catch {
+      setShowUrl(true);
+      setMsg({ tone: "alert", text: "Your browser did not open. Copy the address below into Chrome or Edge and pay there." });
+    } finally {
+      setOpening(false);
+    }
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setSince((s) => s ?? Date.now());
+    } catch {
+      setCopied(false);
+    }
+  };
 
   const check = (quiet: boolean) => {
     if (busy.current) return;
@@ -64,25 +97,28 @@ export function BuyLicence({ url, plans, waitingAlready }: { url: string; plans:
         Prices include GST. Paying opens fitron.in in your browser (it needs the internet). The licence is made for this computer and installs itself here; a renewal starts when the current licence ends. Only this computer&apos;s installation id goes to fitron.in, never your members or books.
       </p>
       <div className="flex flex-wrap gap-2">
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="buy-licence"
-          className="inline-flex items-center justify-center gap-1.5 rounded-md border border-transparent bg-accent px-[18px] py-2.5 text-sm leading-[1.2] font-semibold whitespace-nowrap text-accent-ink no-underline hover:bg-accent-hover"
-          onClick={() => {
-            void markBuyOpenedAction();
-            setSince(Date.now());
-            setMsg({ tone: "neutral", text: "fitron.in opened in your browser. Pay there; this page installs the licence as soon as it is paid." });
-          }}
-        >
-          Buy or renew on fitron.in
-        </a>
+        <Button type="button" variant="primary" onClick={() => void open()} disabled={opening} data-testid="buy-licence">
+          {opening ? "Opening fitron.in…" : "Buy or renew on fitron.in"}
+        </Button>
         <Button type="button" onClick={() => check(false)} disabled={pending}>
           {pending ? "Checking…" : "Check now"}
         </Button>
       </div>
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}
+      {showUrl ? (
+        <div className="flex flex-col gap-2 text-sm">
+          <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label="The buy page's address" data-testid="buy-licence-url" className="w-full min-h-9 rounded-md border border-line bg-surface px-2.5 py-1.5 font-mono text-xs text-fg" />
+          <div>
+            <Button type="button" onClick={() => void copy()}>
+              {copied ? "Copied" : "Copy address"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" className="self-start text-[13px] text-muted underline" onClick={() => setShowUrl(true)}>
+          Browser didn&apos;t open? Show the address to copy
+        </button>
+      )}
     </div>
   );
 }

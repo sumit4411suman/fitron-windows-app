@@ -5,8 +5,9 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/auth/current";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/services/audit";
-import { collectThisPurchase, importThisLicence, markThisPurchaseOpened } from "@/lib/licence";
+import { collectThisPurchase, importThisLicence, markThisPurchaseOpened, thisBuyLink } from "@/lib/licence";
 import { isLocal } from "@/lib/runtime/edition";
+import { openInBrowser } from "@/lib/runtime/open-in-browser";
 
 const back = (p: Record<string, string>): never => redirect(`/settings/licence?${new URLSearchParams(p)}`);
 
@@ -31,10 +32,18 @@ export async function importLicenceAction(fd: FormData) {
   }
 }
 
-/** Settings › Licence › Buy or renew: the owner opened fitron.in's buy page; FITRON now looks for the licence. */
-export async function markBuyOpenedAction() {
+/**
+ * Settings › Licence › Buy or renew: opens fitron.in's buy page in the computer's own browser (from FITRON's server, on
+ * this computer), and FITRON then looks for the licence. `opened` false: the browser could not be started, and the page
+ * shows the address to copy instead.
+ */
+export async function openBuyAction(): Promise<{ opened: boolean; url: string | null }> {
   await requirePermission("settings.manage", { allowBlocked: true });
-  if (isLocal()) markThisPurchaseOpened();
+  if (!isLocal()) return { opened: false, url: null };
+  const url = thisBuyLink();
+  if (!url) return { opened: false, url: null };
+  markThisPurchaseOpened();
+  return { opened: await openInBrowser(url), url };
 }
 
 /** Asks fitron.in for the licence bought there, and installs it once paid. Called while the page waits, and by Check now. */
