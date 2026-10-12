@@ -34,7 +34,20 @@ export async function importLicenceAction(fd: FormData) {
 }
 
 /**
- * Settings › Licence › Buy or renew: opens fitron.in's buy page in the computer's own browser (from FITRON's server, on
+ * Settings › Licence › Buy or renew: the buy page's address, which the page then opens. In FITRON for Windows the shell
+ * shows it in FITRON's own payment window (src-tauri/src/main.rs), so the gym pays without leaving FITRON. FITRON then
+ * looks for the licence.
+ */
+export async function startBuyAction(): Promise<{ url: string | null }> {
+  await requirePermission("settings.manage", { allowBlocked: true });
+  if (!isLocal()) return { url: null };
+  const url = thisBuyLink();
+  if (url) markThisPurchaseOpened();
+  return { url };
+}
+
+/**
+ * "Pay in my browser instead": opens fitron.in's buy page in the computer's own browser (from FITRON's server, on
  * this computer), and FITRON then looks for the licence. `opened` false: the browser could not be started, and the page
  * shows the address to copy instead.
  */

@@ -33,6 +33,9 @@ use crate::server::{Health, Launch, Server};
 use crate::shell_log::ShellLog;
 
 const TITLE: &str = "FITRON Gym Accounting";
+const PAY_TITLE: &str = "FITRON · Buy or renew the licence";
+/// The payment window's label: one at a time (pressing Buy again brings it forward).
+const PAY: &str = "payment";
 /// The first start after an update applies database migrations (after a safety backup), which can take a while on a
 /// large gym.
 const START_TIMEOUT: Duration = Duration::from_secs(300);
@@ -88,6 +91,11 @@ fn guarded<'a>(builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>, app: &A
         // An invoice PDF, an export or a backup: saved in Downloads, then said (src/downloads.rs).
         .on_download(move |_, event| downloads::handle(&dl_app, dl_port.load(Ordering::SeqCst), event))
         .on_navigation(move |url| match nav::decide(url, nav_port.load(Ordering::SeqCst)) {
+            // Settings › Licence › Buy: fitron.in's buy page, in FITRON's own payment window.
+            _ if nav::is_buy_page(url) => {
+                payment(&nav_app, url.clone());
+                false
+            }
             Go::Inside => true,
             Go::Outside => {
                 outside(&nav_app, url);
@@ -99,6 +107,10 @@ fn guarded<'a>(builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>, app: &A
             }
         })
         .on_new_window(move |url, features| match nav::decide(&url, new_port.load(Ordering::SeqCst)) {
+            _ if nav::is_buy_page(&url) => {
+                payment(&new_app, url);
+                NewWindowResponse::Deny
+            }
             // A FITRON page asked for its own window (an invoice PDF, a member's document).
             Go::Inside => match open_inside(&new_app, url, features) {
                 Ok(window) => NewWindowResponse::Create { window },
@@ -124,6 +136,63 @@ fn open_inside(app: &AppHandle, url: Url, features: tauri::webview::NewWindowFea
         let _ = w.set_title(if title.is_empty() { TITLE } else { &title });
     });
     guarded(b, app, port).build()
+}
+
+/// Opens fitron.in's buy page in the payment window (or brings it forward, on this page). Made on another thread: a
+/// window cannot be made from inside another window's navigation event.
+fn payment(app: &AppHandle, url: Url) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        if let Some(w) = app.get_webview_window(PAY) {
+            let _ = w.navigate(url);
+            let _ = w.unminimize();
+            let _ = w.set_focus();
+            return;
+        }
+        let b = WebviewWindowBuilder::new(&app, PAY, WebviewUrl::External(url)).title(PAY_TITLE).inner_size(1040.0, 860.0).center();
+        match paying(b, &app).build() {
+            Ok(w) => {
+                let _ = w.set_focus();
+            }
+            Err(e) => log_of(&app).line(&format!("could not open the payment window: {e}")),
+        }
+    });
+}
+
+/// What the payment window, and a window it opens (a bank's page Razorpay opens for net banking), may show
+/// (nav::decide_payment).
+fn paying<'a>(builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>, app: &AppHandle) -> WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
+    let (nav_app, new_app) = (app.clone(), app.clone());
+    builder
+        .on_navigation(move |url| match nav::decide_payment(url) {
+            Go::Inside => true,
+            Go::Outside => {
+                outside(&nav_app, url);
+                false
+            }
+            Go::Nowhere => {
+                log_of(&nav_app).line(&format!("payment window refused to open {}", url.scheme()));
+                false
+            }
+        })
+        .on_new_window(move |url, features| match nav::decide_payment(&url) {
+            Go::Inside => {
+                let label = format!("payment-{}", WINDOWS.fetch_add(1, Ordering::SeqCst));
+                let b = WebviewWindowBuilder::new(&new_app, label, WebviewUrl::External(url)).title(PAY_TITLE).window_features(features);
+                match paying(b, &new_app).build() {
+                    Ok(window) => NewWindowResponse::Create { window },
+                    Err(e) => {
+                        log_of(&new_app).line(&format!("could not open a payment page: {e}"));
+                        NewWindowResponse::Deny
+                    }
+                }
+            }
+            Go::Outside => {
+                outside(&new_app, &url);
+                NewWindowResponse::Deny
+            }
+            Go::Nowhere => NewWindowResponse::Deny,
+        })
 }
 
 fn outside(app: &AppHandle, url: &Url) {

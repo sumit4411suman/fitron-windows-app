@@ -14,6 +14,24 @@ pub enum Go {
     Nowhere,
 }
 
+/// fitron.in's page for buying or renewing FITRON's licence (Settings › Licence › Buy): it opens in FITRON's own payment
+/// window, so the gym pays without leaving FITRON.
+pub fn is_buy_page(url: &Url) -> bool {
+    url.scheme() == "https" && matches!(url.host_str(), Some("fitron.in") | Some("www.fitron.in")) && url.path() == "/windows/buy"
+}
+
+/// Where the payment window may go: fitron.in's buy page, Razorpay and the bank's own pages for the payment (any https
+/// page, as in a browser). Email and phone links go to the computer's programs; anything else is refused. The window has
+/// no access to the shell (there are no capabilities), like every FITRON window.
+pub fn decide_payment(url: &Url) -> Go {
+    match url.scheme() {
+        "https" => Go::Inside,
+        "about" if url.as_str() == "about:blank" => Go::Inside,
+        "mailto" | "tel" => Go::Outside,
+        _ => Go::Nowhere,
+    }
+}
+
 /// `port` is the FITRON server's (0 before it has started).
 pub fn decide(url: &Url, port: u16) -> Go {
     match url.scheme() {
@@ -64,6 +82,30 @@ mod tests {
         assert_eq!(at("https://fitron.in/contact", 51234), Go::Outside);
         assert_eq!(at("mailto:support@fitron.in", 51234), Go::Outside);
         assert_eq!(at("tel:+919876543210", 51234), Go::Outside);
+    }
+
+    #[test]
+    fn the_buy_page_is_recognised_and_nothing_else() {
+        for s in ["https://fitron.in/windows/buy?i=b8e6d0c5&c=abc", "https://www.fitron.in/windows/buy", "https://fitron.in/windows/buy/"] {
+            let u = Url::parse(s).unwrap();
+            assert_eq!(is_buy_page(&u), u.path() == "/windows/buy", "{s}");
+        }
+        for s in ["http://fitron.in/windows/buy", "https://fitron.in/windows", "https://fitron.in/contact", "https://evil.example/windows/buy", "https://fitron.in.evil.example/windows/buy"] {
+            assert!(!is_buy_page(&Url::parse(s).unwrap()), "{s}");
+        }
+    }
+
+    #[test]
+    fn the_payment_window_goes_to_https_pages_only() {
+        let at = |s: &str| decide_payment(&Url::parse(s).unwrap());
+        assert_eq!(at("https://fitron.in/windows/buy"), Go::Inside);
+        assert_eq!(at("https://api.razorpay.com/v1/checkout/embedded"), Go::Inside);
+        assert_eq!(at("https://netbanking.somebank.co.in/pay"), Go::Inside);
+        assert_eq!(at("about:blank"), Go::Inside);
+        assert_eq!(at("mailto:hello@fitron.in"), Go::Outside);
+        for s in ["http://example.com/", "http://127.0.0.1:51234/dashboard", "file:///C:/Windows/", "javascript:alert(1)", "upi://pay?pa=x", "data:text/html,hi"] {
+            assert_eq!(at(s), Go::Nowhere, "{s}");
+        }
     }
 
     #[test]
