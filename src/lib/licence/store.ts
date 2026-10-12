@@ -80,3 +80,14 @@ export function importLicence(root: string, text: string, today: string, keys: T
   writeAtomic(licenceFile(root), `${text.trim()}\n`);
   return { ok: true, licence: v.licence };
 }
+
+/** The licence file's text, when it is good for this computer today (active or in its grace days); else null. */
+export function currentLicenceText(root: string, today: string, keys: TrustedKey[] = FITRON_LICENCE_KEYS): string | null {
+  const view = readLicence(root, today, keys);
+  if (view.status.kind !== "active" && view.status.kind !== "grace") return null;
+  try {
+    return readFileSync(licenceFile(root), "utf8").trim();
+  } catch {
+    return null;
+  }
+}

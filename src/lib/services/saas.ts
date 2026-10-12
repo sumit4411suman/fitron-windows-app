@@ -22,7 +22,9 @@ import { completeTrainerPayment, recordTrainerCharge, trainerRenewalTrouble } fr
 import { sendGymWhatsApp } from "./whatsapp";
 import { fromIso, toIso, todayIso } from "./time";
 import { log } from "@/lib/log";
-import { assertLicensed, licensedBranches } from "@/lib/licence";
+import { assertLicensed, licensedBranches, licensedPlanKey } from "@/lib/licence";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
+import { applyWindowsLicencePayment } from "./windows-licence";
 
 type Tx = Prisma.TransactionClient | typeof db;
 
@@ -62,6 +64,19 @@ export type GymPlan = {
 /** The gym's FITRON plan: which one, its limits, and whether it is on trial, paid, in grace or lapsed. */
 export async function gymPlan(orgId: string, today = todayIso(), tx: Tx = db): Promise<GymPlan> {
   const org = await tx.organization.findUniqueOrThrow({ where: { id: orgId }, select: { plan: true, planCycle: true, trialEndsAt: true } });
+  // FITRON for Windows: the licence's plan (src/lib/licence), with its member cap and features. Whether new records may
+  // be added goes by the licence's dates (assertLicensed), so the standing here is the licence's, not a payment's.
+  const licensed = licensedPlanKey();
+  const lp = licensed ? findPlan(licensed) : undefined;
+  if (lp) {
+    return {
+      key: lp.key,
+      name: lp.name,
+      cycle: org.planCycle as Cycle,
+      terms: { custom: false, memberLimit: ("memberLimit" in lp ? lp.memberLimit : null) ?? null, includedBranches: licensedBranches() ?? 1, extraBranches: false },
+      standing: { kind: "CUSTOM" },
+    };
+  }
   const paid = await planPaidUntil(tx, orgId);
   return {
     key: org.plan,
@@ -118,7 +133,8 @@ export async function assertMemberRoom(tx: Tx, orgId: string) {
   const limit = plan.terms.memberLimit;
   if (limit === null) return;
   if ((await activeMemberCount(tx, orgId)) >= limit) {
-    throw new UserError(`Your ${plan.name} plan allows ${limit} active members and you've reached it. A Super Admin can move to a bigger plan in Settings › Plan & billing.`);
+    const where = gymAccountingOnly() ? "Settings › Licence" : "Settings › Plan & billing";
+    throw new UserError(`Your ${plan.name} plan allows ${limit} active members and you've reached it. A Super Admin can move to a bigger plan in ${where}.`);
   }
 }
 
@@ -129,7 +145,7 @@ export async function claimSlot(tx: Prisma.TransactionClient, orgId: string, bra
   const licensed = licensedBranches();
   if (licensed !== null) {
     if (existing < licensed) return;
-    throw new UserError(`This computer's FITRON licence covers ${licensed} active branch${licensed === 1 ? "" : "es"}. Close one, or ask FITRON support for a licence with more (Settings › Licence).`);
+    throw new UserError(`This computer's FITRON licence covers ${licensed} active branch${licensed === 1 ? "" : "es"}. Close one, or move to Enterprise in Settings › Licence.`);
   }
   const { terms, name } = await gymPlan(orgId, todayIso(), tx);
   if (existing < terms.includedBranches) return;
@@ -474,6 +490,11 @@ export async function applyFitronBillingEvent(ev: RzpEvent) {
   const pay = ev.payload?.payment?.entity;
   const subscription = ev.payload?.subscription?.entity;
   if (ev.event?.startsWith("subscription.") && subscription?.id) return applySubscriptionEvent(ev.event, subscription, pay);
+  // A FITRON for Windows licence bought on fitron.in (src/lib/services/windows-licence.ts).
+  if (ev.event && pay) {
+    const windows = await applyWindowsLicencePayment(ev.event, pay);
+    if (windows) return windows;
+  }
   if (ev.event === "payment.captured" && pay?.order_id && pay.id) {
     const done = await complete({ razorpayOrderId: pay.order_id }, pay.id);
     if (done) return "paid";

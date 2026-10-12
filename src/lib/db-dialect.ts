@@ -18,7 +18,7 @@ export async function lockKey(tx: Tx, key: string): Promise<void> {
 }
 
 /** Locks one row until the transaction ends (SELECT … FOR UPDATE). SQLite: see lockKey. The table name is a model name, never user input. */
-export async function lockRow(tx: Tx, table: "Member" | "ClassSlot" | "Purchase" | "BranchSubscription" | "TrainerPayment", id: string): Promise<void> {
+export async function lockRow(tx: Tx, table: "Member" | "ClassSlot" | "Purchase" | "BranchSubscription" | "TrainerPayment" | "WindowsLicenceOrder", id: string): Promise<void> {
   if (isLocal()) return;
   await tx.$queryRawUnsafe(`SELECT id FROM "${table}" WHERE id = $1 FOR UPDATE`, id);
 }

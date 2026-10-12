@@ -36,7 +36,7 @@ type Rows = Record<string, unknown>[];
 const asRows = (v: unknown) => (Array.isArray(v) ? (v as Rows) : []);
 const kv = (o: unknown) => Object.entries((o ?? {}) as Record<string, unknown>).map(([k, v]) => `- ${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join("\n");
 
-const NEEDS_MODEL = "Preparing that needs the AI model, which isn't switched on for this site (ANTHROPIC_API_KEY). You can do it yourself in a minute: Invoices › New invoice, a member's Sell or renew page, an invoice's Collect payment, or Expenses › Add expense. I can still read your books: ask about unpaid invoices, GST this month, expenses, cash, supplier bills or any accounting question.";
+const NEEDS_MODEL = "Preparing that needs Fitron AI's full answers, which aren't switched on here (on FITRON for Windows: with a licence, tick Use Claude in Settings › Integrations & AI). You can do it yourself in a minute: Invoices › New invoice, a member's Sell or renew page, an invoice's Collect payment, or Expenses › Add expense. I can still read your books: ask about unpaid invoices, GST this month, expenses, cash, supplier bills or any accounting question.";
 
 /** Accounting questions answered from live data with the same read tools the model uses. Null when the question isn't one of them. */
 async function* accountingAnswer(u: CurrentUser, t: string, today: string): AsyncGenerator<ChatEvent, boolean> {

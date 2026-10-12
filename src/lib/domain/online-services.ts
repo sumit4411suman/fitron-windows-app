@@ -43,7 +43,7 @@ export function onlineServices(s: OnlineServicesState): OnlineServiceRow[] {
       name: "Fitron AI",
       on: claude,
       state: !s.ai.enabled ? "Off" : claude ? "Claude on" : "Answers from this computer",
-      sends: claude ? "Each question, the chat so far, and the records looked up to answer it, to Anthropic's Claude (USA)." : "Nothing.",
+      sends: claude ? "Each question, the chat so far, and the records looked up to answer it, through fitron.in (which keeps none of it) to Anthropic's Claude (USA)." : "Nothing.",
     },
     {
       key: "autopay",

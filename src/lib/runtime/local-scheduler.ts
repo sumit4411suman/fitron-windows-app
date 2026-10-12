@@ -50,6 +50,16 @@ export async function localJobsIfDue(now = new Date()): Promise<"done" | "busy">
   }
 }
 
+/** A licence bought on fitron.in and not collected yet (src/lib/licence/purchase.ts): asked for each hour until it arrives. */
+export async function collectLicenceIfWaiting(now = new Date()): Promise<string> {
+  // Loaded here, not at the top, like the jobs.
+  const { collectThisPurchase, waitingForPurchase } = await import("@/lib/licence");
+  if (!waitingForPurchase(now)) return "none";
+  const r = await collectThisPurchase(now);
+  if (r.state === "installed" || r.state === "problem") log.info("local.licence_collect", { state: r.state });
+  return r.state;
+}
+
 export function startLocalScheduler() {
   if (g.fitronScheduler) return;
   // The backup first, so the day's jobs never run on data that has not been backed up yet today.
@@ -59,6 +69,8 @@ export function startLocalScheduler() {
     void autoBackupIfDue()
       .catch(() => {})
       .then(() => (g.fitronStopping ? undefined : localJobsIfDue()))
+      .catch(() => {})
+      .then(() => (g.fitronStopping ? undefined : collectLicenceIfWaiting()))
       .catch(() => {});
   };
   // A couple of minutes after start, so opening FITRON is never slowed down by a backup.

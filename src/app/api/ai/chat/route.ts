@@ -1,6 +1,6 @@
 import * as z from "zod";
 import "@/lib/zod-config";
-import { aiReady, type Block, type Msg } from "@/lib/integrations/ai";
+import { aiReady, aiService, type Block, type Msg } from "@/lib/integrations/ai";
 import { chat, type ChatEvent, type ProposalEvent } from "@/lib/services/ai";
 import { localChat } from "@/lib/services/ai-local";
 import { rateLimit } from "@/lib/rate-limit";
@@ -10,7 +10,7 @@ import { UserError } from "@/lib/services/errors";
 import { ATTACHMENT_TEXT_CAP, chatFor, chatHistory, saveTurn, type ChatAttachment } from "@/lib/services/ai-chats";
 import { AttachmentError, attachmentBlocks, attachmentRecord, kindOf } from "@/lib/files/read-attachment";
 import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
-import { isNetworkError, probablyOnline, SERVICE } from "@/lib/integrations/online";
+import { isNetworkError, probablyOnline } from "@/lib/integrations/online";
 import { readCapped } from "../../trainer/_lib/http";
 import { aiUser } from "../_lib/access";
 
@@ -125,13 +125,13 @@ export async function POST(req: Request) {
       };
       // Without the model, answer from live data the way the prototype does offline (it can't read files).
       const noModel = async function* (): AsyncIterable<ChatEvent> {
-        yield { type: "text", text: "Reading attached files needs Fitron AI's model, which isn't switched on for this gym yet." } as ChatEvent;
+        yield { type: "text", text: gymAccountingOnly() ? "Reading attached files needs Fitron AI's full answers: with a FITRON licence, tick Use Claude in Settings › Integrations & AI." : "Reading attached files needs Fitron AI's model, which isn't switched on for this gym yet." } as ChatEvent;
         yield { type: "done" } as ChatEvent;
       };
       send({ type: "chat", id: saved.id, title: saved.title });
       try {
         if (!model) await relay(fileBlocks.length ? noModel() : localChat(u, asked));
-        else if (isLocal() && !(await probablyOnline(SERVICE.anthropic))) await fromBooks();
+        else if (isLocal() && !(await probablyOnline(aiService()))) await fromBooks();
         else await relay(chat(u, history));
       } catch (e) {
         if (isLocal() && !answered && isNetworkError(e)) {
@@ -142,8 +142,9 @@ export async function POST(req: Request) {
             send({ type: "error", message: FAILED });
           });
         } else {
-          log.error("ai_chat.failed", e);
-          error = isLocal() && isNetworkError(e) ? "Fitron AI lost the internet connection while answering. Try again when the computer is online." : FAILED;
+          if (!(e instanceof UserError)) log.error("ai_chat.failed", e);
+          // A UserError is fitron.in's reason for not answering a FITRON for Windows computer (src/lib/integrations/ai).
+          error = e instanceof UserError ? e.message : isLocal() && isNetworkError(e) ? "Fitron AI lost the internet connection while answering. Try again when the computer is online." : FAILED;
           send({ type: "error", message: error });
         }
       }

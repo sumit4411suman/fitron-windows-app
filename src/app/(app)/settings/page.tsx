@@ -566,14 +566,17 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
                     <input type="checkbox" name="useClaude" defaultChecked={integrations.ai.useClaude} disabled={!u.has("ai")} className="size-[18px] accent-accent" />
                     Use Claude for fuller answers (needs the internet)
                   </label>
-                  <p className="m-0 mt-1 pl-7 text-xs text-muted">Sends each question, the earlier messages in that chat, your gym&apos;s name, the staff member&apos;s name and role, and the records Fitron AI looks up to answer it, to Anthropic&apos;s Claude (USA) over the internet: member names, phone numbers, visits and dues; invoices and payment references; expenses and supplier bills; profit and loss, cash and bank balances; GST figures with your GSTIN; and report rows such as leads with their notes. Off: answers come from the books on this computer and nothing is sent.</p>
+                  <p className="m-0 mt-1 pl-7 text-xs text-muted">Sends each question, the earlier messages in that chat, your gym&apos;s name, the staff member&apos;s name and role, and the records Fitron AI looks up to answer it, through fitron.in (which keeps none of it) to Anthropic&apos;s Claude (USA) over the internet: member names, phone numbers, visits and dues; invoices and payment references; expenses and supplier bills; profit and loss, cash and bank balances; GST figures with your GSTIN; and report rows such as leads with their notes. Off: answers come from the books on this computer and nothing is sent.</p>
                 </div>
+              )}
+              {closed && !aiReady() && (
+                <p className="m-0 text-[13px] text-muted">Fuller answers from Claude, reading attached files and drafting invoices come with a FITRON licence for this computer (Settings › Licence). Until then Fitron AI answers from the books here.</p>
               )}
               <p className="m-0 text-[13px] text-muted">Fitron AI reads data only for the branch and role you are signed in with. It never sends a message or records money without a staff member confirming.</p>
               {local && (
                 <p className="m-0 text-[13px] text-muted">
                   {aiReady() && (!closed || integrations.ai.useClaude)
-                    ? "On this computer, a question and the figures needed to answer it go to Anthropic's Claude over the internet. With no internet, Fitron AI answers from the books on this computer."
+                    ? "On this computer, a question and the figures needed to answer it go through fitron.in to Anthropic's Claude over the internet. With no internet, Fitron AI answers from the books on this computer."
                     : "On this computer, Fitron AI answers from the books on this computer. Nothing is sent over the internet."}
                 </p>
               )}
