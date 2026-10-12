@@ -56,6 +56,6 @@ export function judgeSignatures(files: FileSignature[], o: { require: boolean; p
       if (o.require) ok = false;
     }
   }
-  if (!o.require && files.some((f) => f.status === "NotSigned")) lines.push("This build is not signed: Windows shows \"Unknown publisher\" and SmartScreen warns. Release builds are signed (docs/local-windows/RELEASE.md).");
+  if (!o.require && files.some((f) => f.status === "NotSigned")) lines.push("This build is not code-signed: Windows shows \"Unknown publisher\" and SmartScreen warns before the first install. Updates still need FITRON's update key (docs/local-windows/RELEASE.md).");
   return { ok, lines };
 }

@@ -77,14 +77,16 @@ handling), with nothing about the gym in it.
 
 - Updates are signed with FITRON's update key and verified before anything is installed; a signature must name the
   version it was made for (UPDATES.md).
-- The program, its Node.js runtime, the installer and the uninstaller are signed with FITRON's Authenticode
-  certificate in a release build (`.github/workflows/desktop-release.yml`, RELEASE.md): `src-tauri/tauri.sign.conf.json`
+- FITRON releases without an Authenticode certificate for now (RELEASE.md §2.1): Windows shows Unknown publisher on
+  the first install, and the release page gives the installer's SHA-256 to check first. Updates do not depend on it:
+  they must carry FITRON's update-key signature. When FITRON adds a certificate, the program, its Node.js runtime, the
+  installer and the uninstaller are signed with it in a release build (`.github/workflows/desktop-release.yml`, RELEASE.md): `src-tauri/tauri.sign.conf.json`
   runs `scripts/desktop/fitron-sign.cmd` for every file (SHA-256, RFC 3161 timestamp), and
   `npm run desktop:signature -- --require` fails the release unless Windows reports every file as signed by FITRON,
   valid and timestamped. Windows then shows FITRON as the verified publisher. The certificate's private key stays in
   its cloud signing service (SSL.com eSigner or DigiCert KeyLocker); the build machine only asks it for signatures. A
-  release is never built unsigned (the workflow stops without the certificate, and makes one test signature before
-  building); development builds are unsigned and the check says so. FITRON never asks a
+  release with a certificate set up makes one test signature before building and fails on any unsigned file;
+  development builds are unsigned and the check says so. FITRON never asks a
   customer to turn SmartScreen or any Windows protection off.
 
 ## What leaves the computer
