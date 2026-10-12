@@ -124,7 +124,7 @@ const load = () => import(".");
 const setBoth = (url: string, key: string) => {
   vi.stubEnv("WA_CONNECTOR_URL", url);
   vi.stubEnv("WA_CONNECTOR_KEY", key);
-  site = url && key ? { url, key } : null;
+  site = url || key ? { url, key } : null;
 };
 const configure = (key = MASTER) => setBoth(`http://127.0.0.1:${port}/`, key);
 
