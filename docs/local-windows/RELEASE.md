@@ -24,49 +24,102 @@ changed.
 The version is `package.json`'s `version` (the program, the installer and the update feed all read it). Raise it in
 the release's own commit.
 
-## 2. Signing: what FITRON needs once
+## 2. Set up once
 
-- **A code-signing certificate** in FITRON's legal name, from a certificate authority Windows trusts. Since June
-  2023 the private key must live on hardware (a USB token, or a cloud HSM such as Azure Key Vault, DigiCert KeyLocker
-  or SSL.com eSigner). With a token or HSM, replace `scripts/desktop/fitron-sign.cmd` with the service's own sign
-  command; it receives each file as `%1`. A `.pfx` file, where the authority still issues one, goes into the
-  `release` environment's secrets (below).
-- **The update key** (`UPDATES.md`): `npx tauri signer generate`. Its public half is built into every release; its
-  private half signs each update, and is what lets FITRON, and only FITRON, publish one.
+Four things, in this order. Nothing here is ever committed: the certificate's key stays in its signing service, the
+update key on FITRON's own computer and in the `release` environment.
 
-Neither is ever committed. Both live in the repository's **Settings › Environments › release**, protected so that only
-the people allowed to release can run it:
+### 2.1 The code-signing certificate
 
-| Kind | Name | What |
+An OV (organisation validated) code-signing certificate in FITRON's registered legal name. Since June 2023 a
+certificate's private key must live on hardware, so a certificate bought today comes on a USB token or in a cloud
+signing service, not as a file. A USB token cannot be plugged into GitHub's build machine; buy one of these two cloud
+services, which sign from the workflow with nothing to plug in:
+
+| `FITRON_SIGN_PROVIDER` | Service | Notes |
 | --- | --- | --- |
-| secret | `FITRON_SIGN_PFX_BASE64` | the certificate (.pfx), base64 (not needed with a token or HSM command) |
-| secret | `FITRON_SIGN_PFX_PASSWORD` | its password |
-| secret | `TAURI_SIGNING_PRIVATE_KEY` | the update key |
-| secret | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password, if it has one |
-| variable | `FITRON_UPDATE_URL` | where `latest.json` is published (https) |
-| variable | `FITRON_UPDATE_PUBKEY` | the update key's public half |
-| variable | `FITRON_PUBLISHER` | the publisher name on the certificate (default `FITRON`) |
+| `esigner` | SSL.com eSigner (OV code signing with eSigner) | Enable automated signing (the TOTP secret) on the eSigner account. Each signature counts against the eSigner plan. |
+| `keylocker` | DigiCert KeyLocker (OV code signing in KeyLocker) | Make an API key and a client authentication certificate in DigiCert ONE. KeyLocker plans have a yearly signature limit. |
+| `pfx` | a `.pfx` file | Only where a certificate authority still issues one. |
+
+Before paying, ask the provider that it validates an Indian private limited company, which documents it needs, and how
+many signatures the plan includes. A release makes about six signatures (the test signature, the program, the
+runtime, the installer, the uninstaller), so a plan of N signatures a year covers about N / 6 releases.
+
+### 2.2 The update key
+
+On FITRON's own Windows computer (not a shared or cloud machine), in this repository's folder:
+
+```
+npx tauri signer generate -w %USERPROFILE%\.tauri\fitron-update.key
+```
+
+It asks for a password, then writes the private key to `fitron-update.key` and the public key to
+`fitron-update.key.pub`. Copy both files and the password to two safe offline places (a pen drive kept in a safe, a
+password manager). **Losing the private key or its password means no installed FITRON can ever be updated again**:
+each would have to be uninstalled and installed by hand. Anyone holding both could send an update to every gym.
+
+### 2.3 The `release` environment
+
+Repository › Settings › Environments › New environment › `release`. Under *Deployment protection rules*, add yourself
+as a required reviewer, and under *Deployment branches*, allow only `main`. Then add:
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| variable | `FITRON_SIGN_PROVIDER` | `esigner`, `keylocker` or `pfx` |
+| variable | `FITRON_PUBLISHER` | the organisation name on the certificate, exactly, e.g. `FITRON Technologies Private Limited` |
+| secret | `TAURI_SIGNING_PRIVATE_KEY` | the whole content of `fitron-update.key` |
+| secret | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password |
+| variable | `FITRON_UPDATE_PUBKEY` | the whole content of `fitron-update.key.pub` |
+| variable | `FITRON_UPDATE_URL` | leave unset to publish on this repository's GitHub Releases (below) |
+
+and, for the signing service:
+
+| Provider | Kind | Name | Value |
+| --- | --- | --- | --- |
+| `esigner` | secret | `ESIGNER_USERNAME` | the eSigner account's username |
+| | secret | `ESIGNER_PASSWORD` | its password |
+| | secret | `ESIGNER_TOTP_SECRET` | the secret behind the account's authenticator code (shown when automated signing is enabled) |
+| `keylocker` | secret | `SM_API_KEY` | the DigiCert ONE API key |
+| | secret | `SM_CLIENT_CERT_FILE_B64` | the client authentication certificate (`.p12`), base64: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("client.p12"))` in PowerShell |
+| | secret | `SM_CLIENT_CERT_PASSWORD` | its password |
+| | secret | `SM_CODE_SIGNING_CERT_SHA1_HASH` | the code-signing certificate's SHA-1 thumbprint, from KeyLocker |
+| | variable | `SM_HOST` | only if DigiCert gives another address than `https://clientauth.one.digicert.com` |
+| `pfx` | secret | `FITRON_SIGN_PFX_BASE64` | the `.pfx`, base64 |
+| | secret | `FITRON_SIGN_PFX_PASSWORD` | its password |
+
+### 2.4 Where updates are published
+
+By default, this repository's GitHub Releases: every installed FITRON reads
+`https://github.com/<owner>/<repo>/releases/latest/download/latest.json`, which GitHub serves from the newest
+**published** release. The repository must stay public for gyms to download from it. To serve updates from FITRON's
+own website instead, set `FITRON_UPDATE_URL` to its `…/latest.json` address and upload the release's three files there
+by hand (`UPDATES.md`). The address is built into each release, so choose before the first one: changing it later
+needs one release that still reads the old address.
+
+Releases are built from `main`: make `main` the repository's default branch (Settings › General), so Actions offers it
+first.
 
 ## 3. Building a signed release
 
-Actions › **Desktop release (Windows, signed)** › Run workflow, with the release notes
-(`.github/workflows/desktop-release.yml`). It:
+Raise `version` in `package.json` on `main` (each release needs a new one). Then Actions › **Desktop release (Windows,
+signed)** › Run workflow, on `main`, with the release notes (`.github/workflows/desktop-release.yml`). It:
 
-1. stops at once, naming what is missing, if the certificate, the update key or the update address is not set: a
-   release is never built unsigned;
-2. imports the certificate into the runner's own user store (removed again at the end, whatever happens) and puts the
-   Windows SDK's `signtool` on the path;
+1. stops at once, naming each missing setting, if anything in §2.3 is not set, if it was started on another branch, or
+   if the version already has a release: a release is never built unsigned;
+2. connects the signing service, so FITRON's certificate appears in the runner's Windows store while its key stays in
+   the service, and makes **one test signature**, checked as Windows sees it, so a wrong setting fails within minutes;
 3. builds with `tauri.bundle.conf.json` (the packaged server), `tauri.release.conf.json` (signed update files) and
    `tauri.sign.conf.json`, which runs `fitron-sign.cmd` on every file: the program, the bundled runtime, the
    installer and the uninstaller, SHA-256 with an RFC 3161 timestamp;
 4. **checks the signatures as Windows sees them** (`npm run desktop:signature -- --require`): the installer, the
-   program and the bundled runtime each signed,
-   valid, timestamped, by `FITRON_PUBLISHER` (the bundled Node.js runtime may instead keep the OpenJS Foundation's own
-   signature). Anything else fails the release;
+   program and the bundled runtime each signed, valid, timestamped, by `FITRON_PUBLISHER` (the bundled Node.js runtime
+   may instead keep the OpenJS Foundation's own signature). Anything else fails the release;
 5. runs the same start, install, update, empty-PATH and uninstall tests as every build, on the signed files;
-6. writes the update feed (`latest.json`) and keeps the installer, its `.sha256` and the feed as the run's files.
+6. writes the update feed (`latest.json`) and puts the installer, its `.sha256` and the feed in a **draft** GitHub
+   release `v<version>`, and removes the signing setup from the runner.
 
-On a computer with the certificate instead of the workflow, the same steps by hand:
+A draft reaches no gym. On a computer with the certificate instead of the workflow, the same build by hand:
 
 ```
 set FITRON_SIGN_THUMBPRINT=<certificate thumbprint>
@@ -78,9 +131,24 @@ npm run desktop:signature -- --require
 npm run desktop:release -- --notes-file RELEASE-NOTES.md
 ```
 
-## 4. What a customer then sees
+## 4. Checking the draft, then publishing
 
-- The installer, FITRON in Apps & features and its Start Menu entry show **FITRON** as the verified publisher.
+1. Download the installer from the draft release (Releases › the draft › Assets).
+2. On a clean Windows 10 and a clean Windows 11 (no developer tools): right-click the installer › Properties › Digital
+   Signatures shows `FITRON_PUBLISHER`; installing shows it as the **verified publisher**. Run the acceptance steps
+   (`e2e/local/acceptance.spec.ts` lists them).
+3. From the second release on, also install the previous release first, publish the new one, and let FITRON update
+   itself (within 12 hours, or at its next start a minute after opening).
+4. Press **Publish release** on the draft. That is what sends the update: GitHub now serves its `latest.json` to every
+   installed FITRON. Something wrong? Delete the draft, fix, raise the version, run again.
+
+Never delete a published release: a gym that needs to go back installs the previous installer over the new one, and
+its data stays.
+
+## 5. What a customer then sees
+
+- The installer, FITRON in Apps & features and its Start Menu entry show FITRON's legal name as the verified
+  publisher.
 - SmartScreen judges a download by the reputation of its signing certificate. A new certificate may still show a
   SmartScreen notice for the first releases while its reputation builds; it fades as gyms install it. FITRON never
   tells a customer to turn SmartScreen, Defender or any other Windows protection off, and support never does it for
@@ -88,23 +156,12 @@ npm run desktop:release -- --notes-file RELEASE-NOTES.md
   it, and should download it again from FITRON.
 - Installing needs no administrator (per-user install, `INSTALLER.md`); the data folder is never in Program Files.
 
-## 5. Publishing
-
-Upload the installer, its `.sha256` and `latest.json` to where `FITRON_UPDATE_URL` is served (https only); replacing
-`latest.json` is what publishes the release to every installed FITRON (`UPDATES.md`). Keep the previous release's
-files: a gym that needs to go back installs the previous installer over the new one, and its data stays.
-
-The first signed release is checked by hand on a clean Windows 10 and a clean Windows 11 (no developer tools):
-download the installer from the published address, check the publisher in the download and install prompts, install,
-run the acceptance steps (`e2e/local/acceptance.spec.ts` lists them), then let the previous version update itself to
-it.
-
 ## 6. Files
 
 | File | What |
 | --- | --- |
 | `.github/workflows/desktop.yml` | every build: shell tests, packaged server, program, installer, clean PATH, signatures reported |
-| `.github/workflows/desktop-release.yml` | a signed release |
+| `.github/workflows/desktop-release.yml` | a signed release, as a draft GitHub release |
 | `src-tauri/tauri.sign.conf.json`, `scripts/desktop/fitron-sign.cmd` | Authenticode signing of every file |
 | `scripts/desktop-signature.ts`, `src/lib/domain/authenticode.ts` | what Windows reports for each file, and whether a release may ship with it (`authenticode.test.ts`) |
-| `scripts/desktop-release.ts`, `scripts/desktop/update-feed.ts` | the customer-named installer, its checksum and the update feed |
+| `scripts/desktop-release.ts`, `scripts/desktop/update-feed.ts` | the customer-named installer, its checksum and the update feed (on GitHub Releases, each installer named in its own release; `update-feed.test.ts`) |

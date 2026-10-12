@@ -13,9 +13,24 @@ const VERSION = /^\d+\.\d+\.\d+$/;
 /** The installer's name as customers download it. */
 export const installerName = (version: string) => `FITRON-Gym-Accounting-Setup-${version}.exe`;
 
+/** The tag a release is published under on GitHub Releases. */
+export const releaseTag = (version: string) => `v${version}`;
+
+// GitHub Releases serves the newest published release's files at …/releases/latest/download/<file>.
+const GITHUB_LATEST = /^(\/[^/]+\/[^/]+\/releases\/)latest\/download\/[^/]+\.json$/;
+
+/** Where the installer of `version` is served, given the feed's address. */
+function installerUrl(feed: URL, version: string): string {
+  const gh = feed.hostname === "github.com" ? GITHUB_LATEST.exec(feed.pathname) : null;
+  // On GitHub, the feed is always the newest release's, but the installer it names is pinned to its own release, so a
+  // FITRON reading the feed just before a newer release is published still downloads the version it was told about.
+  if (gh) return new URL(`${gh[1]}download/${releaseTag(version)}/${installerName(version)}`, feed).toString();
+  return new URL(installerName(version), feed).toString();
+}
+
 /**
  * The feed for one release. `feedUrl` is where the feed itself is served (FITRON_UPDATE_URL, built into FITRON); the
- * installer is served beside it, so the two can never point at different places.
+ * installer is served beside it (on GitHub Releases, in the same release), so the two can never point at different places.
  */
 export function updateFeed(o: { version: string; notes: string; feedUrl: string; signature: string; date: Date }): UpdateFeed {
   if (!VERSION.test(o.version)) throw new Error(`Not a release version: ${o.version}`);
@@ -28,6 +43,6 @@ export function updateFeed(o: { version: string; notes: string; feedUrl: string;
     version: o.version,
     notes: o.notes.trim(),
     pub_date: o.date.toISOString().replace(/\.\d{3}Z$/, "Z"),
-    platforms: { "windows-x86_64": { url: new URL(installerName(o.version), feed).toString(), signature } },
+    platforms: { "windows-x86_64": { url: installerUrl(feed, o.version), signature } },
   };
 }

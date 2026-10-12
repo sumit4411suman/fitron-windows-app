@@ -81,8 +81,10 @@ handling), with nothing about the gym in it.
   certificate in a release build (`.github/workflows/desktop-release.yml`, RELEASE.md): `src-tauri/tauri.sign.conf.json`
   runs `scripts/desktop/fitron-sign.cmd` for every file (SHA-256, RFC 3161 timestamp), and
   `npm run desktop:signature -- --require` fails the release unless Windows reports every file as signed by FITRON,
-  valid and timestamped. Windows then shows FITRON as the verified publisher. A release is never built unsigned (the
-  workflow stops without the certificate); development builds are unsigned and the check says so. FITRON never asks a
+  valid and timestamped. Windows then shows FITRON as the verified publisher. The certificate's private key stays in
+  its cloud signing service (SSL.com eSigner or DigiCert KeyLocker); the build machine only asks it for signatures. A
+  release is never built unsigned (the workflow stops without the certificate, and makes one test signature before
+  building); development builds are unsigned and the check says so. FITRON never asks a
   customer to turn SmartScreen or any Windows protection off.
 
 ## What leaves the computer

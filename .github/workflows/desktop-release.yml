@@ -1,31 +1,46 @@
 name: Desktop release (Windows, signed)
 
 # A signed release of FITRON Gym Accounting for Windows (docs/local-windows/RELEASE.md, Phase 25). Run by hand from the
-# Actions tab. It builds the program and installer with FITRON's Authenticode certificate and FITRON's update key, checks
-# that Windows sees every file as signed by FITRON and timestamped (npm run desktop:signature -- --require), runs the
-# same start, install, update and uninstall tests as every build, and keeps the files to upload with their update feed.
+# Actions tab, on main. It builds the program and installer with FITRON's Authenticode certificate and FITRON's update
+# key, checks that Windows sees every file as signed by FITRON and timestamped (npm run desktop:signature -- --require),
+# runs the same start, install, update and uninstall tests as every build, and puts the installer, its checksum and the
+# update feed in a DRAFT GitHub release. A draft reaches no gym: FITRON only reads the newest published release. Test
+# the draft's installer by hand, then press Publish on it; that is what sends the update to every installed FITRON.
 #
-# Set up once, in the repository's Settings > Environments > "release" (protected: only the people allowed to release):
-#   secret    FITRON_SIGN_PFX_BASE64       FITRON's code-signing certificate (.pfx), base64. Or, for a certificate on a
-#   secret    FITRON_SIGN_PFX_PASSWORD     hardware token or cloud HSM, replace scripts/desktop/fitron-sign.cmd with
-#                                          that service's own command (never put a private key in the repository).
-#   secret    TAURI_SIGNING_PRIVATE_KEY    FITRON's update key (UPDATES.md), and its password if it has one:
-#   secret    TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-#   variable  FITRON_UPDATE_URL            where latest.json is published (…/latest.json)
-#   variable  FITRON_UPDATE_PUBKEY         the update key's public half, built into the program
-#   variable  FITRON_PUBLISHER             the publisher name on the certificate (default FITRON)
-# Without the certificate the release stops with a message. It never ships an unsigned build, and never asks anyone to
-# turn SmartScreen off.
+# Set up once, in the repository's Settings > Environments > "release" (protected: only the people allowed to release).
+# The certificate's private key never leaves its signing service; nothing secret is ever in the repository.
+#
+#   variable  FITRON_SIGN_PROVIDER   esigner (SSL.com eSigner), keylocker (DigiCert KeyLocker) or pfx (a .pfx file)
+#   variable  FITRON_PUBLISHER       the organisation name on the certificate, e.g. "FITRON Technologies Private Limited"
+#   secret    TAURI_SIGNING_PRIVATE_KEY           FITRON's update key (made with: npx tauri signer generate)
+#   secret    TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
+#   variable  FITRON_UPDATE_PUBKEY   the update key's public half, built into the program
+#   variable  FITRON_UPDATE_URL      optional: where latest.json is served. Default: this repository's GitHub Releases,
+#                                    https://github.com/<owner>/<repo>/releases/latest/download/latest.json
+#
+#   esigner:   secrets ESIGNER_USERNAME, ESIGNER_PASSWORD, ESIGNER_TOTP_SECRET (the eSigner account's sign-in and the
+#              secret behind its authenticator code, from SSL.com's "automated signing" setup)
+#   keylocker: secrets SM_API_KEY, SM_CLIENT_CERT_FILE_B64 (the client authentication certificate, .p12, base64),
+#              SM_CLIENT_CERT_PASSWORD, SM_CODE_SIGNING_CERT_SHA1_HASH (the code-signing certificate's thumbprint);
+#              variable SM_HOST (default https://clientauth.one.digicert.com)
+#   pfx:       secrets FITRON_SIGN_PFX_BASE64, FITRON_SIGN_PFX_PASSWORD
+#
+# Missing settings stop the release at once, naming each. It never builds unsigned, and never asks anyone to turn
+# SmartScreen off.
 
 on:
   workflow_dispatch:
     inputs:
       notes:
-        description: Release notes (shown in FITRON's update dialog)
+        description: Release notes (shown in FITRON's update dialog and on the release page)
         required: true
 
 permissions:
-  contents: read
+  contents: write # the draft release; nothing else
+
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -33,23 +48,49 @@ jobs:
     environment: release
     timeout-minutes: 90
     env:
-      FITRON_UPDATE_URL: ${{ vars.FITRON_UPDATE_URL }}
-      FITRON_UPDATE_PUBKEY: ${{ vars.FITRON_UPDATE_PUBKEY }}
+      PROVIDER: ${{ vars.FITRON_SIGN_PROVIDER }}
       FITRON_PUBLISHER: ${{ vars.FITRON_PUBLISHER || 'FITRON' }}
+      FITRON_UPDATE_URL: ${{ vars.FITRON_UPDATE_URL || format('https://github.com/{0}/releases/latest/download/latest.json', github.repository) }}
+      FITRON_UPDATE_PUBKEY: ${{ vars.FITRON_UPDATE_PUBKEY }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check the signing settings are there
+
+      - name: Check the release settings are all there
         shell: pwsh
         env:
-          PFX: ${{ secrets.FITRON_SIGN_PFX_BASE64 }}
+          REF: ${{ github.ref }}
           UPDATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
+          ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
+          ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_CODE_SIGNING_CERT_SHA1_HASH: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
+          FITRON_SIGN_PFX_BASE64: ${{ secrets.FITRON_SIGN_PFX_BASE64 }}
+          FITRON_SIGN_PFX_PASSWORD: ${{ secrets.FITRON_SIGN_PFX_PASSWORD }}
         run: |
+          if ($env:REF -ne "refs/heads/main") { Write-Output "::error::Releases are built from main (this run is on $env:REF). Pick main under 'Use workflow from'."; exit 1 }
           $missing = @()
-          if (-not $env:PFX) { $missing += "secret FITRON_SIGN_PFX_BASE64" }
           if (-not $env:UPDATE_KEY) { $missing += "secret TAURI_SIGNING_PRIVATE_KEY" }
-          if (-not $env:FITRON_UPDATE_URL) { $missing += "variable FITRON_UPDATE_URL" }
           if (-not $env:FITRON_UPDATE_PUBKEY) { $missing += "variable FITRON_UPDATE_PUBKEY" }
-          if ($missing.Count) { Write-Output "::error::Not set in the release environment: $($missing -join ', '). A release is never built unsigned."; exit 1 }
+          if (-not $env:FITRON_UPDATE_URL.StartsWith("https://")) { $missing += "variable FITRON_UPDATE_URL (must be https)" }
+          $need = @{
+            esigner   = @("ESIGNER_USERNAME", "ESIGNER_PASSWORD", "ESIGNER_TOTP_SECRET")
+            keylocker = @("SM_API_KEY", "SM_CLIENT_CERT_FILE_B64", "SM_CLIENT_CERT_PASSWORD", "SM_CODE_SIGNING_CERT_SHA1_HASH")
+            pfx       = @("FITRON_SIGN_PFX_BASE64", "FITRON_SIGN_PFX_PASSWORD")
+          }
+          if (-not $need.ContainsKey("$env:PROVIDER")) { $missing += "variable FITRON_SIGN_PROVIDER (esigner, keylocker or pfx)" }
+          else { foreach ($n in $need["$env:PROVIDER"]) { if (-not (Get-Item "env:$n" -ErrorAction SilentlyContinue).Value) { $missing += "secret $n" } } }
+          if ($missing.Count) { Write-Output "::error::Not set in the release environment: $($missing -join ', '). A release is never built unsigned. (docs/local-windows/RELEASE.md)"; exit 1 }
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          gh release view "v$version" *> $null
+          if ($LASTEXITCODE -eq 0) { Write-Output "::error::A release v$version already exists (published or draft). Raise the version in package.json, or delete that draft."; exit 1 }
+          "FITRON_VERSION=$version" >> $env:GITHUB_ENV
+          Write-Output "Release v$version, signed with $env:PROVIDER, updates from $env:FITRON_UPDATE_URL"
+          exit 0 # the lookup above failing is the good case; it must not become this step's exit code
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -65,7 +106,66 @@ jobs:
           $st = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $st) { Write-Output "::error::signtool.exe not found (Windows SDK)"; exit 1 }
           $st.DirectoryName >> $env:GITHUB_PATH
-      - name: Import FITRON's certificate into this runner's user store
+
+      # One of the next three steps runs, by FITRON_SIGN_PROVIDER. Each ends with FITRON's certificate in this runner's
+      # Windows store, its private key still in the signing service, and FITRON_SIGN_THUMBPRINT naming it.
+
+      - name: "Signing service: SSL.com eSigner (Cloud Key Adapter)"
+        if: env.PROVIDER == 'esigner'
+        shell: pwsh
+        env:
+          ESIGNER_CKA_VERSION: 1.0.8
+          ESIGNER_USERNAME: ${{ secrets.ESIGNER_USERNAME }}
+          ESIGNER_PASSWORD: ${{ secrets.ESIGNER_PASSWORD }}
+          ESIGNER_TOTP_SECRET: ${{ secrets.ESIGNER_TOTP_SECRET }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "eSignerCKA"
+          $zip = Join-Path $env:RUNNER_TEMP "eSignerCKA.zip"
+          Invoke-WebRequest -OutFile $zip "https://github.com/SSLcom/eSignerCKA/releases/download/v$env:ESIGNER_CKA_VERSION/SSL.COM-eSigner-CKA_$env:ESIGNER_CKA_VERSION.zip"
+          Expand-Archive -Force $zip (Join-Path $env:RUNNER_TEMP "eSignerCKA-setup")
+          $setup = Get-ChildItem (Join-Path $env:RUNNER_TEMP "eSignerCKA-setup") -Recurse -Filter *.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList "/CURRENTUSER /VERYSILENT /SUPPRESSMSGBOXES /DIR=`"$dir`"" -Wait
+          $tool = Join-Path $dir "eSignerCKATool.exe"
+          & $tool config -mode product -user "$env:ESIGNER_USERNAME" -pass "$env:ESIGNER_PASSWORD" -totp "$env:ESIGNER_TOTP_SECRET" -key (Join-Path $dir "master.key") -r
+          & $tool unload
+          & $tool load
+          $cert = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Select-Object -First 1
+          if (-not $cert) { Write-Output "::error::eSigner loaded no code-signing certificate. Check the account, and that automated signing (TOTP) is enabled for it."; exit 1 }
+          "FITRON_SIGN_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+          "FITRON_SIGN_TIMESTAMP_URL=http://ts.ssl.com" >> $env:GITHUB_ENV
+          "ESIGNER_TOOL=$tool" >> $env:GITHUB_ENV
+
+      - name: "Signing service: DigiCert KeyLocker (key storage provider)"
+        if: env.PROVIDER == 'keylocker'
+        shell: pwsh
+        env:
+          SM_HOST: ${{ vars.SM_HOST || 'https://clientauth.one.digicert.com' }}
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_CODE_SIGNING_CERT_SHA1_HASH: ${{ secrets.SM_CODE_SIGNING_CERT_SHA1_HASH }}
+        run: |
+          $p12 = Join-Path $env:RUNNER_TEMP "sm-client.p12"
+          [IO.File]::WriteAllBytes($p12, [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64))
+          # The KeyLocker tools read these from the environment for every signature made in later steps.
+          "SM_HOST=$env:SM_HOST" >> $env:GITHUB_ENV
+          "SM_CLIENT_CERT_FILE=$p12" >> $env:GITHUB_ENV
+          $msi = Join-Path $env:RUNNER_TEMP "Keylockertools-windows-x64.msi"
+          Invoke-WebRequest -OutFile $msi -Headers @{ "x-api-key" = $env:SM_API_KEY } "https://one.digicert.com/signingmanager/api-ui/v1/releases/Keylockertools-windows-x64.msi/download"
+          Start-Process msiexec.exe -ArgumentList "/i `"$msi`" /quiet /qn" -Wait
+          $tools = "C:\Program Files\DigiCert\DigiCert Keylocker Tools"
+          $tools >> $env:GITHUB_PATH
+          $env:SM_CLIENT_CERT_FILE = $p12
+          & "$tools\smksp_registrar.exe" register
+          & "$tools\smctl.exe" healthcheck
+          & "$tools\smksp_cert_sync.exe"
+          $thumb = $env:SM_CODE_SIGNING_CERT_SHA1_HASH.Replace(" ", "").ToUpper()
+          if (-not (Get-ChildItem Cert:\CurrentUser\My, Cert:\LocalMachine\My | Where-Object Thumbprint -eq $thumb)) { Write-Output "::error::KeyLocker did not put the certificate $thumb in a Windows store. Check SM_CODE_SIGNING_CERT_SHA1_HASH and the API key's access."; exit 1 }
+          "FITRON_SIGN_THUMBPRINT=$thumb" >> $env:GITHUB_ENV
+          "FITRON_SIGN_TIMESTAMP_URL=http://timestamp.digicert.com" >> $env:GITHUB_ENV
+
+      - name: "Signing certificate: a .pfx file"
+        if: env.PROVIDER == 'pfx'
         shell: pwsh
         env:
           PFX: ${{ secrets.FITRON_SIGN_PFX_BASE64 }}
@@ -79,6 +179,22 @@ jobs:
             Remove-Item $file -Force
           }
           "FITRON_SIGN_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
+
+      - name: One test signature, before the long build
+        shell: pwsh
+        run: |
+          # Signs a copy of a small Windows program exactly as the build will sign FITRON's files, and checks it as
+          # Windows sees it, so a wrong setting fails here in a minute rather than after the build.
+          $probe = Join-Path $env:RUNNER_TEMP "fitron-sign-probe.exe"
+          Copy-Item "$env:WINDIR\System32\where.exe" $probe
+          cmd /c scripts\desktop\fitron-sign.cmd "$probe"
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error::The test signature failed (see above)."; exit 1 }
+          $s = Get-AuthenticodeSignature -LiteralPath $probe
+          Write-Output "Signed by: $($s.SignerCertificate.Subject)"
+          Write-Output "Timestamp: $($s.TimeStamperCertificate.Subject)"
+          if ($s.Status -ne "Valid" -or -not $s.TimeStamperCertificate) { Write-Output "::error::The test signature is $($s.Status)$(if (-not $s.TimeStamperCertificate) { ', without a timestamp' })."; exit 1 }
+          if ($s.SignerCertificate.Subject -notlike "*$env:FITRON_PUBLISHER*") { Write-Output "::error::The certificate is for '$($s.SignerCertificate.Subject)', not FITRON_PUBLISHER '$env:FITRON_PUBLISHER'."; exit 1 }
+
       - name: Package the server with this Node.js, and check it
         run: npm run desktop:bundle
       - name: Build, signed (Authenticode) and with signed update files
@@ -101,14 +217,29 @@ jobs:
         run: |
           $env:NOTES | Out-File -Encoding utf8 RELEASE-NOTES.md
           npm run desktop:release -- --notes-file RELEASE-NOTES.md
-      - name: Remove the certificate from the runner
+
+      - name: Draft GitHub release (reaches no gym until published)
+        shell: pwsh
+        run: |
+          $d = "dist/desktop"
+          $installer = "$d/FITRON-Gym-Accounting-Setup-$env:FITRON_VERSION.exe"
+          gh release create "v$env:FITRON_VERSION" --draft --target "$env:GITHUB_SHA" --title "FITRON Gym Accounting $env:FITRON_VERSION" --notes-file RELEASE-NOTES.md $installer "$installer.sha256" "$d/latest.json"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Write-Output "::notice::Draft release v$env:FITRON_VERSION made. Install it by hand on a clean Windows 10 and 11, then press Publish on the release to send the update to every FITRON."
+
+      - name: Remove the signing setup from the runner
         if: always()
         shell: pwsh
         run: |
-          if ($env:FITRON_SIGN_THUMBPRINT) { Remove-Item "Cert:\CurrentUser\My\$env:FITRON_SIGN_THUMBPRINT" -ErrorAction SilentlyContinue }
+          if ($env:PROVIDER -eq "pfx" -and $env:FITRON_SIGN_THUMBPRINT) { Remove-Item "Cert:\CurrentUser\My\$env:FITRON_SIGN_THUMBPRINT" -ErrorAction SilentlyContinue }
+          if ($env:ESIGNER_TOOL) { & $env:ESIGNER_TOOL unload; Remove-Item (Join-Path (Split-Path $env:ESIGNER_TOOL) "master.key") -Force -ErrorAction SilentlyContinue }
+          if ($env:SM_CLIENT_CERT_FILE) { Remove-Item $env:SM_CLIENT_CERT_FILE -Force -ErrorAction SilentlyContinue }
+          exit 0
       - name: Keep the release files
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: FITRON-Gym-Accounting-release
           path: dist/desktop/
+          if-no-files-found: ignore
           retention-days: 30
