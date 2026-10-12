@@ -1,7 +1,8 @@
 # FITRON Local Windows Edition: releasing (Phase 25)
 
 How a version of FITRON Gym Accounting for Windows goes from this repository to a gym's computer: what must pass
-first, how it is built and signed, what is checked on the signed files, and how it is published. For FITRON only;
+first, how it is built and signed (always with FITRON's update key; with a code-signing certificate only if FITRON buys
+one, §2.1), what is checked, and how it is published. For FITRON only;
 gyms never build anything.
 
 ## 1. Before a release
@@ -26,10 +27,22 @@ the release's own commit.
 
 ## 2. Set up once
 
-Four things, in this order. Nothing here is ever committed: the certificate's key stays in its signing service, the
-update key on FITRON's own computer and in the `release` environment.
+Nothing here is ever committed: the update key stays on FITRON's own computer and in the `release` environment (and a
+certificate's key, if FITRON buys one, in its signing service).
 
-### 2.1 The code-signing certificate
+### 2.1 The code-signing certificate (optional; FITRON releases without one)
+
+**FITRON releases without a code-signing certificate** (`FITRON_SIGN_PROVIDER` unset, or `none`). What that means:
+
+- Windows shows **Unknown publisher**, and SmartScreen says "Windows protected your PC" when a gym first runs the
+  downloaded installer. The gym chooses **More info › Run anyway** for that one file; SmartScreen stays on. The release
+  page says so, with the installer's SHA-256 for the gym (or FITRON support on the phone) to compare first.
+- Updates are not affected: FITRON downloads them itself, checks FITRON's update-key signature (§2.2), and installs
+  only an update that passes. No one without the update key can send an update to a gym.
+- The protection a certificate adds is on the **first download**: Windows itself would vouch that the installer is
+  FITRON's. Without it, the gym relies on downloading from FITRON's release page and the SHA-256.
+
+To add a certificate later, set `FITRON_SIGN_PROVIDER` and its settings below; nothing else changes.
 
 An OV (organisation validated) code-signing certificate in FITRON's registered legal name. Since June 2023 a
 certificate's private key must live on hardware, so a certificate bought today comes on a USB token or in a cloud
@@ -66,14 +79,14 @@ as a required reviewer, and under *Deployment branches*, allow only `main`. Then
 
 | Kind | Name | Value |
 | --- | --- | --- |
-| variable | `FITRON_SIGN_PROVIDER` | `esigner`, `keylocker` or `pfx` |
-| variable | `FITRON_PUBLISHER` | the organisation name on the certificate, exactly, e.g. `FITRON Technologies Private Limited` |
+| variable | `FITRON_SIGN_PROVIDER` | leave unset (no certificate), or `esigner`, `keylocker` or `pfx` |
+| variable | `FITRON_PUBLISHER` | with a certificate only: the organisation name on it, exactly, e.g. `FITRON Technologies Private Limited` |
 | secret | `TAURI_SIGNING_PRIVATE_KEY` | the whole content of `fitron-update.key` |
 | secret | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | its password |
 | variable | `FITRON_UPDATE_PUBKEY` | the whole content of `fitron-update.key.pub` |
 | variable | `FITRON_UPDATE_URL` | leave unset to publish on this repository's GitHub Releases (below) |
 
-and, for the signing service:
+and, only with a certificate, for its signing service:
 
 | Provider | Kind | Name | Value |
 | --- | --- | --- | --- |
@@ -102,22 +115,24 @@ first.
 
 ## 3. Building a signed release
 
-Raise `version` in `package.json` on `main` (each release needs a new one). Then Actions › **Desktop release (Windows,
-signed)** › Run workflow, on `main`, with the release notes (`.github/workflows/desktop-release.yml`). It:
+Raise `version` in `package.json` on `main` (each release needs a new one). Then Actions › **Desktop release (Windows)**
+ › Run workflow, on `main`, with the release notes (`.github/workflows/desktop-release.yml`). It:
 
 1. stops at once, naming each missing setting, if anything in §2.3 is not set, if it was started on another branch, or
-   if the version already has a release: a release is never built unsigned;
-2. connects the signing service, so FITRON's certificate appears in the runner's Windows store while its key stays in
+   if the version already has a release;
+2. with a certificate: connects the signing service, so FITRON's certificate appears in the runner's Windows store while its key stays in
    the service, and makes **one test signature**, checked as Windows sees it, so a wrong setting fails within minutes;
 3. builds with `tauri.bundle.conf.json` (the packaged server), `tauri.release.conf.json` (signed update files) and
    `tauri.sign.conf.json`, which runs `fitron-sign.cmd` on every file: the program, the bundled runtime, the
    installer and the uninstaller, SHA-256 with an RFC 3161 timestamp;
-4. **checks the signatures as Windows sees them** (`npm run desktop:signature -- --require`): the installer, the
-   program and the bundled runtime each signed, valid, timestamped, by `FITRON_PUBLISHER` (the bundled Node.js runtime
-   may instead keep the OpenJS Foundation's own signature). Anything else fails the release;
+4. **checks the signatures as Windows sees them** (`npm run desktop:signature`). Without a certificate it reports the
+   files as not signed. With one (`-- --require`): the installer, the program and the bundled runtime each signed,
+   valid, timestamped, by `FITRON_PUBLISHER` (the bundled Node.js runtime may instead keep the OpenJS Foundation's own
+   signature), and anything else fails the release;
 5. runs the same start, install, update, empty-PATH and uninstall tests as every build, on the signed files;
 6. writes the update feed (`latest.json`) and puts the installer, its `.sha256` and the feed in a **draft** GitHub
-   release `v<version>`, and removes the signing setup from the runner.
+   release `v<version>`, whose page tells a gym how to check and install it, and removes any signing setup from the
+   runner.
 
 A draft reaches no gym. On a computer with the certificate instead of the workflow, the same build by hand:
 
@@ -134,8 +149,10 @@ npm run desktop:release -- --notes-file RELEASE-NOTES.md
 ## 4. Checking the draft, then publishing
 
 1. Download the installer from the draft release (Releases › the draft › Assets).
-2. On a clean Windows 10 and a clean Windows 11 (no developer tools): right-click the installer › Properties › Digital
-   Signatures shows `FITRON_PUBLISHER`; installing shows it as the **verified publisher**. Run the acceptance steps
+2. On a clean Windows 10 and a clean Windows 11 (no developer tools): check the installer's SHA-256 against the
+   release page (`Get-FileHash` in PowerShell) and install it as a gym would. Without a certificate, SmartScreen warns
+   and **More info › Run anyway** installs it; with one, right-click › Properties › Digital Signatures shows
+   `FITRON_PUBLISHER` and installing shows it as the verified publisher. Run the acceptance steps
    (`e2e/local/acceptance.spec.ts` lists them).
 3. From the second release on, also install the previous release first, publish the new one, and let FITRON update
    itself (within 12 hours, or at its next start a minute after opening).
@@ -147,13 +164,16 @@ its data stays.
 
 ## 5. What a customer then sees
 
-- The installer, FITRON in Apps & features and its Start Menu entry show FITRON's legal name as the verified
-  publisher.
-- SmartScreen judges a download by the reputation of its signing certificate. A new certificate may still show a
-  SmartScreen notice for the first releases while its reputation builds; it fades as gyms install it. FITRON never
-  tells a customer to turn SmartScreen, Defender or any other Windows protection off, and support never does it for
-  them. If a gym sees "Unknown publisher" on an installer said to be FITRON's, it is not FITRON's: they should not run
-  it, and should download it again from FITRON.
+- **Without a certificate** (FITRON's releases now): downloading and first running the installer shows "Windows
+  protected your PC" and **Unknown publisher**. The gym checks the SHA-256 on the release page, then chooses More info ›
+  Run anyway for that file. Updates afterwards install without that notice, checked against FITRON's update key.
+- **With a certificate**: the installer, FITRON in Apps & features and its Start Menu entry show FITRON's legal name as
+  the verified publisher. SmartScreen judges a download by the reputation of its signing certificate, so a new
+  certificate may still show a notice for the first releases; it fades as gyms install it. An installer showing
+  "Unknown publisher" is then not FITRON's.
+- Either way, FITRON never tells a customer to turn SmartScreen, Defender or any other Windows protection off, and
+  support never does it for them. An installer from anywhere but FITRON's release page, or whose SHA-256 does not
+  match it, is not FITRON's: do not run it.
 - Installing needs no administrator (per-user install, `INSTALLER.md`); the data folder is never in Program Files.
 
 ## 6. Files

@@ -49,8 +49,10 @@ FITRON-Gym-Accounting-Setup-<version>.exe.sha256
 The version is `package.json`'s. Every pull request's Windows job builds the installer and keeps it for 14 days as the
 `FITRON-Gym-Accounting-Setup` download of that run.
 
-The installer is not code-signed yet, so Windows SmartScreen warns "Windows protected your PC" on first run. Signing is
-part of the release work (Phases 19 and 25); FITRON never asks customers to turn SmartScreen off.
+FITRON's installer is not code-signed (FITRON releases without a code-signing certificate, RELEASE.md §2.1), so
+Windows SmartScreen warns "Windows protected your PC" and shows Unknown publisher on first run. The release page gives
+the installer's SHA-256 to check before choosing More info › Run anyway; updates afterwards are checked against
+FITRON's update key. FITRON never asks customers to turn SmartScreen off.
 
 | File | |
 | --- | --- |

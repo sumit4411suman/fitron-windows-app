@@ -1,8 +1,9 @@
-name: Desktop release (Windows, signed)
+name: Desktop release (Windows)
 
-# A signed release of FITRON Gym Accounting for Windows (docs/local-windows/RELEASE.md, Phase 25). Run by hand from the
-# Actions tab, on main. It builds the program and installer with FITRON's Authenticode certificate and FITRON's update
-# key, checks that Windows sees every file as signed by FITRON and timestamped (npm run desktop:signature -- --require),
+# A release of FITRON Gym Accounting for Windows (docs/local-windows/RELEASE.md, Phase 25). Run by hand from the Actions
+# tab, on main. It builds the program and installer with FITRON's update key (always) and FITRON's Authenticode
+# certificate (when FITRON_SIGN_PROVIDER names one; without it the installer is not code-signed and Windows shows
+# "Unknown publisher"), checks the signatures as Windows sees them (npm run desktop:signature, --require when signed),
 # runs the same start, install, update and uninstall tests as every build, and puts the installer, its checksum and the
 # update feed in a DRAFT GitHub release. A draft reaches no gym: FITRON only reads the newest published release. Test
 # the draft's installer by hand, then press Publish on it; that is what sends the update to every installed FITRON.
@@ -10,8 +11,9 @@ name: Desktop release (Windows, signed)
 # Set up once, in the repository's Settings > Environments > "release" (protected: only the people allowed to release).
 # The certificate's private key never leaves its signing service; nothing secret is ever in the repository.
 #
-#   variable  FITRON_SIGN_PROVIDER   esigner (SSL.com eSigner), keylocker (DigiCert KeyLocker) or pfx (a .pfx file)
-#   variable  FITRON_PUBLISHER       the organisation name on the certificate, e.g. "FITRON Technologies Private Limited"
+#   variable  FITRON_SIGN_PROVIDER   none (the default: no code-signing certificate), or esigner (SSL.com eSigner),
+#                                    keylocker (DigiCert KeyLocker) or pfx (a .pfx file)
+#   variable  FITRON_PUBLISHER       with a certificate: the organisation name on it, e.g. "FITRON Technologies Private Limited"
 #   secret    TAURI_SIGNING_PRIVATE_KEY           FITRON's update key (made with: npx tauri signer generate)
 #   secret    TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password
 #   variable  FITRON_UPDATE_PUBKEY   the update key's public half, built into the program
@@ -25,8 +27,8 @@ name: Desktop release (Windows, signed)
 #              variable SM_HOST (default https://clientauth.one.digicert.com)
 #   pfx:       secrets FITRON_SIGN_PFX_BASE64, FITRON_SIGN_PFX_PASSWORD
 #
-# Missing settings stop the release at once, naming each. It never builds unsigned, and never asks anyone to turn
-# SmartScreen off.
+# Missing settings stop the release at once, naming each. Updates are always signed with FITRON's update key, so only
+# FITRON can publish one. It never asks anyone to turn SmartScreen off.
 
 on:
   workflow_dispatch:
@@ -48,7 +50,7 @@ jobs:
     environment: release
     timeout-minutes: 90
     env:
-      PROVIDER: ${{ vars.FITRON_SIGN_PROVIDER }}
+      PROVIDER: ${{ vars.FITRON_SIGN_PROVIDER || 'none' }}
       FITRON_PUBLISHER: ${{ vars.FITRON_PUBLISHER || 'FITRON' }}
       FITRON_UPDATE_URL: ${{ vars.FITRON_UPDATE_URL || format('https://github.com/{0}/releases/latest/download/latest.json', github.repository) }}
       FITRON_UPDATE_PUBKEY: ${{ vars.FITRON_UPDATE_PUBKEY }}
@@ -77,18 +79,20 @@ jobs:
           if (-not $env:FITRON_UPDATE_PUBKEY) { $missing += "variable FITRON_UPDATE_PUBKEY" }
           if (-not $env:FITRON_UPDATE_URL.StartsWith("https://")) { $missing += "variable FITRON_UPDATE_URL (must be https)" }
           $need = @{
+            none      = @()
             esigner   = @("ESIGNER_USERNAME", "ESIGNER_PASSWORD", "ESIGNER_TOTP_SECRET")
             keylocker = @("SM_API_KEY", "SM_CLIENT_CERT_FILE_B64", "SM_CLIENT_CERT_PASSWORD", "SM_CODE_SIGNING_CERT_SHA1_HASH")
             pfx       = @("FITRON_SIGN_PFX_BASE64", "FITRON_SIGN_PFX_PASSWORD")
           }
-          if (-not $need.ContainsKey("$env:PROVIDER")) { $missing += "variable FITRON_SIGN_PROVIDER (esigner, keylocker or pfx)" }
+          if (-not $need.ContainsKey("$env:PROVIDER")) { $missing += "variable FITRON_SIGN_PROVIDER (none, esigner, keylocker or pfx)" }
           else { foreach ($n in $need["$env:PROVIDER"]) { if (-not (Get-Item "env:$n" -ErrorAction SilentlyContinue).Value) { $missing += "secret $n" } } }
-          if ($missing.Count) { Write-Output "::error::Not set in the release environment: $($missing -join ', '). A release is never built unsigned. (docs/local-windows/RELEASE.md)"; exit 1 }
+          if ($missing.Count) { Write-Output "::error::Not set in the release environment: $($missing -join ', '). (docs/local-windows/RELEASE.md)"; exit 1 }
+          if ($env:PROVIDER -eq "none") { Write-Output "::warning::No code-signing certificate (FITRON_SIGN_PROVIDER is none): the installer is not code-signed, so Windows shows 'Unknown publisher' and SmartScreen warns before the first install. Updates are still signed with FITRON's update key." }
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           gh release view "v$version" *> $null
           if ($LASTEXITCODE -eq 0) { Write-Output "::error::A release v$version already exists (published or draft). Raise the version in package.json, or delete that draft."; exit 1 }
           "FITRON_VERSION=$version" >> $env:GITHUB_ENV
-          Write-Output "Release v$version, signed with $env:PROVIDER, updates from $env:FITRON_UPDATE_URL"
+          Write-Output "Release v$version, code signing: $env:PROVIDER, updates from $env:FITRON_UPDATE_URL"
           exit 0 # the lookup above failing is the good case; it must not become this step's exit code
 
       - uses: actions/setup-node@v4
@@ -101,14 +105,15 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - name: Put signtool on the PATH (Windows SDK)
+        if: env.PROVIDER != 'none'
         shell: pwsh
         run: |
           $st = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
           if (-not $st) { Write-Output "::error::signtool.exe not found (Windows SDK)"; exit 1 }
           $st.DirectoryName >> $env:GITHUB_PATH
 
-      # One of the next three steps runs, by FITRON_SIGN_PROVIDER. Each ends with FITRON's certificate in this runner's
-      # Windows store, its private key still in the signing service, and FITRON_SIGN_THUMBPRINT naming it.
+      # With a certificate, one of the next three steps runs, by FITRON_SIGN_PROVIDER. Each ends with FITRON's certificate
+      # in this runner's Windows store, its private key still in the signing service, and FITRON_SIGN_THUMBPRINT naming it.
 
       - name: "Signing service: SSL.com eSigner (Cloud Key Adapter)"
         if: env.PROVIDER == 'esigner'
@@ -181,6 +186,7 @@ jobs:
           "FITRON_SIGN_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
 
       - name: One test signature, before the long build
+        if: env.PROVIDER != 'none'
         shell: pwsh
         run: |
           # Signs a copy of a small Windows program exactly as the build will sign FITRON's files, and checks it as
@@ -197,15 +203,21 @@ jobs:
 
       - name: Package the server with this Node.js, and check it
         run: npm run desktop:bundle
-      - name: Build, signed (Authenticode) and with signed update files
+      - name: Build, with signed update files (and Authenticode, with a certificate)
+        shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx tauri build --config src-tauri/tauri.bundle.conf.json --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.sign.conf.json
+        run: |
+          $configs = @("--config", "src-tauri/tauri.bundle.conf.json", "--config", "src-tauri/tauri.release.conf.json")
+          if ($env:PROVIDER -ne "none") { $configs += @("--config", "src-tauri/tauri.sign.conf.json") }
+          npx tauri build @configs
       - name: Name the installer and write its checksum
         run: npm run desktop:installer
-      - name: Every file signed by FITRON, valid and timestamped
-        run: npm run desktop:signature -- --require
+      - name: Signatures as Windows sees them (with a certificate, every file signed by FITRON and timestamped)
+        shell: pwsh
+        run: |
+          if ($env:PROVIDER -eq "none") { npm run desktop:signature } else { npm run desktop:signature -- --require }
       - name: Start, close and end the desktop program
         run: npm run desktop:smoke
       - name: Install, update and uninstall as a customer does
@@ -222,8 +234,19 @@ jobs:
         shell: pwsh
         run: |
           $d = "dist/desktop"
-          $installer = "$d/FITRON-Gym-Accounting-Setup-$env:FITRON_VERSION.exe"
-          gh release create "v$env:FITRON_VERSION" --draft --target "$env:GITHUB_SHA" --title "FITRON Gym Accounting $env:FITRON_VERSION" --notes-file RELEASE-NOTES.md $installer "$installer.sha256" "$d/latest.json"
+          $name = "FITRON-Gym-Accounting-Setup-$env:FITRON_VERSION.exe"
+          $installer = "$d/$name"
+          # The release page: the notes, then how to check the download (the update dialog shows the notes alone).
+          $sha = (Get-Content "$installer.sha256" -Raw).Split(" ")[0]
+          $body = @((Get-Content RELEASE-NOTES.md -Raw).TrimEnd(), "", "## Installing", "")
+          if ($env:PROVIDER -eq "none") {
+            $body += "This installer is not code-signed, so Windows shows **Unknown publisher** and SmartScreen says ""Windows protected your PC"" before the first install. Download it only from this page, check its SHA-256 below (PowerShell: ``Get-FileHash $name``), then choose **More info › Run anyway**. Never turn SmartScreen off. Once installed, FITRON updates itself, and only installs an update signed with FITRON's update key."
+          } else {
+            $body += "Windows shows **$env:FITRON_PUBLISHER** as the verified publisher. If it shows ""Unknown publisher"", the file is not FITRON's: do not run it."
+          }
+          $body += @("", "SHA-256 of ``$name``: ``$sha``")
+          $body -join "`n" | Out-File -Encoding utf8 RELEASE-BODY.md
+          gh release create "v$env:FITRON_VERSION" --draft --target "$env:GITHUB_SHA" --title "FITRON Gym Accounting $env:FITRON_VERSION" --notes-file RELEASE-BODY.md $installer "$installer.sha256" "$d/latest.json"
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Write-Output "::notice::Draft release v$env:FITRON_VERSION made. Install it by hand on a clean Windows 10 and 11, then press Publish on the release to send the update to every FITRON."
 

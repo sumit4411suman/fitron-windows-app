@@ -22,7 +22,7 @@ Where things are:
 | The window opens on **"FITRON's database is damaged"** | The database file was damaged (a failing disk, a power cut the disk did not survive). FITRON has not changed it. Pick the newest backup in the list; a Super Admin of the gym in that backup enters their email and the password they had then. The damaged files are kept in `data\damaged-<time>\` for FITRON support; anything entered after the backup is not in it. A backup on a pen drive: copy the `.fitronbackup` file into `backups\manual`, then open the page again. (`DISASTER-RECOVERY.md`) |
 | The start-up page waits for minutes after an update | The first start after an update may change the database (up to 5 minutes on years of records). Leave it. |
 | Starting FITRON again only brings its window forward | It is already open. One FITRON runs per Windows user, so two never write to one database. |
-| Windows says "Unknown publisher" for a FITRON installer | Released installers are signed by FITRON. Do not run that file; download FITRON again from FITRON's own address. (`RELEASE.md`) |
+| "Windows protected your PC" and **Unknown publisher** when installing FITRON | Expected: FITRON's installer is not code-signed. Download it only from FITRON's release page, and compare its SHA-256 (PowerShell: `Get-FileHash <file>`) with the one on that page. If it matches, choose More info › Run anyway. If it does not, or the file came from anywhere else, do not run it. Never turn SmartScreen off. (`RELEASE.md`) |
 
 ## Signing in
 
