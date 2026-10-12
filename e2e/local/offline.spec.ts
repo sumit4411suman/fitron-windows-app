@@ -164,18 +164,18 @@ test("online-only features say they need the internet or WhatsApp, and never pre
     await expect(page.locator('select[name="mode"]')).toHaveValue(value);
   };
 
-  // A linked phone needs the WhatsApp connector, and none is entered yet: the reminder is not sent, the desk is told
-  // why, in red, and nothing tries to reach a connector.
+  // A linked phone, and none is linked on this computer yet (FITRON links it itself, by QR code): the reminder is not
+  // sent, the desk is told why, in red, and nothing tries to reach WhatsApp.
   await mode("connector");
   await page.goto(`/members/${memberId}`);
   await page.getByRole("button", { name: "Send payment reminder" }).click();
-  await expect(page.getByText(/^Payment reminder not sent: WhatsApp through a linked phone needs the FITRON WhatsApp connector/)).toBeVisible();
+  await expect(page.getByText(/^Payment reminder not sent: WhatsApp is not linked on this computer/)).toBeVisible();
 
   // The daily jobs that send on WhatsApp wait for it, without failing or alerting; the rest run.
   await page.goto("/settings/jobs");
   await page.getByRole("button", { name: /Run (today's jobs now|anything left for today)/ }).click();
   await expect(page.getByText("Waiting, and tried again within the hour:")).toBeVisible();
-  await expect(page.getByText(/^Send messages held by quiet hours: WhatsApp through a linked phone needs the FITRON WhatsApp connector/)).toBeVisible();
+  await expect(page.getByText(/^Send messages held by quiet hours: WhatsApp is not linked on this computer/)).toBeVisible();
   // Linking WhatsApp sends nothing on its own: the reminders wait for "Send automatic messages" (Phase 12).
   await expect(page.getByText(/note automatic messages are off: nothing sent/).first()).toBeVisible();
   await expect(page.getByText("Churn risk for every member")).toBeVisible();
@@ -193,7 +193,7 @@ test("online-only features say they need the internet or WhatsApp, and never pre
   await expect(page.getByText(/^Payment reminder not sent: Nothing is answering at http:\/\/127\.0\.0\.1:9/)).toBeVisible();
   await page.goto("/settings?tab=wa");
   await page.getByTestId("wa-connector").getByRole("button", { name: "Forget it" }).click();
-  await expect(page.getByText(/^Connector address forgotten/)).toBeVisible();
+  await expect(page.getByText(/^Connector forgotten/)).toBeVisible();
 
   // Not linked (demo): the reminder is saved, and called "not sent".
   await mode("demo");

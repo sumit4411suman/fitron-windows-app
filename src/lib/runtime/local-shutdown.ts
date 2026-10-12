@@ -6,13 +6,14 @@ import { log } from "@/lib/log";
 // ending any other way (a crash, Task Manager), since Windows closes a dead process's pipes. Either way the server then:
 //   1. stops its hourly timer, so no backup or daily job starts;
 //   2. waits a little for a backup or a job already running, which writes to a temporary file and renames it at the end;
-//   3. writes everything in the WAL into the database file (a TRUNCATE checkpoint), so fitron.db alone is complete;
-//   4. exits.
+//   3. lets a WhatsApp message being sent through a phone linked in FITRON finish, and closes the link (not logged out);
+//   4. writes everything in the WAL into the database file (a TRUNCATE checkpoint), so fitron.db alone is complete;
+//   5. exits.
 // A request half-way through a transaction when the process exits is rolled back by SQLite as a whole: a payment is
 // either saved with its receipt and journal or not at all. Signals are not used because Windows has none to send to a
 // program without a console.
 
-const g = globalThis as unknown as { fitronScheduler?: NodeJS.Timeout; fitronAutoBackupRunning?: boolean; fitronJobsRunning?: boolean; fitronStopping?: boolean };
+const g = globalThis as unknown as { fitronScheduler?: NodeJS.Timeout; fitronAutoBackupRunning?: boolean; fitronJobsRunning?: boolean; fitronStopping?: boolean; fitronWhatsApp?: Map<string, unknown> };
 
 export const SHUTDOWN_WAIT_MS = 8_000;
 
@@ -38,6 +39,14 @@ export async function stopLocalServer(o: { database: string; waitMs?: number; ex
   const until = Date.now() + (o.waitMs ?? SHUTDOWN_WAIT_MS);
   while (busy() && Date.now() < until) await sleep(100);
   if (busy()) log.warn("local.stop.busy", { backup: !!g.fitronAutoBackupRunning, jobs: !!g.fitronJobsRunning });
+  if (g.fitronWhatsApp?.size) {
+    try {
+      const { stopEmbeddedWhatsApp } = await import("@/lib/integrations/whatsapp/embedded");
+      await stopEmbeddedWhatsApp(Math.max(0, until - Date.now()));
+    } catch (e) {
+      log.error("local.stop.whatsapp_failed", e);
+    }
+  }
   let code = 0;
   try {
     checkpoint(o.database);

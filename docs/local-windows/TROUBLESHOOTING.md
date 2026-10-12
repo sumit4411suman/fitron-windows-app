@@ -56,7 +56,9 @@ Where things are:
 | What you see | What to do |
 | --- | --- |
 | "WhatsApp is not linked (demo mode)" | Messages are saved in FITRON, not sent. Link WhatsApp in Settings › WhatsApp. |
-| "…needs the FITRON WhatsApp connector. Enter its address and key…" | For a linked gym phone: Settings › WhatsApp › Connector: the address of the computer or server where the connector runs, and its key. Or use WhatsApp Business through Meta. |
+| "WhatsApp is not linked on this computer…" | Settings › WhatsApp › Link WhatsApp, then scan the QR code from WhatsApp › Linked devices on the gym phone. The computer needs the internet while linking and sending. |
+| "WhatsApp was unlinked on the phone…" | FITRON was removed under Linked devices on the phone. Link it again in Settings › WhatsApp. |
+| "The connector … needs both its address and its key…" | Only for a connector on another computer: enter both under Settings › WhatsApp › Connector, or press Forget it to use the link built into FITRON. |
 | "Nothing is answering at http://…" | The connector is not running, or the address is wrong: check the computer it runs on, and the address under Connector. |
 | Sending through Meta says the computer is offline | WhatsApp Business needs the internet. The message is kept as Failed: send it again when the computer is online. Everything else in FITRON works offline. |
 

@@ -36,7 +36,7 @@ page (`/c/<gym>/<branch>`), and `/api/health`.
 | Email | nodemailer (SMTP) | Online |
 | AI | Anthropic Messages API via `fetch` | Online |
 | Payments | Razorpay (gym members' UPI Autopay; FITRON's own billing of gyms) | Online |
-| WhatsApp | Meta Cloud API, or the linked-phone connector in `prototype/connector` | Online |
+| WhatsApp | Meta Cloud API, or a linked phone: built into FITRON (`src/lib/integrations/whatsapp/embedded.ts`), or a `whatsapp-connector/` the gym runs elsewhere | Online |
 | Push | web-push (AI Trainer only) | Online, not part of Gym Accounting |
 | Tests | Vitest (145 files, 1,345 tests; `*.db.test.ts` need `DATABASE_URL`), Playwright (14 specs against the production build) | Local tests will run the same suites against SQLite plus `e2e/local`. |
 | Hosting | Docker (Oracle Cloud) or Vercel + Supabase | Unchanged for the Cloud Edition. |

@@ -46,7 +46,8 @@ The Cloud Edition's behaviour is unchanged: these checks run only when `FITRON_E
 | Support tickets (Settings › Help & support) | The gym's database is out of FITRON's sight, so a ticket reaches support only by email. Without email set up there is no form, only the phone, WhatsApp and email cards and the copyable System details. With email: offline, nothing is saved and the desk is told; a ticket whose email failed is kept, marked not sent, and never acknowledged. |
 | Sign-in by email link or code, password reset by email | Not part of FITRON for Windows. The pages redirect to sign-in and their server actions refuse. The owner resets with the recovery key; a Super Admin resets staff passwords. |
 | WhatsApp, "Not linked" (the default) | Messages are saved, not sent, and every screen says so: "Payment reminder saved, not sent: WhatsApp is not linked". |
-| WhatsApp, linked phone (connector) | A connector that is not running is reported at once ("Nothing is answering at http://127.0.0.1:3131"). One whose WhatsApp is not linked or not online counts as not ready, since a message handed to it would wait in its memory. Batches (remind all, campaigns, class reminders) check once and send nothing rather than fail per member. The connector runs on another always-on computer or server (it needs Node.js, which FITRON never asks for on the desk PC); its address and key are entered under Settings › WhatsApp › Connector. |
+| WhatsApp, linked phone (built in) | Messages wait in the outbox in the data folder (`whatsapp/<gym>/outbox`) while the computer is offline or FITRON is closed, and go out when the link is back; until then they show as Queued. With no phone linked on this computer a message is Failed at once with "WhatsApp is not linked on this computer…", so nothing waits for ever. Batches check once, as below. |
+| WhatsApp, linked phone (connector) | A connector that is not running is reported at once ("Nothing is answering at http://127.0.0.1:3131"). One whose WhatsApp is not linked or not online counts as not ready, since a message handed to it would wait in its memory. Batches (remind all, campaigns, class reminders) check once and send nothing rather than fail per member. Used only when the gym enters a connector's address and key under Settings › WhatsApp › Connector (optional). |
 | WhatsApp Business (Meta) | Checks the internet before calling Meta. Offline, a message is kept as Failed with "Sending WhatsApp messages through Meta requires an internet connection…", ready to send again. |
 | Every WhatsApp result | Worded by what really happened (`src/lib/domain/wa-outcome.ts`): sent, queued on the phone, saved in demo mode, or not sent with the reason, in red when it did not go. Batches and automation runs count those apart. |
 | Fitron AI | Without a model key (the default) it answers from the books, as always. With a key and no internet, it says "This computer is offline, so Fitron AI is answering from the books on this computer." and does exactly that. |
@@ -90,4 +91,9 @@ automatic backup, then `runDueOnThisComputer` (`src/lib/services/jobs.ts`).
 - `navigator.onLine` (used before opening wa.me) is false only with no network at all. On a LAN without internet, the
   chat window opens and shows the browser's own offline page.
 - A message queued on the connector lives in the connector's memory until WhatsApp is back. If the connector is closed
-  first, FITRON marks it Failed after 6 hours (`refreshQueued`).
+  first, FITRON marks it Failed after 6 hours (`refreshQueued`). The built-in link's outbox is a folder on disk, so its
+  messages are reported Queued and are not given up on.
+- The built-in link's outbox is not in backups: restoring a backup on another computer means linking the phone again
+  there, and messages still waiting on the old computer stay on it.
+- If FITRON is ended abruptly (Task Manager, power cut) at the moment a message is going out, that one message may be
+  sent again at the next start. Closing FITRON normally lets it finish first.

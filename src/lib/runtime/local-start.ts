@@ -108,6 +108,10 @@ export async function startLocalEdition(): Promise<LocalStartState> {
       startLocalScheduler();
       // Cloud sync, when this computer is linked to fitron.in (it stops by itself when it is not).
       startSyncWorker();
+      // Gym phones linked in FITRON itself reconnect, so messages that waited while it was closed go out.
+      void import("@/lib/integrations/whatsapp/embedded")
+        .then((m) => m.resumeEmbeddedWhatsApp(root))
+        .catch((e) => log.error("local.start.whatsapp_failed", e));
     }
     log.info("local.start", { applied: state.applied.join(",") || null, safetyBackup: state.safetyBackup ?? null });
   } catch (e) {
