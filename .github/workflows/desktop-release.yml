@@ -209,7 +209,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $configs = @("--config", "src-tauri/tauri.bundle.conf.json", "--config", "src-tauri/tauri.release.conf.json")
+          # The build checks the update signature it makes against the updater's public key in the config, which
+          # tauri.conf.json leaves empty (the program reads FITRON_UPDATE_PUBKEY itself): give the build the same key.
+          $keyConf = Join-Path $env:RUNNER_TEMP "tauri.updater-key.conf.json"
+          @{ plugins = @{ updater = @{ pubkey = $env:FITRON_UPDATE_PUBKEY.Trim() } } } | ConvertTo-Json -Depth 5 -Compress | Out-File -Encoding utf8NoBOM $keyConf
+          $configs = @("--config", "src-tauri/tauri.bundle.conf.json", "--config", "src-tauri/tauri.release.conf.json", "--config", $keyConf)
           if ($env:PROVIDER -ne "none") { $configs += @("--config", "src-tauri/tauri.sign.conf.json") }
           npx tauri build @configs
       - name: Name the installer and write its checksum
