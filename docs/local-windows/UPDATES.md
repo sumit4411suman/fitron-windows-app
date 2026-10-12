@@ -77,9 +77,13 @@ npm run desktop:release -- --notes-file RELEASE-NOTES.md
 }
 ```
 
-Upload all three to where `FITRON_UPDATE_URL` is served (https only). The installer is served beside the feed, so
-the two cannot point at different places. Replacing `latest.json` is what publishes a release; keeping the previous
-installer online lets a gym go back by hand.
+The release workflow does all of this and puts the three files in a draft GitHub release; publishing the draft is
+what sends the update (RELEASE.md). On GitHub Releases (the default address,
+`https://github.com/<owner>/<repo>/releases/latest/download/latest.json`) the feed names the installer in its own
+release (`…/releases/download/v1.1.0/…`). Served from anywhere else, upload all three to where `FITRON_UPDATE_URL` is
+served (https only); the installer is served beside the feed, so the two cannot point at different places, and
+replacing `latest.json` is what publishes a release. Either way, keeping the previous installer online lets a gym go
+back by hand.
 
 | | |
 | --- | --- |
