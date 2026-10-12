@@ -36,6 +36,9 @@ const nextConfig: NextConfig = {
     // is read-only once installed (the bundle check refuses a server that writes there).
     ...(desktop ? { isrFlushToDisk: false } : {}),
   },
+  // WhatsApp built into FITRON for Windows (src/lib/integrations/whatsapp/embedded.ts) is loaded as it is published, not
+  // bundled: it carries its own WebAssembly and loads optional parts only when present.
+  serverExternalPackages: ["baileys"],
   // The invoice PDF reads its font from disk; ship it with the server build.
   outputFileTracingIncludes: {
     "/invoices/[id]/pdf": ["./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans.ttf", "./node_modules/dejavu-fonts-ttf/ttf/DejaVuSans-Bold.ttf"],

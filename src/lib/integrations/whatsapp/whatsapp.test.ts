@@ -132,9 +132,11 @@ describe("self-hosted WhatsApp connector", () => {
   it("needs both an address and a key before a gym can link", async () => {
     setBoth("", "");
     const wa = await load();
-    // FITRON for Windows has no server settings, so it says what to do there instead of naming them.
+    // FITRON for Windows with no connector entered links the phone itself (embedded.ts); half a connector is refused,
+    // saying what to do there instead of naming server settings.
     const notSetUp = isLocal() ? wa.LOCAL_NEEDS_CONNECTOR : wa.HOSTED_NEEDS_CONNECTOR;
-    expect(await wa.connectorReady("org_a")).toBe(notSetUp);
+    expect(await wa.connectorReady("org_a")).toBe(isLocal() ? null : wa.HOSTED_NEEDS_CONNECTOR);
+    expect(wa.builtInLink(await wa.connectorSite("org_a"))).toBe(isLocal());
     expect(wa.HOSTED_NEEDS_CONNECTOR).toMatch(/WA_CONNECTOR_URL/);
     expect(wa.LOCAL_NEEDS_CONNECTOR).not.toMatch(/WA_CONNECTOR/);
     expect(wa.LOCAL_NEEDS_CONNECTOR).toMatch(/Settings › WhatsApp/);

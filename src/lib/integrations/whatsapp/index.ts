@@ -3,6 +3,7 @@ import { graphCall, phoneInfo, type CloudCreds } from "./cloud";
 import { getConnectorGym, getConnectorSite, removeConnectorGym, saveConnectorGym } from "@/lib/services/wa-connector-store";
 import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
 import { isNetworkError, offlineMessage, probablyOnline, SERVICE } from "../online";
+import { embeddedLogout, embeddedResults, embeddedSend, embeddedStatus, NOT_LINKED_HERE } from "./embedded";
 
 // Sends one WhatsApp message through the configured provider. Secrets come from the server
 // environment only; the app stores which mode is on, never the keys.
@@ -13,8 +14,9 @@ import { isNetworkError, offlineMessage, probablyOnline, SERVICE } from "../onli
 //   connector  the self-hosted WhatsApp Web connector in whatsapp-connector/ (one deployment serves every gym; each gym links
 //              its own phone by QR). WA_CONNECTOR_URL is its address and WA_CONNECTOR_KEY its master key, used only to
 //              create the gym on the connector the first time; after that Fitron calls it with the gym's own key, kept
-//              sealed in the gym's settings (wa-connector-store). FITRON for Windows has no server settings: there the
-//              gym enters the connector's address and master key in Settings › WhatsApp (sealed the same way).
+//              sealed in the gym's settings (wa-connector-store). FITRON for Windows runs the link itself (embedded.ts:
+//              the gym scans a QR code and FITRON keeps the link on the computer); a gym that prefers a connector on
+//              another computer enters its address and master key in Settings › WhatsApp › Connector (sealed the same way).
 
 export type WaMode = "demo" | "cloud" | "connector";
 export type Outgoing = {
@@ -51,11 +53,14 @@ const sharedCloud = (): CloudCreds | null => (!gymAccountingOnly() && env("WHATS
 export const HOSTED_NEEDS_CONNECTOR = "The WhatsApp connector is not set up yet. Deploy whatsapp-connector/ on an always-on server, then set WA_CONNECTOR_URL (its https address, e.g. https://wa-api.fitron.in) and WA_CONNECTOR_KEY (its WA_CONNECTOR_MASTER_KEY) on the Fitron server (whatsapp-connector/README.md).";
 
 /**
- * FITRON for Windows has no server settings (the desktop program starts its server with a clean environment): a linked
- * phone works once the gym enters where its FITRON WhatsApp connector is, and until then it says so and tries nothing.
+ * FITRON for Windows with a connector half entered (an address without a key, or the other way round). With neither,
+ * the link built into FITRON is used (builtInLink).
  */
 export const LOCAL_NEEDS_CONNECTOR =
-  "WhatsApp through a linked phone needs the FITRON WhatsApp connector. Enter its address and key under Connector in Settings › WhatsApp, or connect a WhatsApp Business number through Meta, or leave WhatsApp not linked so messages are saved here.";
+  "The connector under Settings › WhatsApp › Connector needs both its address and its key. Press Forget it there to use the WhatsApp link built into FITRON instead.";
+
+/** FITRON for Windows with no connector entered: the gym phone is linked by FITRON itself, on this computer (embedded.ts). */
+export const builtInLink = (site: ConnectorSite) => isLocal() && !site.url && !site.key;
 
 /**
  * Why this provider cannot be used, or null. For the connector, `site` is where it is (connectorSite); without it the
@@ -65,6 +70,7 @@ export const providerReady = (mode: WaMode, cloud?: CloudCreds | null, site?: Co
   if (mode === "cloud" && !cloud && !sharedCloud()) return "This gym has not connected its WhatsApp Business number yet. Press Connect WhatsApp in Settings › WhatsApp.";
   if (mode === "connector") {
     const s = site ?? (isLocal() ? NO_SITE : envSite());
+    if (builtInLink(s)) return null;
     if (!s.url || !s.key) return isLocal() ? LOCAL_NEEDS_CONNECTOR : HOSTED_NEEDS_CONNECTOR;
     if (!/^https?:\/\//i.test(s.url)) return isLocal() ? "The connector's address must start with http:// or https://." : "WA_CONNECTOR_URL must start with http:// or https://.";
   }
@@ -199,7 +205,8 @@ async function gymFetch<T>(orgId: string, path: string, init: { method: "GET" | 
 
 type ConnectorMessage = { messageId: string; status: string; idempotencyKey: string | null; error: string | null };
 
-async function sendConnector(m: Outgoing): Promise<SendResult> {
+async function sendConnector(m: Outgoing, site: ConnectorSite): Promise<SendResult> {
+  if (builtInLink(site)) return embeddedSend(m.orgId, m);
   let res: ConnectorMessage;
   if (m.pdf) {
     const form = new FormData();
@@ -226,7 +233,7 @@ export async function sendWhatsApp(mode: WaMode, m: Outgoing): Promise<SendResul
   const missing = providerReady(mode, m.cloud, site) ?? (mode === "cloud" ? await cloudOffline(undefined, KEPT) : null);
   if (missing) return { status: "Failed", error: missing };
   try {
-    return mode === "cloud" ? await sendCloud(m) : await sendConnector(m);
+    return mode === "cloud" ? await sendCloud(m) : await sendConnector(m, site!);
   } catch (e) {
     if (mode === "connector") return { status: "Failed", error: connectorProblem(e, site?.url) };
     if (isLocal() && isNetworkError(e)) return { status: "Failed", error: offlineMessage("Sending WhatsApp messages through Meta", KEPT) };
@@ -244,9 +251,12 @@ export async function connectorAnswers(orgId: string): Promise<string | null> {
   if (missing) return missing;
   try {
     const st = await connectorStatus(orgId);
+    const builtIn = builtInLink(site);
     if (st.state === "ready") return null;
-    if (st.state === "reconnecting") return "WhatsApp is reconnecting on the connector. Try again in a moment.";
-    return st.error ? `The connector is running but WhatsApp has not started: ${st.error}` : `WhatsApp on the linked phone is not ready (${st.state}). Link it in Settings › WhatsApp.`;
+    if (st.state === "reconnecting") return builtIn ? "WhatsApp is reconnecting. Try again in a moment." : "WhatsApp is reconnecting on the connector. Try again in a moment.";
+    if (builtIn && st.state === "disconnected" && !st.error) return NOT_LINKED_HERE;
+    if (st.error) return builtIn ? `WhatsApp has not started on this computer: ${st.error}` : `The connector is running but WhatsApp has not started: ${st.error}`;
+    return `WhatsApp on the linked phone is not ready (${st.state}). Link it in Settings › WhatsApp.`;
   } catch (e) {
     return connectorProblem(e, site.url);
   }
@@ -257,7 +267,9 @@ const STATUS_WORDS: Record<string, string> = { QUEUED: "Queued", PROCESSING: "Qu
 /** Final statuses for messages the connector queued, by Fitron's own message ids: { id: { status, error } }. null when the connector can't be reached. */
 export async function connectorResults(orgId: string, ids: string[]): Promise<Record<string, { status: string; error?: string }> | null> {
   if (!ids.length) return {};
-  if (await connectorReady(orgId)) return null;
+  const site = await connectorSite(orgId);
+  if (builtInLink(site)) return embeddedResults(orgId, ids);
+  if (providerReady("connector", null, site)) return null;
   const out: Record<string, { status: string; error?: string }> = {};
   try {
     for (let i = 0; i < ids.length; i += 100) {
@@ -280,6 +292,7 @@ type StatusData = { status: string; phone: string | null; error: string | null; 
  * a gym that is not linked is asked to connect (the Link WhatsApp dialog); without it the state is only read.
  */
 export async function connectorStatus(orgId: string, opts: { start?: boolean; gymName?: string } = {}): Promise<ConnectorStatus> {
+  if (builtInLink(await connectorSite(orgId))) return embeddedStatus(orgId, { start: opts.start });
   const d = await gymFetch<StatusData>(orgId, "/api/v1/whatsapp/status", { method: "GET", timeout: 10_000, gymName: opts.gymName });
   const base = { number: d.phone?.replace(/\D/g, "") || undefined, sentToday: d.today?.sent ?? 0, cap: d.limits?.perDay, queued: d.queued ?? 0, error: d.error };
   switch (d.status) {
@@ -302,11 +315,13 @@ export async function connectorStatus(orgId: string, opts: { start?: boolean; gy
 }
 
 /** Where the app looks for the connector (shown in the Link WhatsApp dialog). */
-export const connectorAddress = (site: ConnectorSite = envSite()) => site.url || (isLocal() ? "(not entered yet)" : "(WA_CONNECTOR_URL not set)");
+export const connectorAddress = (site: ConnectorSite = envSite()) => site.url || (isLocal() ? "this computer (built into FITRON)" : "(WA_CONNECTOR_URL not set)");
 
 /** "Unlink": the connector logs the phone out and forgets its login. Errors are ignored; the app forgets the link either way. */
 export async function connectorLogout(orgId: string) {
-  if (await connectorReady(orgId)) return;
+  const site = await connectorSite(orgId);
+  if (builtInLink(site)) return embeddedLogout(orgId);
+  if (providerReady("connector", null, site)) return;
   try {
     await gymFetch(orgId, "/api/v1/whatsapp/disconnect", { method: "POST", body: { logout: true }, timeout: 10_000 });
   } catch {
@@ -331,7 +346,7 @@ export async function providerStatus(mode: WaMode, orgId: string, cloud?: CloudC
     }
     const st = await connectorStatus(orgId);
     if (st.state === "ready") return { ok: true, text: `Linked to ${st.number ? "+" + st.number : "the gym phone"}. ${st.sentToday ?? 0} of ${st.cap ?? 500} sent today${st.queued ? `, ${st.queued} waiting` : ""}.`, number: st.number };
-    if (st.state === "reconnecting") return { ok: false, text: "WhatsApp is reconnecting on the connector. Messages queue meanwhile." };
+    if (st.state === "reconnecting") return { ok: false, text: builtInLink(site!) ? "WhatsApp is reconnecting. Messages wait on this computer meanwhile." : "WhatsApp is reconnecting on the connector. Messages queue meanwhile." };
     if (st.error) return { ok: false, text: `Not linked: ${st.error}` };
     return { ok: false, text: `Not linked yet (${st.state}). Press Link WhatsApp and scan the QR from WhatsApp › Linked devices on the gym phone.`, qr: st.qr };
   } catch (e) {

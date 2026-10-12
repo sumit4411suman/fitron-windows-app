@@ -26,7 +26,7 @@ import { Dialog } from "@/components/dialog";
 import { ConfirmButton } from "@/components/confirm-button";
 import { PaperPlaneTiltIcon, PlugsIcon, QrCodeIcon, WhatsappLogoIcon } from "@phosphor-icons/react/dist/ssr";
 import { fmtClock, fmtDate, fmtShort, fmtStamp, fmtTime } from "@/lib/format";
-import { connectorAddress, connectorSite, HOSTED_NEEDS_CONNECTOR, providerReady } from "@/lib/integrations/whatsapp";
+import { builtInLink, connectorAddress, connectorSite, HOSTED_NEEDS_CONNECTOR, providerReady } from "@/lib/integrations/whatsapp";
 import { connectorSiteInfo } from "@/lib/services/wa-connector-store";
 import { getAccessRules } from "@/lib/services/attendance";
 import { JOBS, LOCAL_JOBS, recentRuns } from "@/lib/services/jobs";
@@ -355,7 +355,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
                 <Select name="mode" key={wa.mode} defaultValue={wa.mode}>
                   <option value="demo">Not linked: save messages, send nothing</option>
                   <option value="cloud">WhatsApp Business (official, Meta){local ? ": needs the internet" : ""}</option>
-                  <option value="connector">Linked gym phone (connector){local ? ": needs the internet" : ""}</option>
+                  <option value="connector">{local ? "Linked gym phone (like WhatsApp Web): needs the internet" : "Linked gym phone (connector)"}</option>
                 </Select>
               </Field>
               {closed && (
@@ -412,11 +412,11 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
             )}
           </Panel>
           {local && (
-            <Panel title="Connector" id="connector" small>
+            <Panel title="Connector (optional)" id="connector" small>
               <form action={saveConnectorAction} className="flex flex-col gap-3 text-sm" data-testid="wa-connector">
                 <p className="m-0 text-[13px] text-muted">
-                  For a linked gym phone: where the FITRON WhatsApp connector runs (another always-on computer or server, see <code>whatsapp-connector/README.md</code>) and its key. The key stays sealed on this computer and is not shown again. Messages go from this
-                  computer to the connector, then through WhatsApp&apos;s servers to members.
+                  {siteInfo ? "A linked gym phone sends through this connector. Press Forget it to have FITRON link the phone on this computer instead." : "Not needed: FITRON links the gym phone on this computer by itself (Link WhatsApp, then scan the QR code), and keeps the link encrypted in its data folder."}{" "}
+                  Only if you run the FITRON WhatsApp connector on another always-on computer or server (see <code>whatsapp-connector/README.md</code>), enter its address and key here. The key stays sealed on this computer and is not shown again.
                 </p>
                 <Field label="Connector address" className="max-w-[420px]">
                   <Input name="url" type="url" defaultValue={siteInfo?.url ?? ""} placeholder="http://192.168.1.20:3000" maxLength={200} />
@@ -439,7 +439,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
           )}
           {sp.link === "1" && u.has("whatsapp") && (
             <Dialog kicker="WhatsApp" title="Link WhatsApp" close="/settings?tab=wa" width={600}>
-              {meta ? <CloudConnect appId={meta.appId} configId={meta.configId} version={meta.version} /> : <LinkWatcher envMessage={providerReady("connector", null, site ?? undefined)} address={connectorAddress(site ?? undefined)} hosted={providerReady("connector", null, site ?? undefined) === HOSTED_NEEDS_CONNECTOR} onAComputer={local} />}
+              {meta ? <CloudConnect appId={meta.appId} configId={meta.configId} version={meta.version} /> : <LinkWatcher envMessage={providerReady("connector", null, site ?? undefined)} address={connectorAddress(site ?? undefined)} hosted={providerReady("connector", null, site ?? undefined) === HOSTED_NEEDS_CONNECTOR} onAComputer={local} builtIn={!!site && builtInLink(site)} />}
               <div className="flex flex-wrap justify-end gap-2.5">
                 <LinkButton href="/settings?tab=wa" scroll={false}>
                   Cancel

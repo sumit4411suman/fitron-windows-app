@@ -10,7 +10,8 @@ import { BRANCH_COOKIE, requireUser } from "@/lib/auth/current";
 import { reasonInput } from "@/lib/validation/billing";
 import { deleteBranch, putSetting, saveBranch, setBranchActive, saveGymProfile, saveTax as saveTaxSettings } from "@/lib/services/settings";
 import { forgetConnectorAddress, getWaSettings, saveConnectorAddress, sendTest, setLinked } from "@/lib/services/whatsapp";
-import { connectorAddress, connectorLogout, connectorProblem, connectorReady, connectorSite, connectorStatus, providerReady } from "@/lib/integrations/whatsapp";
+import { builtInLink, connectorAddress, connectorLogout, connectorProblem, connectorReady, connectorSite, connectorStatus, providerReady } from "@/lib/integrations/whatsapp";
+import { embeddedLogout, hasLink } from "@/lib/integrations/whatsapp/embedded";
 import { connectCloud, disconnectCloud, resubmitTemplates } from "@/lib/services/wa-connect";
 import { removeGymLogo, setGymLogo } from "@/lib/services/gym-logo";
 import { aiInput, autopayInput, branchInput, cookieNoticeInput, gymInput, numberingInput, privacyNoticeInput, privacyOfficerInput, reminderInput, reportsInput, taxInput } from "@/lib/validation/settings";
@@ -300,17 +301,28 @@ export async function unlinkAction() {
 /** FITRON for Windows: where the gym's WhatsApp connector is (Settings › WhatsApp › Connector). */
 export async function saveConnectorAction(fd: FormData) {
   const u = await waUser();
+  // A phone linked through one place (the connector, or FITRON itself) is not linked through the other: switching
+  // away from a linked phone unlinks it, and messages are saved but not sent until the gym presses Link WhatsApp again.
+  const relink = async () => {
+    if ((await getWaSettings(u.orgId)).mode === "connector") await setLinked(u, null, "demo");
+  };
   if (fd.get("forget")) {
     await forgetConnectorAddress(u);
+    await relink();
     revalidatePath("/", "layout");
-    waBack({ msg: "Connector address forgotten. Messages are saved and not sent until it is entered again." });
+    waBack({ msg: "Connector forgotten. To send from the gym phone, press Link WhatsApp: FITRON links it on this computer." });
   }
+  const wasBuiltIn = builtInLink(await connectorSite(u.orgId)) && hasLink(u.orgId);
   let address: string;
   try {
     address = await saveConnectorAddress(u, { url: String(fd.get("url") ?? ""), key: String(fd.get("key") ?? "") });
   } catch (e) {
     if (e instanceof UserError) waBack({ error: e.message });
     throw e;
+  }
+  if (wasBuiltIn) {
+    await embeddedLogout(u.orgId);
+    await relink();
   }
   revalidatePath("/", "layout");
   waBack({ msg: `Connector saved: ${address}. Press Link WhatsApp to scan the QR code.` });
@@ -368,19 +380,24 @@ export async function linkStatusAction(): Promise<LinkStatus> {
     const number = (st.number ?? "").replace(/\D/g, "");
     const s = await getWaSettings(u.orgId);
     if (!(s.mode === "connector" && s.linked?.number === number)) {
-      let host = "gym PC";
-      try {
-        host = new URL(connectorAddress(site)).host || host;
-      } catch {
-        // Keep the fallback.
+      let device = "FITRON for Windows · this computer";
+      if (!builtInLink(site)) {
+        let host = "gym PC";
+        try {
+          host = new URL(connectorAddress(site)).host || host;
+        } catch {
+          // Keep the fallback.
+        }
+        device = `Fitron connector · ${host}`;
       }
-      await setLinked(u, { number, device: `Fitron connector · ${host}`, at: new Date().toISOString() }, "connector");
+      await setLinked(u, { number, device, at: new Date().toISOString() }, "connector");
       revalidatePath("/", "layout");
     }
     return { state: "ready", number, text: "Linked." };
   }
   if (st.qr) return { state: "qr", qr: st.qr, text: "" };
-  return { state: "waiting", text: st.state === "reconnecting" ? "Reconnecting to WhatsApp…" : "Connector is starting WhatsApp… the QR code appears here in a moment.", problem: st.error ?? undefined };
+  const starting = builtInLink(site) ? "Starting WhatsApp… the QR code appears here in a moment." : "Connector is starting WhatsApp… the QR code appears here in a moment.";
+  return { state: "waiting", text: st.state === "reconnecting" ? "Reconnecting to WhatsApp…" : starting, problem: st.error ?? undefined };
 }
 
 /** Settings › Help & support › Raise a ticket: saved, audited and emailed to support. */

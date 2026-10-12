@@ -11,8 +11,11 @@ type View = LinkStatus["state"] | "checking";
  * The Link WhatsApp dialog's live part: asks the server for the connector's state every few seconds
  * (a bit slower while it is offline), shows the QR code, and moves on once the phone is linked.
  */
-/** `onAComputer`: FITRON for Windows, which does not run the connector itself; the gym enters where one runs (Settings › WhatsApp › Connector). */
-export function LinkWatcher({ envMessage, address, hosted, onAComputer = false }: { envMessage: string | null; address: string; hosted: boolean; onAComputer?: boolean }) {
+/**
+ * `onAComputer`: FITRON for Windows. `builtIn`: there, with no connector entered, FITRON links the phone itself
+ * (src/lib/integrations/whatsapp/embedded.ts), so there is no connector to wait for.
+ */
+export function LinkWatcher({ envMessage, address, hosted, onAComputer = false, builtIn = false }: { envMessage: string | null; address: string; hosted: boolean; onAComputer?: boolean; builtIn?: boolean }) {
   const router = useRouter();
   const [st, setSt] = useState<{ state: View; qr?: string; text: string; problem?: string }>({ state: "checking", text: "" });
   useEffect(() => {
@@ -23,7 +26,7 @@ export function LinkWatcher({ envMessage, address, hosted, onAComputer = false }
       try {
         next = await linkStatusAction();
       } catch {
-        next = { state: "offline", text: "Waiting for the connector… checking every few seconds" };
+        next = { state: "offline", text: builtIn ? "FITRON did not answer. Trying again in a few seconds…" : "Waiting for the connector… checking every few seconds" };
       }
       if (stop) return;
       if (next.state === "ready") {
@@ -39,7 +42,7 @@ export function LinkWatcher({ envMessage, address, hosted, onAComputer = false }
       stop = true;
       clearTimeout(timer);
     };
-  }, [router]);
+  }, [router, builtIn]);
 
   if (hosted)
     return (
@@ -57,6 +60,17 @@ export function LinkWatcher({ envMessage, address, hosted, onAComputer = false }
             </li>
             <li>Open this dialog again and scan the QR from WhatsApp › Linked devices on the gym phone.</li>
           </ol>
+        </div>
+      </div>
+    );
+  if (st.state === "offline" && builtIn)
+    return (
+      <div className="flex items-start gap-3.5">
+        <PlugsIcon size={30} weight="duotone" className="flex-none text-accent" />
+        <div className="flex flex-col gap-1.5 text-sm leading-relaxed">
+          <strong>WhatsApp could not start on this computer</strong>
+          <span>Linking needs the internet. Check this computer&apos;s connection; FITRON tries again every few seconds and the QR code appears here by itself.</span>
+          {st.text && <span className="text-xs text-alert">{st.text}</span>}
         </div>
       </div>
     );
@@ -115,7 +129,7 @@ export function LinkWatcher({ envMessage, address, hosted, onAComputer = false }
     <div className="flex flex-col gap-2 py-6 text-sm">
       <div className="flex items-center gap-2.5">
         <CircleNotchIcon size={22} weight="duotone" className="animate-spin text-accent" />
-        {st.state === "checking" ? "Connecting to the connector…" : st.text || "Connector is starting WhatsApp…"}
+        {st.state === "checking" ? (builtIn ? "Starting WhatsApp…" : "Connecting to the connector…") : st.text || (builtIn ? "Starting WhatsApp…" : "Connector is starting WhatsApp…")}
       </div>
       {st.problem && <span className="text-xs text-alert">{st.problem}</span>}
     </div>

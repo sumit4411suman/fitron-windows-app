@@ -4,7 +4,8 @@ import { db } from "@/lib/db";
 import { isLocal } from "@/lib/runtime/edition";
 import { makeGym, pick } from "@/test/db";
 import { LOCAL_ONLY_SETTINGS } from "@/lib/sync/entities";
-import { connectorReady, connectorSite, LOCAL_NEEDS_CONNECTOR, sendWhatsApp } from "@/lib/integrations/whatsapp";
+import { builtInLink, connectorReady, connectorSite, sendWhatsApp } from "@/lib/integrations/whatsapp";
+import { NOT_LINKED_HERE } from "@/lib/integrations/whatsapp/embedded";
 import { forgetConnectorAddress, saveConnectorAddress } from "./whatsapp";
 import { CONNECTOR_KEY, getConnectorGym, removeConnectorGym, saveConnectorGym } from "./wa-connector-store";
 
@@ -40,8 +41,12 @@ describe.skipIf(!isLocal())("the WhatsApp connector's address on FITRON for Wind
   });
   afterAll(() => new Promise<void>((r) => server.close(() => r())));
 
-  it("says what to do until an address is entered", async () => {
-    expect(await connectorReady(gym.org.id)).toBe(LOCAL_NEEDS_CONNECTOR);
+  it("uses the link built into FITRON until an address is entered", async () => {
+    expect(await connectorReady(gym.org.id)).toBeNull();
+    expect(builtInLink(await connectorSite(gym.org.id))).toBe(true);
+    // No phone is linked here: nothing is kept to send, and the message says what to do.
+    expect(await sendWhatsApp("connector", { orgId: gym.org.id, localId: "local-0", to: "919876500001", body: "Hello" })).toEqual({ status: "Failed", error: NOT_LINKED_HERE });
+    expect(seen).toEqual([]);
   });
 
   it("refuses an address it cannot use, and a missing or implausible key", async () => {
@@ -86,9 +91,10 @@ describe.skipIf(!isLocal())("the WhatsApp connector's address on FITRON for Wind
     expect(await getConnectorGym(gym.org.id)).toBeNull();
   });
 
-  it("Forget it: back to saving messages, and nothing is left of the key", async () => {
+  it("Forget it: back to the link built into FITRON, and nothing is left of the key", async () => {
     await forgetConnectorAddress(admin);
-    expect(await connectorReady(gym.org.id)).toBe(LOCAL_NEEDS_CONNECTOR);
+    expect(await connectorReady(gym.org.id)).toBeNull();
+    expect(builtInLink(await connectorSite(gym.org.id))).toBe(true);
     expect(await db.setting.count({ where: { orgId: gym.org.id, key: CONNECTOR_KEY } })).toBe(0);
   });
 });

@@ -87,7 +87,7 @@ describe.skipIf(!hasDb)("Fitron AI without a model (database)", () => {
   it("says what it can do, and that drafting an invoice needs the model", async () => {
     expect(await say("What can you do?")).toContain("Read and explain");
     const t = await say("Create an invoice for Dues Member for 2 PT sessions");
-    expect(t).toContain("needs the AI model");
+    expect(t).toContain("needs Fitron AI's full answers");
     expect(t).toContain("Invoices › New invoice");
     expect(await db.aiProposal.count({ where: { userId: admin.id, kind: "INVOICE" } })).toBe(0);
   });
