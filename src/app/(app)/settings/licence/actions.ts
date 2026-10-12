@@ -8,6 +8,7 @@ import { audit } from "@/lib/services/audit";
 import { collectThisPurchase, importThisLicence, markThisPurchaseOpened, thisBuyLink } from "@/lib/licence";
 import { isLocal } from "@/lib/runtime/edition";
 import { openInBrowser } from "@/lib/runtime/open-in-browser";
+import { log } from "@/lib/log";
 
 const back = (p: Record<string, string>): never => redirect(`/settings/licence?${new URLSearchParams(p)}`);
 
@@ -43,7 +44,10 @@ export async function openBuyAction(): Promise<{ opened: boolean; url: string | 
   const url = thisBuyLink();
   if (!url) return { opened: false, url: null };
   markThisPurchaseOpened();
-  return { opened: await openInBrowser(url), url };
+  const opened = await openInBrowser(url);
+  // In logs\server.log, for support: whether the browser was started (never the address, which holds the claim).
+  log.info("licence.buy_open", { opened });
+  return { opened, url };
 }
 
 /** Asks fitron.in for the licence bought there, and installs it once paid. Called while the page waits, and by Check now. */
