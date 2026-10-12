@@ -4,7 +4,7 @@ import { defaultDataRoot } from "@/lib/runtime/paths";
 import { todayIso } from "@/lib/services/time";
 import { UserError } from "@/lib/services/errors";
 import { licenceWritable } from "./licence";
-import { importLicence, readLicence } from "./store";
+import { currentLicenceText, importLicence, readLicence } from "./store";
 import { buyLink, collectPurchase, markOpened, waitingPurchase } from "./purchase";
 
 export { TRIAL_DAYS, type LicenceStatus } from "./licence";
@@ -42,3 +42,6 @@ export function licensedPlanKey(): string | null {
   const s = thisLicence().status;
   return s.kind === "active" || s.kind === "grace" || (s.kind === "ended" && s.licence) ? s.licence!.plan : null;
 }
+
+/** The licence fitron.in answers Fitron AI's questions for (src/lib/integrations/ai): a current one, on Windows only. */
+export const relayLicence = (now = new Date()) => (gymAccountingOnly() ? currentLicenceText(defaultDataRoot(), todayIso(now)) : null);

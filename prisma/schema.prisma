@@ -1877,3 +1877,18 @@ model WindowsLicenceOrder {
 
   @@index([installationId, status])
 }
+
+/// Fitron AI for FITRON for Windows, answered through fitron.in (src/lib/services/windows-ai.ts): how much each licence
+/// used each day, to keep to its daily allowance. Counts only, never a question or an answer.
+model WindowsAiUsage {
+  id           String   @id @default(cuid())
+  licenceId    String
+  /// The Indian calendar day (YYYY-MM-DD)
+  day          String
+  requests     Int      @default(0)
+  inputTokens  Int      @default(0)
+  outputTokens Int      @default(0)
+  updatedAt    DateTime @updatedAt @db.Timestamptz
+
+  @@unique([licenceId, day])
+}
