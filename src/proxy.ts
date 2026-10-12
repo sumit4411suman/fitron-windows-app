@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { buildCsp, cspHeaderName, cspMode, type CspTier } from "@/lib/csp";
 import { isGuardedPath, isNotInLocal, isOnlineOnlyAuthPath } from "@/lib/public-paths";
 import { isLoopbackHost } from "@/lib/runtime/loopback";
+import { readDamage } from "@/lib/runtime/local-damage-marker";
 
 // Runs before every page. Two jobs:
 //  1. Optimistic check only: send visitors without a session cookie to sign-in when they ask for a console page or a
@@ -20,6 +21,10 @@ export function proxy(req: NextRequest) {
     if (isOnlineOnlyAuthPath(pathname)) return NextResponse.redirect(new URL("/login", req.url));
     // The website's contact page (an error screen's "Contact support") becomes the console's own Help & support.
     if (isNotInLocal(pathname)) return pathname.startsWith("/api/") ? new NextResponse("Not part of FITRON for Windows.", { status: 404 }) : NextResponse.redirect(new URL(pathname === "/contact" ? "/settings?tab=help" : "/dashboard", req.url));
+  }
+  // Local Edition with a damaged database (src/lib/runtime/local-damage.ts): every page is Recovery until a backup is in.
+  if (process.env.FITRON_EDITION === "local" && pathname !== "/recovery" && readDamage()) {
+    return pathname.startsWith("/api/") ? new NextResponse("FITRON's database is damaged. Open FITRON to restore a backup.", { status: 503 }) : NextResponse.redirect(new URL("/recovery", req.url));
   }
   const guarded = isGuardedPath(pathname);
   if (guarded && !req.cookies.has("fitron_session")) {
@@ -45,5 +50,5 @@ export const config = {
   // Everything except what has nothing to protect or needs no policy: Next.js and the public pages' own files, robots and
   // sitemap, and the machine routes (health check, webhooks, job runner, door devices, the AI Trainer's APIs, error and
   // violation reports). They are public: src/lib/public-paths.ts, kept equal to this list by proxy.test.ts.
-  matcher: ["/((?!_next/|site/|trainer/|auth/|iclock/|api/webhooks/|api/jobs/|api/trainer/|api/coach|api/gym-demo|api/assistant|api/health|api/local/shell/|api/analytics-config|api/client-error|api/csp-report|robots.txt|sitemap.xml|manifest.webmanifest|favicon.ico|fitron-mark.png|fitron-mark-v2.png|fitron-mark-light-v2.png|fitron-logo.png|fitron-logo-v2.png).*)"],
+  matcher: ["/((?!_next/|site/|trainer/|auth/|iclock/|api/webhooks/|api/jobs/|api/trainer/|api/coach|api/gym-demo|api/assistant|api/health|api/local/shell/|api/sync/|api/analytics-config|api/client-error|api/csp-report|robots.txt|sitemap.xml|manifest.webmanifest|favicon.ico|fitron-mark.png|fitron-mark-v2.png|fitron-mark-light-v2.png|fitron-logo.png|fitron-logo-v2.png).*)"],
 };

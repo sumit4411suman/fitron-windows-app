@@ -34,6 +34,7 @@ the loop. What that means in practice, piece by piece, and what checks it.
 | Guessing | Per account: 5 wrong passwords in 15 minutes lock the account, unknown emails included. Per address: 30 a minute on one shared computer. | `src/lib/auth/lockout.ts` |
 | Forgotten owner password | The recovery key shown once at setup (100 bits, stored as an Argon2id hash); using it signs the owner out everywhere, ends a lockout, is audited and replaces the key. | `src/lib/services/local-setup.ts` |
 | Two-step sign-in | TOTP, offline; secrets sealed with BIOMETRIC_KEY. | `src/lib/services/two-step.ts` |
+| WhatsApp connector key | The master key a gym enters under Settings › WhatsApp › Connector is sealed with BIOMETRIC_KEY, never shown again, left out of the audit entry, backups and cloud sync (`whatsapp_connector` is a computer-only setting). The address must be http(s) with nothing but host, port and path. | `src/lib/services/wa-connector-store.ts`, `wa-connector-local.db.test.ts` |
 | Authorization | Every page and every server action calls `requirePermission(...)` for the signed-in user's role; branch scope is applied in the services. | `src/lib/auth/permissions.ts`, `src/lib/auth/current.ts` |
 | Input validation | Every form and action input is parsed with a zod schema before any service runs; amounts are whole paise; the database refuses deletes of financial rows. | `src/lib/validation/*`, the services' tests |
 | Online sign-in | Google, emailed links and codes, and fitron.in sign-up are not offered and their routes redirect. | `src/proxy.ts` |
@@ -52,6 +53,18 @@ the loop. What that means in practice, piece by piece, and what checks it.
 Not encrypted at rest: `fitron.db` itself. Anyone who can read the Windows user's files can read it (and would equally
 read a backup). Encrypting the database (SQLCipher with a DPAPI-held key) is possible later; it is not in 1.0.
 
+## Cloud sync (when a gym links the computer to fitron.in)
+
+| Concern | Behaviour | Where, checked by |
+| --- | --- | --- |
+| Who may link | The gym's Super Admin on fitron.in, with password and two-step code, and the same lockout as the sign-in page. Only a Super Admin on the computer can start it. | `src/lib/sync/server.ts` (`owner`), `server.db.test.ts` |
+| The computer's credential | A 256-bit device token, shown to nobody: fitron.in keeps its SHA-256, the computer keeps it sealed with the installation's key. Every request carries it; fitron.in finds the gym from it, never from the request. Unlinking (either side) stops it at the next request; so does the linking person losing Super Admin. | `authDevice`, `server.db.test.ts` |
+| Tenant isolation | A change naming another gym's record, or a new record naming another gym, is refused and written to the gym's audit log. | `server.db.test.ts` |
+| No direct database access | The computer has no database credentials for fitron.in and never connects to PostgreSQL: it sends changes over HTTPS and fitron.in checks and stores each one (types, whole paise, what a money record may change, closed months, balances). | `checkWrite`, `codec.ts` |
+| Replays | Every upload carries a change id; one already applied is answered from the record, never applied again. | `SyncApplied`, `e2e/sync/sync.spec.ts` |
+| What never syncs | Passwords, two-step secrets, sessions, recovery keys, WhatsApp keys, this computer's own settings. | `entities.ts` (`omit`, `LOCAL_ONLY_SETTINGS`), `codec.test.ts` |
+| Transport | HTTPS to fitron.in only (plain HTTP to 127.0.0.1 for tests). Every connection is in `src/lib/integrations/sync/` (the egress rule). | `cloudUrl`, `egress.test.ts` |
+
 ## Audit logging
 
 Every financial and administrative action writes an entry in the audit log inside the same transaction, hash-chained
@@ -64,10 +77,13 @@ handling), with nothing about the gym in it.
 
 - Updates are signed with FITRON's update key and verified before anything is installed; a signature must name the
   version it was made for (UPDATES.md).
-- The program and the installer are built ready for Authenticode signing: `src-tauri/tauri.sign.conf.json` adds the
-  signing settings (a certificate thumbprint, or a `signCommand` for a hardware or cloud key, and a timestamp
-  server) to a release build. Until FITRON has its certificate, builds are unsigned and SmartScreen warns on first
-  run; FITRON never asks a customer to turn SmartScreen or any Windows protection off. Phase 25 finishes this.
+- The program, its Node.js runtime, the installer and the uninstaller are signed with FITRON's Authenticode
+  certificate in a release build (`.github/workflows/desktop-release.yml`, RELEASE.md): `src-tauri/tauri.sign.conf.json`
+  runs `scripts/desktop/fitron-sign.cmd` for every file (SHA-256, RFC 3161 timestamp), and
+  `npm run desktop:signature -- --require` fails the release unless Windows reports every file as signed by FITRON,
+  valid and timestamped. Windows then shows FITRON as the verified publisher. A release is never built unsigned (the
+  workflow stops without the certificate); development builds are unsigned and the check says so. FITRON never asks a
+  customer to turn SmartScreen or any Windows protection off.
 
 ## What leaves the computer
 

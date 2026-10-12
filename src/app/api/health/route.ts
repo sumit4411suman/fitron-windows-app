@@ -14,6 +14,8 @@ export async function GET() {
     const { localStopping } = await import("@/lib/runtime/local-shutdown");
     const start = localStartState();
     if (localStopping()) return Response.json({ ok: false, ...body, error: "Stopping" }, { status: 503 });
+    // A damaged database: the window opens on Recovery (/recovery), never on the books.
+    if (start?.damaged) return Response.json({ ok: true, ...body, recovery: true });
     if (!start?.ready) {
       // `detail` is the sentence the shell shows the desk when the database could not be updated.
       return Response.json({ ok: false, ...body, error: start?.error ? "Database migration failed" : "Starting", ...(start?.error ? { detail: start.error } : {}) }, { status: 503 });

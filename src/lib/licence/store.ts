@@ -3,6 +3,7 @@ import path from "node:path";
 import { readLocalSecrets } from "@/lib/runtime/local-secrets";
 import { FITRON_LICENCE_KEYS } from "./keys";
 import { licenceStatus, verifyLicence, type Licence, type LicenceStatus, type TrustedKey } from "./licence";
+import { todayIso } from "@/lib/services/time";
 
 // The licence of this installation, kept in its data folder beside the database:
 //   licence.fitronlicence   the file FITRON sent, as imported
@@ -29,10 +30,15 @@ function writeAtomic(file: string, text: string) {
 
 export type Installation = { installationId: string; installedOn: string };
 
-/** This computer's installation id and installation day; before secrets.json exists, a stand-in from today. */
+/**
+ * This computer's installation id and installation day; before secrets.json exists, a stand-in from today. The day is
+ * the Indian calendar day of the installation, the same calendar as `today`: a computer set up after midnight in India
+ * (still the day before in UTC) starts its trial on that day, not the day before.
+ */
 export function installation(root: string, today: string): Installation {
   const s = readLocalSecrets(root);
-  return { installationId: s.installationId ?? "", installedOn: typeof s.createdAt === "string" ? s.createdAt.slice(0, 10) : today };
+  const at = typeof s.createdAt === "string" ? new Date(s.createdAt) : null;
+  return { installationId: s.installationId ?? "", installedOn: at && !Number.isNaN(at.getTime()) ? todayIso(at) : today };
 }
 
 /** The day to judge the licence by: today, or the latest day already seen if the computer's clock now says earlier. */

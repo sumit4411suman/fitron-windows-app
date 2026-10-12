@@ -1,6 +1,7 @@
 import { PrismaClient as LocalPrismaClient } from "@/generated/prisma-local/client";
 import type { PrismaClient } from "@/generated/prisma/client";
 import { sqliteAdapter } from "./sqlite-adapter";
+import { inSlices, NOT_SLICED } from "./sqlite-in";
 
 // The Local Edition's Prisma client, shaped like the Cloud one.
 //
@@ -109,8 +110,9 @@ export function makeLocalClient(url: string): PrismaClient {
           // (a lead converted into a member, a plan created with its prices), so encode every write's args.
           const a = WRITE_OPS.has(operation) || (model && LIST_MODELS.has(model)) ? encodeLists(args) : args;
           if (operation === "createMany" && isPlain(a) && a.skipDuplicates) return decodeLists(await createManySkippingDuplicates(a, query));
-          const result = await query(a);
-          return decodeLists(result);
+          // A list longer than SQLite takes in one statement is read in slices (sqlite-in.ts).
+          const sliced = await inSlices(operation, a, query);
+          return decodeLists(sliced === NOT_SLICED ? await query(a) : sliced);
         } catch (e) {
           throw triggerError(e) ?? e;
         }

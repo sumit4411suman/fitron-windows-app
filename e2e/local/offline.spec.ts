@@ -164,20 +164,36 @@ test("online-only features say they need the internet or WhatsApp, and never pre
     await expect(page.locator('select[name="mode"]')).toHaveValue(value);
   };
 
-  // The linked phone's connector is not running: the reminder is not sent, and the desk is told why, in red.
+  // A linked phone needs the WhatsApp connector, and none is entered yet: the reminder is not sent, the desk is told
+  // why, in red, and nothing tries to reach a connector.
   await mode("connector");
   await page.goto(`/members/${memberId}`);
   await page.getByRole("button", { name: "Send payment reminder" }).click();
-  await expect(page.getByText(/^Payment reminder not sent: Nothing is answering at http:\/\/127\.0\.0\.1:3131/)).toBeVisible();
+  await expect(page.getByText(/^Payment reminder not sent: WhatsApp through a linked phone needs the FITRON WhatsApp connector/)).toBeVisible();
 
   // The daily jobs that send on WhatsApp wait for it, without failing or alerting; the rest run.
   await page.goto("/settings/jobs");
   await page.getByRole("button", { name: /Run (today's jobs now|anything left for today)/ }).click();
   await expect(page.getByText("Waiting, and tried again within the hour:")).toBeVisible();
-  await expect(page.getByText(/^Send messages held by quiet hours: Nothing is answering at/)).toBeVisible();
+  await expect(page.getByText(/^Send messages held by quiet hours: WhatsApp through a linked phone needs the FITRON WhatsApp connector/)).toBeVisible();
   // Linking WhatsApp sends nothing on its own: the reminders wait for "Send automatic messages" (Phase 12).
   await expect(page.getByText(/note automatic messages are off: nothing sent/).first()).toBeVisible();
   await expect(page.getByText("Churn risk for every member")).toBeVisible();
+
+  // Settings › WhatsApp › Connector: once an address is entered, FITRON goes there, and says when nothing answers.
+  await page.goto("/settings?tab=wa");
+  const connector = page.getByTestId("wa-connector");
+  await connector.getByLabel("Connector address").fill("http://127.0.0.1:9");
+  await connector.getByLabel("Connector key").fill("a-master-key-for-the-connector-0001");
+  await connector.getByRole("button", { name: "Save connector" }).click();
+  await expect(page.getByText(/^Connector saved: http:\/\/127\.0\.0\.1:9\./)).toBeVisible();
+  await expect(page.getByTestId("wa-connector").getByLabel("Connector key")).toHaveValue("");
+  await page.goto(`/members/${memberId}`);
+  await page.getByRole("button", { name: "Send payment reminder" }).click();
+  await expect(page.getByText(/^Payment reminder not sent: Nothing is answering at http:\/\/127\.0\.0\.1:9/)).toBeVisible();
+  await page.goto("/settings?tab=wa");
+  await page.getByTestId("wa-connector").getByRole("button", { name: "Forget it" }).click();
+  await expect(page.getByText(/^Connector address forgotten/)).toBeVisible();
 
   // Not linked (demo): the reminder is saved, and called "not sent".
   await mode("demo");
@@ -193,7 +209,7 @@ test("online-only features say they need the internet or WhatsApp, and never pre
   // Settings › Integrations & AI: every online service, each sending nothing on a fresh installation.
   await page.goto("/settings?tab=int");
   await expect(page.getByText("Online services on this computer")).toBeVisible();
-  for (const key of ["whatsapp", "email", "ai", "autopay", "licence", "updates"]) await expect(page.getByTestId(`online-${key}`), key).toContainText("Sends: Nothing.");
+  for (const key of ["whatsapp", "email", "ai", "autopay", "licence", "sync", "updates"]) await expect(page.getByTestId(`online-${key}`), key).toContainText("Sends: Nothing.");
 
   // Fitron AI answers from the books on this computer.
   const ai = await page.evaluate(async () => {

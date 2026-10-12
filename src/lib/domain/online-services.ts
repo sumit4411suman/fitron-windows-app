@@ -9,6 +9,8 @@ export type OnlineServicesState = {
   autopay: { mode: "demo" | "live"; keysSet: boolean };
   licence: { configured: boolean };
   updates: { configured: boolean };
+  /** Cloud sync: the fitron.in address this computer is linked to, or "" when it is not. */
+  sync: { linkedTo: string };
 };
 
 export type OnlineServiceRow = { key: string; name: string; on: boolean; state: string; sends: string };
@@ -56,6 +58,15 @@ export function onlineServices(s: OnlineServicesState): OnlineServiceRow[] {
       on: s.licence.configured,
       state: s.licence.configured ? "Checks online now and then" : "Not set up",
       sends: s.licence.configured ? "The licence id, this installation's id, the edition, plan and app version. Never gym data." : "Nothing.",
+    },
+    {
+      key: "sync",
+      name: "Cloud sync",
+      on: !!s.sync.linkedTo,
+      state: s.sync.linkedTo ? `Linked to ${s.sync.linkedTo}` : "Not linked",
+      sends: s.sync.linkedTo
+        ? `Every record of the gym (members, memberships, invoices, payments, expenses, attendance, saved WhatsApp messages, the gym's settings, and staff accounts without their passwords or sign-in codes), with the documents, photos and logo they point to, to your own gym on ${s.sync.linkedTo}, and changes made there come back. Over HTTPS, to nowhere else.`
+        : "Nothing. The books stay on this computer.",
     },
     {
       key: "updates",

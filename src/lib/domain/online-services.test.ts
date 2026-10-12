@@ -8,12 +8,13 @@ const fresh: OnlineServicesState = {
   autopay: { mode: "demo", keysSet: false },
   licence: { configured: false },
   updates: { configured: false },
+  sync: { linkedTo: "" },
 };
 
 describe("online services on FITRON for Windows", () => {
   it("sends nothing anywhere on a fresh installation", () => {
     const rows = onlineServices(fresh);
-    expect(rows.map((r) => r.key)).toEqual(["whatsapp", "email", "ai", "autopay", "licence", "updates"]);
+    expect(rows.map((r) => r.key)).toEqual(["whatsapp", "email", "ai", "autopay", "licence", "sync", "updates"]);
     expect(rows.filter((r) => r.on)).toEqual([]);
     expect(rows.find((r) => r.key === "whatsapp")!.sends).toBe("Nothing. Messages are saved on this computer.");
   });
@@ -26,6 +27,7 @@ describe("online services on FITRON for Windows", () => {
       autopay: { mode: "live", keysSet: true },
       licence: { configured: true },
       updates: { configured: true },
+      sync: { linkedTo: "fitron.in" },
     });
     const by = Object.fromEntries(rows.map((r) => [r.key, r]));
     expect(rows.every((r) => r.on)).toBe(true);
@@ -34,6 +36,8 @@ describe("online services on FITRON for Windows", () => {
     expect(by.ai!.sends).toContain("Anthropic's Claude (USA)");
     expect(by.autopay!.sends).toContain("Not the member's name or phone");
     expect(by.licence!.sends).toContain("Never gym data");
+    expect(by.sync).toMatchObject({ state: "Linked to fitron.in" });
+    expect(by.sync!.sends).toContain("without their passwords");
   });
 
   it("does not count a key FITRON set as the gym's choice: Claude stays off until ticked", () => {

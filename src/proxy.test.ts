@@ -14,7 +14,7 @@ const visit = (p: string, cookie = false) => proxy(new NextRequest(`http://local
 afterEach(() => vi.unstubAllEnvs());
 
 describe("which paths are open to visitors who are not signed in", () => {
-  it.each(["/", "/signin", "/login", "/signup", "/trainer", "/contact", "/privacy", "/terms", "/refund", "/c/power-haus-gym/cm1abc", "/verify-email", "/forgot-password", "/reset-password", "/auth/google/callback", "/api/health", "/api/local/shell/backup", "/api/coach/demo", "/api/gym-demo/ai", "/api/client-error", "/api/csp-report", "/api/webhooks/razorpay", "/api/trainer/auth/link", "/api/coach", "/api/assistant", "/iclock/cdata", "/site/fitron-3d.js", "/robots.txt", "/sitemap.xml", "/manifest.webmanifest", "/ai-personal-trainer", "/guides", "/guides/gst-on-gym-membership", ...GYM_PAGES.map((p) => p.path)])(
+  it.each(["/", "/signin", "/login", "/signup", "/trainer", "/contact", "/privacy", "/terms", "/refund", "/c/power-haus-gym/cm1abc", "/verify-email", "/forgot-password", "/reset-password", "/auth/google/callback", "/api/health", "/api/local/shell/backup", "/api/sync/push", "/api/coach/demo", "/api/gym-demo/ai", "/api/client-error", "/api/csp-report", "/api/webhooks/razorpay", "/api/trainer/auth/link", "/api/coach", "/api/assistant", "/iclock/cdata", "/site/fitron-3d.js", "/robots.txt", "/sitemap.xml", "/manifest.webmanifest", "/ai-personal-trainer", "/guides", "/guides/gst-on-gym-membership", ...GYM_PAGES.map((p) => p.path)])(
     "%s",
     (p) => expect(isPublicPath(p)).toBe(true),
   );
@@ -37,7 +37,7 @@ describe("which paths are open to visitors who are not signed in", () => {
 
 describe("which paths the proxy runs for", () => {
   it.each(["/", "/login", "/signin", "/trainer", "/contact", "/gym-accounting", "/dashboard", "/members/abc", "/api/ai/chat"])("runs for %s, which needs a policy or a session", (p) => expect(runs(p)).toBe(true));
-  it.each(["/_next/static/x.js", "/site/index.html", "/trainer/sw.js", "/trainer/support.js", "/iclock/cdata", "/api/webhooks/razorpay", "/api/jobs/run", "/api/health", "/api/local/shell/backup", "/api/trainer/auth/link", "/api/coach", "/api/coach/demo", "/api/gym-demo/ai", "/api/assistant", "/api/csp-report", "/api/client-error", "/auth/google/start", "/robots.txt", "/sitemap.xml", "/favicon.ico"])(
+  it.each(["/_next/static/x.js", "/site/index.html", "/trainer/sw.js", "/trainer/support.js", "/iclock/cdata", "/api/webhooks/razorpay", "/api/jobs/run", "/api/health", "/api/local/shell/backup", "/api/sync/push", "/api/trainer/auth/link", "/api/coach", "/api/coach/demo", "/api/gym-demo/ai", "/api/assistant", "/api/csp-report", "/api/client-error", "/auth/google/start", "/robots.txt", "/sitemap.xml", "/favicon.ico"])(
     "does not run for %s",
     (p) => expect(runs(p)).toBe(false),
   );

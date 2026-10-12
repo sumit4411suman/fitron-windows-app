@@ -72,6 +72,7 @@ describe("only the integrations talk to the internet", () => {
       "https://www.facebook.com": "the origin Meta's Connect window answers from (cloud-connect.tsx)",
       "https://web.facebook.com": "the origin Meta's Connect window answers from (cloud-connect.tsx)",
       "https://youtube.com/shorts/": "the FITRON team console's AI Trainer content; closed on FITRON for Windows",
+      "http://192.168.1.20": "the example in the WhatsApp Connector address field's placeholder (Settings › WhatsApp on Windows); nothing opens or loads it",
     };
     const consoleDirs = ["app/(app)", "app/login", "app/setup", "app/recover", "app/onboarding", "components"].map((d) => path.join(SRC, d) + path.sep);
     const found = all

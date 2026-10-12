@@ -25,6 +25,7 @@ import { audit } from "./audit";
 import { allowDelete, revokeDelete } from "./db-guard";
 import { UserError, isUniqueViolation } from "./errors";
 import { notify } from "./notifications";
+import { requireResync } from "@/lib/sync/server";
 
 // Settings › Backup. A backup is one JSON file with every table of one gym, kept in the app's
 // private storage (<orgId>/backups/<id>.json) and listed in the Backup table. Restoring replaces
@@ -329,6 +330,8 @@ async function applyRestore(u: CurrentUser, source: RestoreSource, now: Date, dr
       async (tx) => {
         // The database refuses to delete money records unless told why; a restore replaces them with the file's.
         await allowDelete(tx, "restore");
+        // The change log cannot describe a wholesale replacement: every linked computer downloads the gym again.
+        await requireResync(tx, orgId);
         const ctx: Ctx = {
           orgId,
           memberIds: (await tx.member.findMany({ where: { orgId }, select: { id: true } })).map((m) => m.id),

@@ -13,7 +13,7 @@ import { gymLogoUrl } from "@/components/gym-logo";
 import { LogoForm } from "./logo-form";
 import { TaxForm } from "./tax-form";
 import { SETTINGS_TABS, SectionTabs } from "@/components/section-tabs";
-import { makeTrainerCode, saveAi, saveAutopay, saveGym, saveCookieNotice, saveNumbering, savePrivacyNotice, savePrivacyOfficer, saveReminders, saveReports, resubmitTemplatesAction, saveWhatsApp, sendTestAction, testAutopayConnection, unlinkAction } from "./actions";
+import { makeTrainerCode, saveAi, saveAutopay, saveGym, saveCookieNotice, saveNumbering, savePrivacyNotice, savePrivacyOfficer, saveReminders, saveReports, resubmitTemplatesAction, saveConnectorAction, saveWhatsApp, sendTestAction, testAutopayConnection, unlinkAction } from "./actions";
 import { getReminderSettings, getWaSettings, listTemplates } from "@/lib/services/whatsapp";
 import { reminderSchedule } from "@/lib/services/reminders";
 import { monthlyPlOn } from "@/lib/services/pl-email";
@@ -26,7 +26,8 @@ import { Dialog } from "@/components/dialog";
 import { ConfirmButton } from "@/components/confirm-button";
 import { PaperPlaneTiltIcon, PlugsIcon, QrCodeIcon, WhatsappLogoIcon } from "@phosphor-icons/react/dist/ssr";
 import { fmtClock, fmtDate, fmtShort, fmtStamp, fmtTime } from "@/lib/format";
-import { connectorAddress, HOSTED_NEEDS_CONNECTOR, providerReady } from "@/lib/integrations/whatsapp";
+import { connectorAddress, connectorSite, HOSTED_NEEDS_CONNECTOR, providerReady } from "@/lib/integrations/whatsapp";
+import { connectorSiteInfo } from "@/lib/services/wa-connector-store";
 import { getAccessRules } from "@/lib/services/attendance";
 import { JOBS, LOCAL_JOBS, recentRuns } from "@/lib/services/jobs";
 import { gymAccountingOnly, isLocal } from "@/lib/runtime/edition";
@@ -45,6 +46,7 @@ import { BranchesTab } from "./branches-tab";
 import { PARTNER_SHARE } from "@/lib/domain/pricing";
 import { aiReady } from "@/lib/integrations/ai";
 import { onlineServices } from "@/lib/domain/online-services";
+import { readState as readSyncState } from "@/lib/sync/client";
 import { licenceServer } from "@/lib/integrations/license";
 import { updateFeed } from "@/lib/integrations/updates";
 import { razorpayReady } from "@/lib/integrations/razorpay";
@@ -96,6 +98,9 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const waStatus = tab === "wa" || tab === "help" ? await providerStatus(wa.mode, u.orgId, cloudCreds) : { ok: false, text: "" };
   const templateStatus = tab === "wa" && wa.mode === "cloud" && cloudInfo ? await cloudTemplateStatus(u.orgId) : null;
   const meta = signupConfig();
+  // Where the connector is: the server's settings on fitron.in, the gym's own on FITRON for Windows (Connector panel).
+  const site = tab === "wa" ? await connectorSite(u.orgId) : null;
+  const siteInfo = tab === "wa" && local ? await connectorSiteInfo(u.orgId) : null;
   const reminders =
     tab === "reminders"
       ? await (async () => {
@@ -127,7 +132,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
   const integrations =
     tab === "int"
       ? await (async () => {
-          const [ai, devices, monthlyPl] = await Promise.all([getAiSettings(u.orgId), db.device.findMany({ where: { orgId: u.orgId, approved: true, branchId: { in: u.branchIds } }, orderBy: { createdAt: "asc" } }), monthlyPlOn(u.orgId)]);
+          const [ai, devices, monthlyPl, syncState] = await Promise.all([getAiSettings(u.orgId), db.device.findMany({ where: { orgId: u.orgId, approved: true, branchId: { in: u.branchIds } }, orderBy: { createdAt: "asc" } }), monthlyPlOn(u.orgId), local ? readSyncState() : null]);
           const now = new Date();
           const branchName = (id: string | null) => branches.find((b) => b.id === id)?.name ?? "—";
           return {
@@ -139,6 +144,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
               autopay: { mode: autopay.mode, keysSet: !razorpayReady() },
               licence: { configured: !!licenceServer() },
               updates: { configured: !!updateFeed() },
+              sync: { linkedTo: syncState?.linked ? new URL(syncState.cloudUrl).host : "" },
             }),
             devices: devices.map((d) => ({ id: d.id, name: `${d.name ?? d.serial} · ${branchName(d.branchId)}`, status: deviceStatusText(d, now) })),
             // No poster on FITRON for Windows: members' phones cannot reach the computer (attendance/page.tsx).
@@ -405,9 +411,35 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
               </form>
             )}
           </Panel>
+          {local && (
+            <Panel title="Connector" id="connector" small>
+              <form action={saveConnectorAction} className="flex flex-col gap-3 text-sm" data-testid="wa-connector">
+                <p className="m-0 text-[13px] text-muted">
+                  For a linked gym phone: where the FITRON WhatsApp connector runs (another always-on computer or server, see <code>whatsapp-connector/README.md</code>) and its key. The key stays sealed on this computer and is not shown again. Messages go from this
+                  computer to the connector, then through WhatsApp&apos;s servers to members.
+                </p>
+                <Field label="Connector address" className="max-w-[420px]">
+                  <Input name="url" type="url" defaultValue={siteInfo?.url ?? ""} placeholder="http://192.168.1.20:3000" maxLength={200} />
+                </Field>
+                <Field label="Connector key" className="max-w-[420px]">
+                  <Input name="key" type="password" autoComplete="off" maxLength={200} placeholder={siteInfo ? "Saved. Type a new key to change it" : "The connector's WA_CONNECTOR_MASTER_KEY"} />
+                </Field>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="primary" disabled={!u.has("whatsapp")}>
+                    Save connector
+                  </Button>
+                  {siteInfo && (
+                    <Button name="forget" value="1" disabled={!u.has("whatsapp")}>
+                      Forget it
+                    </Button>
+                  )}
+                </div>
+              </form>
+            </Panel>
+          )}
           {sp.link === "1" && u.has("whatsapp") && (
             <Dialog kicker="WhatsApp" title="Link WhatsApp" close="/settings?tab=wa" width={600}>
-              {meta ? <CloudConnect appId={meta.appId} configId={meta.configId} version={meta.version} /> : <LinkWatcher envMessage={providerReady("connector")} address={connectorAddress()} hosted={providerReady("connector") === HOSTED_NEEDS_CONNECTOR} onAComputer={closed} />}
+              {meta ? <CloudConnect appId={meta.appId} configId={meta.configId} version={meta.version} /> : <LinkWatcher envMessage={providerReady("connector", null, site ?? undefined)} address={connectorAddress(site ?? undefined)} hosted={providerReady("connector", null, site ?? undefined) === HOSTED_NEEDS_CONNECTOR} onAComputer={local} />}
               <div className="flex flex-wrap justify-end gap-2.5">
                 <LinkButton href="/settings?tab=wa" scroll={false}>
                   Cancel

@@ -17,7 +17,7 @@ import { UserError, isUniqueViolation } from "./errors";
 // its Argon2id hash is kept (Setting "localRecovery"). Staff passwords are reset by a Super Admin from Staff, as in the
 // Cloud Edition.
 
-const RECOVERY_SETTING = "localRecovery";
+export const RECOVERY_SETTING = "localRecovery";
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O or 1/I to misread
 
 /** A recovery key: 20 characters in five groups, about 100 bits. "K7QF-…". */
@@ -47,6 +47,9 @@ export function takeRecoveryKey(userId: string, now = Date.now()): string | null
 }
 
 const normaliseKey = (k: string) => k.toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/** The stored form of a recovery key (Setting "localRecovery"): only its hash. */
+export const recoveryValue = async (key: string) => ({ hash: await hashPassword(normaliseKey(key)), createdAt: new Date().toISOString() });
 
 /** True until the first gym exists on this computer. Only ever true in the Local Edition. */
 // `client` is the app's database; a test passes a client of its own fresh file.

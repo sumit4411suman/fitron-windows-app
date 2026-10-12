@@ -141,21 +141,21 @@ describe.skipIf(!local)("updating FITRON with a gym's data in it", () => {
     expect(before.integrity).toBe("ok");
 
     // 1.1.0: a new column and a new table. A safety backup first, then every record as it was.
-    mkdirSync(path.join(migrations, "0002_v1_1_0"));
-    writeFileSync(path.join(migrations, "0002_v1_1_0", "migration.sql"), `ALTER TABLE "Member" ADD COLUMN "nickname" TEXT;\nCREATE TABLE "_v1_1_0" ("id" INTEGER PRIMARY KEY);\n`);
+    mkdirSync(path.join(migrations, "9001_v1_1_0"));
+    writeFileSync(path.join(migrations, "9001_v1_1_0", "migration.sql"), `ALTER TABLE "Member" ADD COLUMN "nickname" TEXT;\nCREATE TABLE "_v1_1_0" ("id" INTEGER PRIMARY KEY);\n`);
     const second = await startLocalEdition();
-    expect(second).toMatchObject({ ready: true, applied: ["0002_v1_1_0"] });
+    expect(second).toMatchObject({ ready: true, applied: ["9001_v1_1_0"] });
     expect(second.safetyBackup).toBeTruthy();
     const after110 = counts();
     expect(after110).toEqual({ ...before, tables: ["_v1_1_0"] });
-    expect(applied()).toEqual([...BASE, "0002_v1_1_0"]);
+    expect(applied()).toEqual([...BASE, "9001_v1_1_0"]);
     const [backup110] = await safety();
     expect(backup110.manifest?.migrations).toEqual(BASE);
 
     // 1.2.0: a migration that fails half-way. Nothing of it stays, the database is put back from the safety backup,
     // and FITRON does not serve until the previous version is installed again.
-    mkdirSync(path.join(migrations, "0003_v1_2_0"));
-    writeFileSync(path.join(migrations, "0003_v1_2_0", "migration.sql"), `CREATE TABLE "_v1_2_0" ("id" INTEGER PRIMARY KEY);\nINSERT INTO "_no_such_table" ("id") VALUES (1);\n`);
+    mkdirSync(path.join(migrations, "9002_v1_2_0"));
+    writeFileSync(path.join(migrations, "9002_v1_2_0", "migration.sql"), `CREATE TABLE "_v1_2_0" ("id" INTEGER PRIMARY KEY);\nINSERT INTO "_no_such_table" ("id") VALUES (1);\n`);
     const third = await startLocalEdition();
     expect(third.ready).toBe(false);
     expect(third.rolledBack).toBe(true);
@@ -163,13 +163,13 @@ describe.skipIf(!local)("updating FITRON with a gym's data in it", () => {
     expect(third.error).toMatch(/put back as it was before/);
     expect(third.error).toContain(third.safetyBackup);
     expect(counts()).toEqual(after110);
-    expect(applied()).toEqual([...BASE, "0002_v1_1_0"]);
-    expect((await safety()).map((b) => b.manifest?.migrations)).toEqual([BASE, [...BASE, "0002_v1_1_0"]].reverse());
+    expect(applied()).toEqual([...BASE, "9001_v1_1_0"]);
+    expect((await safety()).map((b) => b.manifest?.migrations)).toEqual([BASE, [...BASE, "9001_v1_1_0"]].reverse());
 
     // 1.2.1 fixes the migration: it applies, on the data put back.
-    writeFileSync(path.join(migrations, "0003_v1_2_0", "migration.sql"), `CREATE TABLE "_v1_2_0" ("id" INTEGER PRIMARY KEY);\n`);
+    writeFileSync(path.join(migrations, "9002_v1_2_0", "migration.sql"), `CREATE TABLE "_v1_2_0" ("id" INTEGER PRIMARY KEY);\n`);
     const fourth = await startLocalEdition();
-    expect(fourth).toMatchObject({ ready: true, applied: ["0003_v1_2_0"] });
+    expect(fourth).toMatchObject({ ready: true, applied: ["9002_v1_2_0"] });
     expect(counts()).toEqual({ ...after110, tables: ["_v1_1_0", "_v1_2_0"] });
   }, 120_000);
 });

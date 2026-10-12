@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import type { CurrentUser } from "@/lib/auth/current";
 import type { Prisma } from "@/generated/prisma/client";
-import { invoiceState, invoiceTotals, lineTaxes, type InvoiceLine } from "@/lib/domain/billing";
+import { invoiceState, invoiceTotals, lineTaxes, ROUND_OFF_PAISE, type InvoiceLine } from "@/lib/domain/billing";
 import { addDays, membershipEndDate } from "@/lib/domain/dates";
 import type { InvoiceInput, PaymentInput, SellInput } from "@/lib/validation/billing";
 import { audit } from "./audit";
@@ -317,6 +317,24 @@ export async function cancelInvoice(u: CurrentUser, invoiceId: string, reason: s
   });
 }
 
+/**
+ * The issued invoices in the user's branches that still have something owed: nothing paid yet on a non-zero total, or
+ * at least a rupee left (balanceDue's round-off rule, in SQL). Read in one query, so screens that list what is owed
+ * load only those invoices, not every invoice the gym ever issued. invoiceState stays the rule for each row.
+ */
+export async function openInvoiceIds(u: CurrentUser): Promise<string[]> {
+  const rows = await db.$queryRaw<{ id: string; branchId: string }[]>`
+    SELECT t."id", t."branchId" FROM (
+      SELECT i."id", i."branchId", i."total",
+        COALESCE((SELECT SUM(p."amount") FROM "Payment" p WHERE p."invoiceId" = i."id" AND p."status" = 'SUCCESS'), 0) AS paid
+      FROM "Invoice" i
+      WHERE i."orgId" = ${u.orgId} AND i."status" = 'ISSUED'
+    ) t
+    WHERE (t.paid = 0 AND t."total" > 0) OR t."total" - t.paid >= ${ROUND_OFF_PAISE}`;
+  const branches = new Set(u.branchIds);
+  return rows.filter((r) => branches.has(r.branchId)).map((r) => r.id);
+}
+
 export type InvoiceRow = Awaited<ReturnType<typeof listInvoices>>["rows"][number];
 
 export async function listInvoices(u: CurrentUser, f: { q?: string; status?: string; memberId?: string; from?: string; to?: string; openOnly?: boolean }) {
@@ -325,7 +343,7 @@ export async function listInvoices(u: CurrentUser, f: { q?: string; status?: str
     where: {
       ...invoiceScope(u),
       ...(f.memberId ? { memberId: f.memberId } : {}),
-      ...(f.openOnly ? { status: "ISSUED" } : {}),
+      ...(f.openOnly ? { status: "ISSUED", id: { in: await openInvoiceIds(u) } } : {}),
       ...(f.from || f.to ? { date: { ...(f.from ? { gte: fromIso(f.from) } : {}), ...(f.to ? { lte: fromIso(f.to) } : {}) } } : {}),
       ...(q ? { OR: [{ number: ci(q) }, { member: { name: ci(q) } }, { member: { phone: { contains: q } } }] } : {}),
     },

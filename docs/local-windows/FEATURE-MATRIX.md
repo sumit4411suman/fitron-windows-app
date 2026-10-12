@@ -65,7 +65,7 @@ Classes:
 | Feature | Route | Class | Notes |
 | --- | --- | --- | --- |
 | Fitron AI (chat, tools over the books, drafted actions, daily brief, churn risk) | `/ai`, `/api/ai/chat` | LOCAL-SAFE without a model key / ONLINE-REQUIRED with one (done, Phase 11) | Without an Anthropic key (the Windows default) it answers from the books on the computer and nothing leaves it. With a key, a question and the figures needed go to Anthropic; offline it answers from the books and says so. Settings › Integrations & AI says which. Churn risk (`computeRisk`) is pure code, run by the daily jobs. |
-| WhatsApp: templates, send, automation rules, quiet hours, campaign | `/whatsapp`, `/whatsapp/send`, `/whatsapp/templates` | ONLINE-REQUIRED (done, Phase 11) | "Not linked" (demo) saves messages and every screen says "saved, not sent". Meta Cloud API checks the internet first. The phone connector (`whatsapp-connector/`, one deployment serving every gym, each gym linked by QR with its own key kept sealed in the gym's settings) is not shipped in the Windows app yet; upstream runs it on a gym PC with `install-windows.ps1` (Node.js), and its Settings wording still speaks of a hosted server. Results are worded by what really happened (OFFLINE.md). |
+| WhatsApp: templates, send, automation rules, quiet hours, campaign | `/whatsapp`, `/whatsapp/send`, `/whatsapp/templates` | ONLINE-REQUIRED (done, Phase 11) | "Not linked" (demo) saves messages and every screen says "saved, not sent". Meta Cloud API checks the internet first. The phone connector (`whatsapp-connector/`, one deployment serving every gym, each gym linked by QR with its own key kept sealed in the gym's settings) runs outside the Windows app, on another always-on computer or server (upstream's `install-windows.ps1` needs Node.js, which FITRON never asks a customer to install on the desk PC); the gym enters its address and master key under Settings › WhatsApp › Connector, the key sealed on the computer and never synced or shown again. Results are worded by what really happened (OFFLINE.md). |
 | Workouts & diet programs, progress logs, personal records | `/programs` and member profile | LOCAL-SAFE | `WorkoutPlan.days` / `DietPlan.meals` JSON, supported. |
 | Gym Partnership (AI Trainer linking, payouts) | `/partnership` | NOT-SUPPORTED-IN-LOCAL | Depends on the hosted AI Trainer service. |
 | Notifications (in-app) | `/notifications` | LOCAL-SAFE | |
@@ -76,6 +76,7 @@ Classes:
 | Feature | Route | Class | Notes |
 | --- | --- | --- | --- |
 | Plans & pricing categories | `/plans`, `/plans/new`, `/plans/[id]/edit` | NEEDS-ADAPTER | `features String[]` → JSON column. |
+| Cloud sync with fitron.in | `/settings/sync`, `/api/local/sync/status`; on fitron.in `/api/sync/*` | ONLINE-REQUIRED to sync, LOCAL-SAFE to work (done, S3 to S9) | Off until a Super Admin links the computer. Offline the desk works as usual and changes wait in the outbox; they go up and come down when the connection is back. Linked computers number from their own range and leave the daily jobs to fitron.in. SYNC.md, DEPLOY-SYNC.md. |
 | Staff: add, edit, reset password, deactivate | `/staff`, `/staff/new`, `/staff/[id]/edit` | LOCAL-SAFE | |
 | Roles & custom permissions | `/settings/roles` | LOCAL-SAFE | |
 | Settings › Gym profile, logo | `/settings`, `/settings/logo` | NEEDS-ADAPTER | Logo file storage adapter. |
@@ -128,6 +129,6 @@ Cloud schema; the Local schema does not carry them.
 
 Updates (Phase 18, UPDATES.md): the desktop program checks FITRON's download address, verifies FITRON's signature, backs the data up, installs; the new version backs up again before migrating, checks the database, and puts it back if the update fails. Done.
 
-Each online service has its own folder under `src/lib/integrations/` (email, whatsapp, razorpay, ai, license, updates),
+Each online service has its own folder under `src/lib/integrations/` (email, whatsapp, razorpay, ai, license, updates, sync),
 and nothing else in the app opens a connection. Every one is off on a fresh installation; Settings › Integrations & AI
 lists them with what each sends. Details, consent rules and tests: ONLINE-SERVICES.md.

@@ -36,6 +36,9 @@ jobs:
       # The end-to-end tests drive a real browser against the production build just made (see e2e/ and the README).
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e
+      # Cloud sync end to end: fitron.in and FITRON for Windows as two servers from the same build, on a database of
+      # their own (scripts/e2e-sync.ts), with a connection that is cut and dropped on purpose.
+      - run: npm run e2e:sync
       - name: Keep the failure report
         if: failure()
         uses: actions/upload-artifact@v4
