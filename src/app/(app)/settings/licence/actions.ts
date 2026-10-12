@@ -5,8 +5,10 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/auth/current";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/services/audit";
-import { collectThisPurchase, importThisLicence, markThisPurchaseOpened } from "@/lib/licence";
+import { collectThisPurchase, importThisLicence, markThisPurchaseOpened, thisBuyLink } from "@/lib/licence";
 import { isLocal } from "@/lib/runtime/edition";
+import { openInBrowser } from "@/lib/runtime/open-in-browser";
+import { log } from "@/lib/log";
 
 const back = (p: Record<string, string>): never => redirect(`/settings/licence?${new URLSearchParams(p)}`);
 
@@ -31,10 +33,34 @@ export async function importLicenceAction(fd: FormData) {
   }
 }
 
-/** Settings › Licence › Buy or renew: the owner opened fitron.in's buy page; FITRON now looks for the licence. */
-export async function markBuyOpenedAction() {
+/**
+ * Settings › Licence › Buy or renew: the buy page's address, which the page then opens. In FITRON for Windows the shell
+ * shows it in FITRON's own payment window (src-tauri/src/main.rs), so the gym pays without leaving FITRON. FITRON then
+ * looks for the licence.
+ */
+export async function startBuyAction(): Promise<{ url: string | null }> {
   await requirePermission("settings.manage", { allowBlocked: true });
-  if (isLocal()) markThisPurchaseOpened();
+  if (!isLocal()) return { url: null };
+  const url = thisBuyLink();
+  if (url) markThisPurchaseOpened();
+  return { url };
+}
+
+/**
+ * "Pay in my browser instead": opens fitron.in's buy page in the computer's own browser (from FITRON's server, on
+ * this computer), and FITRON then looks for the licence. `opened` false: the browser could not be started, and the page
+ * shows the address to copy instead.
+ */
+export async function openBuyAction(): Promise<{ opened: boolean; url: string | null }> {
+  await requirePermission("settings.manage", { allowBlocked: true });
+  if (!isLocal()) return { opened: false, url: null };
+  const url = thisBuyLink();
+  if (!url) return { opened: false, url: null };
+  markThisPurchaseOpened();
+  const opened = await openInBrowser(url);
+  // In logs\server.log, for support: whether the browser was started (never the address, which holds the claim).
+  log.info("licence.buy_open", { opened });
+  return { opened, url };
 }
 
 /** Asks fitron.in for the licence bought there, and installs it once paid. Called while the page waits, and by Check now. */

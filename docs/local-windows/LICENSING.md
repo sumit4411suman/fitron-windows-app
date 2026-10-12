@@ -12,13 +12,17 @@ key, so it works with no internet at all, and nothing about the gym leaves the c
 | The licence's end date has passed | Grace: everything keeps working for the licence's grace days (15 by default) while the renewal arrives. |
 | After the trial, or after the grace days | Nothing new can be added (members, sales, invoices, imports). Every record stays readable: dues can be collected, reports run, data exported and backed up. Importing a licence brings everything back at once. |
 
-A gym buys or renews in Settings › Licence › **Buy or renew on fitron.in**:
+A gym buys or renews in Settings › Licence › **Buy or renew**, without leaving FITRON:
 
-1. The button opens `fitron.in/windows/buy` in the computer's browser, with this computer's installation id and a
-   one-time claim FITRON makes for this purchase (kept in the data folder as `licence-purchase.json`).
+1. The button opens `fitron.in/windows/buy` in FITRON's own payment window (the shell recognises the page,
+   `nav::is_buy_page`, and shows it in a window that may go to https pages only, for Razorpay and the bank, and has no
+   access to the computer), with this computer's installation id and a one-time claim FITRON makes for this purchase
+   (kept in the data folder as `licence-purchase.json`). **Pay in my browser instead** opens the same page in the
+   computer's browser, and **Show the address to copy** is there as a last resort.
 2. The owner picks a plan (the same Starter, Professional and Enterprise as fitron.in, at the same prices, GST included,
    monthly or yearly), types the gym's name for the licence and an email for the receipt (a phone and GSTIN if they
-   like), and pays with Razorpay into FITRON's account.
+   like), may apply a coupon code (fitron.in's coupons for gym plans; a 100% coupon needs no payment), and pays with
+   Razorpay into FITRON's account (UPI, card or net banking).
 3. fitron.in signs a licence for that one computer, until the end of the period paid for. A renewal starts the day after
    the current licence ends.
 4. FITRON collects it with the claim and installs it: every few seconds while Settings › Licence is open, and every hour
