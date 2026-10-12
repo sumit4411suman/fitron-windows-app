@@ -12,6 +12,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod downloads;
 mod nav;
 mod secrets;
 mod server;
@@ -81,8 +82,11 @@ fn launch(app: &AppHandle, data_root: PathBuf) -> Result<Launch, String> {
 /// What FITRON's window and any window it opens may show (src/nav.rs). A website opens in the computer's browser.
 fn guarded<'a>(builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>, app: &AppHandle, port: Arc<AtomicU16>) -> WebviewWindowBuilder<'a, tauri::Wry, AppHandle> {
     let (nav_app, nav_port) = (app.clone(), port.clone());
-    let (new_app, new_port) = (app.clone(), port);
+    let (new_app, new_port) = (app.clone(), port.clone());
+    let (dl_app, dl_port) = (app.clone(), port);
     builder
+        // An invoice PDF, an export or a backup: saved in Downloads, then said (src/downloads.rs).
+        .on_download(move |_, event| downloads::handle(&dl_app, dl_port.load(Ordering::SeqCst), event))
         .on_navigation(move |url| match nav::decide(url, nav_port.load(Ordering::SeqCst)) {
             Go::Inside => true,
             Go::Outside => {
