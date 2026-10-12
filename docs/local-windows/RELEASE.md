@@ -140,7 +140,8 @@ A draft reaches no gym. On a computer with the certificate instead of the workfl
 set FITRON_SIGN_THUMBPRINT=<certificate thumbprint>
 set FITRON_UPDATE_URL=…  FITRON_UPDATE_PUBKEY=…  TAURI_SIGNING_PRIVATE_KEY=…  TAURI_SIGNING_PRIVATE_KEY_PASSWORD=…
 npm run desktop:bundle
-npx tauri build --config src-tauri/tauri.bundle.conf.json --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.sign.conf.json
+echo {"plugins":{"updater":{"pubkey":"%FITRON_UPDATE_PUBKEY%"}}} > updater-key.conf.json
+npx tauri build --config src-tauri/tauri.bundle.conf.json --config src-tauri/tauri.release.conf.json --config updater-key.conf.json --config src-tauri/tauri.sign.conf.json
 npm run desktop:installer
 npm run desktop:signature -- --require
 npm run desktop:release -- --notes-file RELEASE-NOTES.md

@@ -62,7 +62,8 @@ set FITRON_UPDATE_PUBKEY=<the public key>
 set TAURI_SIGNING_PRIVATE_KEY=<the private key, or its path>
 set TAURI_SIGNING_PRIVATE_KEY_PASSWORD=<its password>
 npm run desktop:bundle
-npx tauri build --config src-tauri/tauri.bundle.conf.json --config src-tauri/tauri.release.conf.json
+echo {"plugins":{"updater":{"pubkey":"%FITRON_UPDATE_PUBKEY%"}}} > updater-key.conf.json
+npx tauri build --config src-tauri/tauri.bundle.conf.json --config src-tauri/tauri.release.conf.json --config updater-key.conf.json
 npm run desktop:release -- --notes-file RELEASE-NOTES.md
 ```
 
