@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/auth/current";
 import { db } from "@/lib/db";
 import { audit } from "@/lib/services/audit";
-import { importThisLicence } from "@/lib/licence";
+import { collectThisPurchase, importThisLicence, markThisPurchaseOpened } from "@/lib/licence";
 import { isLocal } from "@/lib/runtime/edition";
 
 const back = (p: Record<string, string>): never => redirect(`/settings/licence?${new URLSearchParams(p)}`);
@@ -29,4 +29,22 @@ export async function importLicenceAction(fd: FormData) {
     revalidatePath("/", "layout");
     back({ imported: r.licence.licenceId });
   }
+}
+
+/** Settings › Licence › Buy or renew: the owner opened fitron.in's buy page; FITRON now looks for the licence. */
+export async function markBuyOpenedAction() {
+  await requirePermission("settings.manage", { allowBlocked: true });
+  if (isLocal()) markThisPurchaseOpened();
+}
+
+/** Asks fitron.in for the licence bought there, and installs it once paid. Called while the page waits, and by Check now. */
+export async function collectLicenceAction() {
+  const u = await requirePermission("settings.manage", { allowBlocked: true });
+  if (!isLocal()) return { state: "problem" as const, message: "Licences are for FITRON for Windows." };
+  const r = await collectThisPurchase();
+  if (r.state === "installed") {
+    await db.$transaction((tx) => audit(tx, { orgId: u.orgId, userId: u.id, action: "licence.bought", entity: "Licence", entityId: r.licenceId, after: { licenceId: r.licenceId } }));
+    revalidatePath("/", "layout");
+  }
+  return r;
 }

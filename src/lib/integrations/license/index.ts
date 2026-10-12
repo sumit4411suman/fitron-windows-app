@@ -1,5 +1,6 @@
 import "server-only";
 import { askService, serviceUrl, type ServiceAnswer } from "../service";
+import { cloudUrl } from "../sync";
 
 // The FITRON licence server, for FITRON for Windows. Licences are signed files checked on the computer with no internet
 // (src/lib/licence, LICENSING.md), so nothing calls this today. If FITRON ever adds online renewal, this file fixes what
@@ -40,4 +41,23 @@ export async function askLicenceServer<T = unknown>(action: "check" | "activate"
   const base = licenceServer();
   if (!base) return { ok: false, reason: "not-configured", message: "The licence server is not set up for this installation." };
   return askService<T>("Checking the FITRON licence", `${base}/v1/licences/${action}`, { method: "POST", body, then: "FITRON keeps working with the licence it already has. It checks again when the computer is online." });
+}
+
+// ── A licence bought on fitron.in (src/lib/licence/purchase.ts) ──
+
+const CLAIM = /^[A-Za-z0-9_-]{32,128}$/;
+
+export type BoughtLicence = { status: "paid"; licence: string } | { status: "preparing" | "pending" | "none" };
+
+/**
+ * Asks fitron.in for the licence this computer's owner bought there. Sends this installation's id and the one-time claim
+ * its Buy button made, and nothing else.
+ */
+export async function collectBoughtLicence(installationId: string, claim: string): Promise<ServiceAnswer<BoughtLicence>> {
+  if (!CODE.test(installationId) || !CLAIM.test(claim)) throw new Error("Not sent to fitron.in: the installation id or claim is not a short code.");
+  return askService<BoughtLicence>("Collecting the FITRON licence", `${cloudUrl()}/api/windows-licence/claim`, {
+    method: "POST",
+    body: { installationId, claim },
+    then: "FITRON collects it by itself when the computer is online.",
+  });
 }

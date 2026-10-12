@@ -4,9 +4,12 @@ import { Button, Card, Field, Notice, Textarea } from "@/components/ui";
 import { SettingsShell } from "@/components/section-tabs";
 import { fmtDate } from "@/lib/format";
 import { isLocal } from "@/lib/runtime/edition";
-import { thisLicence, TRIAL_DAYS, type LicenceStatus } from "@/lib/licence";
+import { thisBuyLink, thisLicence, TRIAL_DAYS, waitingForPurchase, type LicenceStatus } from "@/lib/licence";
+import { findPlan } from "@/lib/domain/pricing";
+import { WINDOWS_PLANS, windowsBranches } from "@/lib/domain/windows-licence";
 import { CopyButton } from "../copy-button";
 import { importLicenceAction } from "./actions";
+import { BuyLicence, type PlanPrice } from "./buy-licence";
 
 export const metadata = { title: "Licence · Fitron" };
 
@@ -25,15 +28,15 @@ const days = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
 function headline(s: LicenceStatus): { tone: "ok" | "alert" | "neutral"; text: string } {
   switch (s.kind) {
     case "trial":
-      return { tone: s.daysLeft <= 7 ? "alert" : "neutral", text: `Free trial: ${days(s.daysLeft)} left, until ${fmtDate(s.until)}. Everything works; import a licence from FITRON before then.` };
+      return { tone: s.daysLeft <= 7 ? "alert" : "neutral", text: `Free trial: ${days(s.daysLeft)} left, until ${fmtDate(s.until)}. Everything works; buy a licence before then.` };
     case "active":
       return { tone: s.daysLeft <= 30 ? "alert" : "ok", text: `Licensed to ${s.licence.licensee} until ${fmtDate(s.licence.expiresOn)}${s.daysLeft <= 30 ? `: renew within ${days(s.daysLeft)}` : ""}.` };
     case "grace":
       return { tone: "alert", text: `The licence ended on ${fmtDate(s.licence.expiresOn)}. Everything keeps working for ${days(s.daysLeft)}, until ${fmtDate(s.graceUntil)}, while the renewal arrives.` };
     case "ended":
-      return { tone: "alert", text: `${s.licence ? "The licence" : "The free trial"} has ended, so nothing new can be added. Every record stays readable: collect dues, run reports, export and back up as usual. Import a licence to carry on.` };
+      return { tone: "alert", text: `${s.licence ? "The licence" : "The free trial"} has ended, so nothing new can be added. Every record stays readable: collect dues, run reports, export and back up as usual. Buy or renew below to carry on.` };
     case "wrong-computer":
-      return { tone: "alert", text: `The licence on file is for another computer.${s.trial ? ` The free trial carries on for ${days(s.trial.daysLeft)}.` : ""} Send FITRON this computer's installation id for a licence made for it.` };
+      return { tone: "alert", text: `The licence on file is for another computer.${s.trial ? ` The free trial carries on for ${days(s.trial.daysLeft)}.` : ""} Buy one for this computer below, or send FITRON this computer's installation id.` };
   }
 }
 
@@ -46,6 +49,13 @@ export default async function LicencePage({ searchParams }: PageProps<"/settings
   const s = view.status;
   const h = headline(s);
   const l = "licence" in s ? s.licence : null;
+  const buyUrl = view.hasKey ? thisBuyLink() : null;
+  const plans: PlanPrice[] = WINDOWS_PLANS.map((key) => {
+    const p = findPlan(key)!;
+    const limit = "memberLimit" in p && p.memberLimit ? `Up to ${p.memberLimit} active members` : "Unlimited members";
+    const branches = windowsBranches(key);
+    return { key, name: p.name, monthly: p.price.MONTHLY, yearly: p.price.YEARLY, limit: `${limit} · ${branches} branch${branches === 1 ? "" : "es"}` };
+  });
   return (
     <SettingsShell u={u} current="/settings/licence">
       <div className="flex max-w-[720px] flex-col gap-[18px]">
@@ -69,11 +79,17 @@ export default async function LicencePage({ searchParams }: PageProps<"/settings
             </span>
           </div>
           <p className="m-0 mt-2 text-[13px] text-muted">
-            To get a licence, send FITRON support this installation id. FITRON sends back a licence file. A licence is checked on this computer: nothing is sent anywhere, and it works with no internet. A new installation has a {TRIAL_DAYS}-day free trial.
+            A licence is checked on this computer, so FITRON works with no internet once it is installed. A new installation has a {TRIAL_DAYS}-day free trial.
           </p>
         </Card>
 
-        <Card title="Import a licence">
+        {buyUrl && (
+          <Card title="Buy or renew">
+            <BuyLicence url={buyUrl} plans={plans} waitingAlready={waitingForPurchase()} />
+          </Card>
+        )}
+
+        <Card title="Import a licence file">
           <form action={importLicenceAction} className="flex flex-col gap-3.5">
             <Field label="Licence file (.fitronlicence)">
               <input type="file" name="file" accept=".fitronlicence,.txt" className="text-sm" aria-label="Licence file" />

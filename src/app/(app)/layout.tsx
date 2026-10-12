@@ -155,10 +155,10 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
 function licenceBanner(l: LicenceStatus) {
   const d = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
   const to = { cta: "Licence", href: "/settings/licence" };
-  if (l.kind === "trial" && l.daysLeft <= 7) return { alert: l.daysLeft <= 2, body: <>Free trial: <strong>{d(l.daysLeft)} left</strong> · ends {fmtDate(l.until)}. Import a licence from FITRON to keep adding records.</>, ...to };
-  if (l.kind === "active" && l.daysLeft <= 30) return { alert: l.daysLeft <= 7, body: <>Your FITRON licence ends in <strong>{d(l.daysLeft)}</strong> ({fmtDate(l.licence.expiresOn)}). Ask FITRON for the renewal.</>, ...to };
-  if (l.kind === "grace") return { alert: true, body: <>Your FITRON licence has ended. Everything keeps working until {fmtDate(l.graceUntil)}; import the renewal before then.</>, ...to };
-  if (l.kind === "ended") return { alert: true, body: <>{l.licence ? "Your FITRON licence" : "The free trial"} has ended: nothing new can be added. Your records stay readable, exportable and backed up.</>, ...to };
-  if (l.kind === "wrong-computer") return { alert: true, body: <>The licence on file is for another computer. Ask FITRON for one made for this computer.</>, ...to };
+  if (l.kind === "trial" && l.daysLeft <= 7) return { alert: l.daysLeft <= 2, body: <>Free trial: <strong>{d(l.daysLeft)} left</strong> · ends {fmtDate(l.until)}. Buy a licence in Settings › Licence to keep adding records.</>, ...to };
+  if (l.kind === "active" && l.daysLeft <= 30) return { alert: l.daysLeft <= 7, body: <>Your FITRON licence ends in <strong>{d(l.daysLeft)}</strong> ({fmtDate(l.licence.expiresOn)}). Renew it in Settings › Licence.</>, ...to };
+  if (l.kind === "grace") return { alert: true, body: <>Your FITRON licence has ended. Everything keeps working until {fmtDate(l.graceUntil)}; renew it before then.</>, ...to };
+  if (l.kind === "ended") return { alert: true, body: <>{l.licence ? "Your FITRON licence" : "The free trial"} has ended: nothing new can be added. Your records stay readable, exportable and backed up. Buy or renew in Settings › Licence.</>, ...to };
+  if (l.kind === "wrong-computer") return { alert: true, body: <>The licence on file is for another computer. Buy one for this computer in Settings › Licence.</>, ...to };
   return null;
 }

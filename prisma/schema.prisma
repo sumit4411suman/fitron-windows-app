@@ -1838,3 +1838,42 @@ model SyncConflict {
   @@index([orgId, resolvedAt])
   @@index([entity, entityId])
 }
+
+/// A FITRON for Windows licence bought on fitron.in (src/lib/services/windows-licence.ts, docs/local-windows/LICENSING.md).
+/// Kept on fitron.in only: the Windows computer never has an account here, only its installation id. Rows are never
+/// deleted (they are FITRON's sales records for tax). A paid order carries the signed licence the computer collects.
+model WindowsLicenceOrder {
+  id                String    @id @default(cuid())
+  /// The Windows installation the licence is for (Settings › Licence on that computer)
+  installationId    String
+  /// SHA-256 (hex) of the one-time claim the computer made when the owner pressed Buy: only that computer collects the licence
+  claimHash         String
+  /// starter | professional | enterprise
+  plan              String
+  /// MONTHLY | YEARLY
+  cycle             String
+  base              Int
+  gst               Int
+  total             Int
+  /// PENDING | PAID | FAILED
+  status            String    @default("PENDING")
+  /// Who the licence is for, as the buyer typed it (the gym or company name), and how to reach them about it
+  licensee          String
+  email             String
+  phone             String?
+  /// The buyer's GSTIN, for FITRON's tax invoice
+  gstin             String?
+  razorpayOrderId   String?   @unique
+  razorpayPaymentId String?   @unique
+  /// FITRON's tax invoice number (the same series as plan payments)
+  invoiceNo         String?   @unique
+  licenceId         String?   @unique
+  /// The signed licence (FITRON-LICENCE-1…), once issued
+  licenceText       String?
+  periodStart       DateTime? @db.Date
+  periodEnd         DateTime? @db.Date
+  createdAt         DateTime  @default(now()) @db.Timestamptz
+  paidAt            DateTime? @db.Timestamptz
+
+  @@index([installationId, status])
+}
