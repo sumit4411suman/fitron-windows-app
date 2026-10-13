@@ -113,6 +113,10 @@ export async function startLocalEdition(): Promise<LocalStartState> {
         .then((m) => m.resumeEmbeddedWhatsApp(root))
         .catch((e) => log.error("local.start.whatsapp_failed", e));
     }
+    // Door devices on the gym's network, when a Super Admin turned them on (Settings › Biometric & doors).
+    void import("@/lib/integrations/door-devices")
+      .then((m) => m.startDeviceNetworkFromSettings())
+      .catch((e) => log.error("local.start.door_devices_failed", e));
     log.info("local.start", { applied: state.applied.join(",") || null, safetyBackup: state.safetyBackup ?? null });
   } catch (e) {
     state.error = e instanceof Error ? e.message : String(e);

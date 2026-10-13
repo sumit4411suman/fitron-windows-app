@@ -4,8 +4,10 @@ import { log } from "@/lib/log";
 // FITRON for Windows: how the server stops when FITRON closes. The desktop shell (src-tauri) starts the server with
 // FITRON_SHELL=1 and keeps the other end of its standard input. Closing FITRON closes that pipe; so does the shell
 // ending any other way (a crash, Task Manager), since Windows closes a dead process's pipes. Either way the server then:
-//   1. stops its hourly timer, so no backup or daily job starts;
-//   2. waits a little for a backup or a job already running, which writes to a temporary file and renames it at the end;
+//   1. stops its hourly timer, so no backup or daily job starts, and stops answering door devices (they keep their
+//      punches and send them when FITRON opens again);
+//   2. waits a little for a backup or a job already running (a backup writes to a temporary file and renames it at the
+//      end), or a door-device sync;
 //   3. lets a WhatsApp message being sent through a phone linked in FITRON finish, and closes the link (not logged out);
 //   4. writes everything in the WAL into the database file (a TRUNCATE checkpoint), so fitron.db alone is complete;
 //   5. exits.
@@ -13,11 +15,18 @@ import { log } from "@/lib/log";
 // either saved with its receipt and journal or not at all. Signals are not used because Windows has none to send to a
 // program without a console.
 
-const g = globalThis as unknown as { fitronScheduler?: NodeJS.Timeout; fitronAutoBackupRunning?: boolean; fitronJobsRunning?: boolean; fitronStopping?: boolean; fitronWhatsApp?: Map<string, unknown> };
+const g = globalThis as unknown as {
+  fitronScheduler?: NodeJS.Timeout;
+  fitronAutoBackupRunning?: boolean;
+  fitronJobsRunning?: boolean;
+  fitronStopping?: boolean;
+  fitronWhatsApp?: Map<string, unknown>;
+  fitronDoorDevices?: { server: unknown; syncing: boolean };
+};
 
 export const SHUTDOWN_WAIT_MS = 8_000;
 
-const busy = () => !!(g.fitronAutoBackupRunning || g.fitronJobsRunning);
+const busy = () => !!(g.fitronAutoBackupRunning || g.fitronJobsRunning || g.fitronDoorDevices?.syncing);
 
 /** Moves every committed change from the WAL into the database file and empties the WAL. */
 export function checkpoint(file: string) {
@@ -36,9 +45,17 @@ export async function stopLocalServer(o: { database: string; waitMs?: number; ex
   const exit = o.exit ?? ((code: number) => process.exit(code));
   if (g.fitronScheduler) clearInterval(g.fitronScheduler);
   g.fitronScheduler = undefined;
+  if (g.fitronDoorDevices?.server) {
+    try {
+      const { stopDeviceNetwork } = await import("@/lib/integrations/door-devices");
+      await stopDeviceNetwork();
+    } catch (e) {
+      log.error("local.stop.door_devices_failed", e);
+    }
+  }
   const until = Date.now() + (o.waitMs ?? SHUTDOWN_WAIT_MS);
   while (busy() && Date.now() < until) await sleep(100);
-  if (busy()) log.warn("local.stop.busy", { backup: !!g.fitronAutoBackupRunning, jobs: !!g.fitronJobsRunning });
+  if (busy()) log.warn("local.stop.busy", { backup: !!g.fitronAutoBackupRunning, jobs: !!g.fitronJobsRunning, devices: !!g.fitronDoorDevices?.syncing });
   if (g.fitronWhatsApp?.size) {
     try {
       const { stopEmbeddedWhatsApp } = await import("@/lib/integrations/whatsapp/embedded");
