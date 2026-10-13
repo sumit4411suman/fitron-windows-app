@@ -89,6 +89,8 @@ handling), with nothing about the gym in it.
   release with a certificate set up makes one test signature before building and fails on any unsigned file;
   development builds are unsigned and the check says so. FITRON never asks a
   customer to turn SmartScreen or any Windows protection off.
+  Test builds can be signed with a free self-signed certificate (`docs/WINDOWS-TEST-CODE-SIGNING.md`): opt-in, never
+  in a release, never added to a trusted store by any script, and not publicly trusted.
 
 ## What leaves the computer
 
