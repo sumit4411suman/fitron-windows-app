@@ -16,9 +16,10 @@ import { Button, Field, Input, LinkButton, Notice, Select, TABLE, TD, TH, TR, cx
 import { ConfirmButton } from "@/components/confirm-button";
 import { Tag } from "@/components/tag";
 import { fmtStamp, fmtTime } from "@/lib/format";
-import { assignCardAction, enrolAction, eraseAction, openDoorAction, removeDeviceAction, saveDeviceAction, saveRulesAction, syncDeviceAction, testScanAction } from "./actions";
+import { assignCardAction, enrolAction, eraseAction, openDoorAction, removeDeviceAction, saveDeviceAction, saveDeviceNetworkAction, saveRulesAction, syncDeviceAction, testScanAction } from "./actions";
 import { ci } from "@/lib/db-dialect";
 import { gymAccountingOnly } from "@/lib/runtime/edition";
+import { deviceNetworkStatus } from "@/lib/integrations/door-devices";
 
 export const metadata = { title: "Biometric & doors · Fitron" };
 
@@ -62,6 +63,9 @@ export default async function DevicesPage({ searchParams }: PageProps<"/settings
   const enrolDevices = enrolId ? devices.filter((d) => d.approved && d.branchId && u.branchIds.includes(d.branchId)) : [];
   const kind = s("kind") === "FACE" ? "FACE" : "FP";
   const host = (await headers()).get("host") ?? "your-fitron-domain";
+  // FITRON for Windows: devices reach this computer on its own device port, once a Super Admin turns it on.
+  const net = gymAccountingOnly() ? deviceNetworkStatus() : null;
+  const superAdmin = u.role === "Super Admin";
   const branchName = (id: string | null) => branches.find((b) => b.id === id)?.name ?? "—";
   const isOnline = (d: { lastSeenAt: Date | null }) => isDeviceOnline(d);
   const tpl = (id: string, type: string) => tpls.find((x) => x.memberId === id && x.type === type)?._count._all ?? 0;
@@ -98,6 +102,44 @@ export default async function DevicesPage({ searchParams }: PageProps<"/settings
           </div>
         ))}
       </div>
+
+      {net && (
+        <section id="connection" className={box}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h3 className="text-[17px]">Device connection</h3>
+            <Tag label={net.listening ? "Online" : "Off"} style={net.listening ? 0 : net.on ? 3 : "neutral"}>
+              {net.listening ? `Listening on port ${net.port}` : net.on ? "Not listening" : "Off"}
+            </Tag>
+          </div>
+          <p className="m-0 text-sm text-muted">Devices reach FITRON over the gym&apos;s network. Turn this on and FITRON listens for them on one port of this computer. That port answers only the devices&apos; own calls, from this network: no page or sign-in of FITRON opens there.</p>
+          {net.on && !net.listening && net.error && net.error !== s("error") && <Notice tone="alert">{net.error}</Notice>}
+          {superAdmin ? (
+            <form action={saveDeviceNetworkAction} className="flex flex-wrap items-end gap-3">
+              <label className="flex min-h-10 cursor-pointer items-center gap-2 text-sm">
+                <input type="checkbox" name="deviceNetwork" defaultChecked={net.on} className="size-[18px] flex-none accent-accent" />
+                Let devices on this network connect
+              </label>
+              <Field label="Port" className="w-[120px]">
+                <Input name="devicePort" type="number" min={1} max={65535} defaultValue={net.port ?? 8081} />
+              </Field>
+              <Button variant="primary">Save</Button>
+            </form>
+          ) : (
+            <p className="m-0 text-sm text-muted">Only a Super Admin can change this.</p>
+          )}
+          {net.listening && (
+            <ul className="m-0 flex list-disc flex-col gap-1.5 pl-5 text-[13px] leading-relaxed">
+              <li>
+                The first time, Windows asks whether <strong>Node.js JavaScript Runtime</strong> (fitron-node.exe, FITRON&apos;s server) may use the network: tick <strong>Private networks</strong> and press <strong>Allow access</strong>. If a device stays Offline, open Windows Security › Firewall &amp; network protection › Allow an app through firewall and tick Private for it.
+              </li>
+              <li>Give this computer a fixed address in the router (a DHCP reservation), so devices still find it after a restart.</li>
+              <li>
+                Keep FITRON open while the gym is open. The device decides at the door from the members loaded on it: while FITRON is closed it still lets them in and keeps their punches, which arrive as attendance when FITRON opens. While FITRON is open, a member whose plan ends is taken off the devices within two minutes, and one who renews is put back as quickly.
+              </li>
+            </ul>
+          )}
+        </section>
+      )}
 
       {s("add") && (
         <section id="add" className={box}>
@@ -184,10 +226,28 @@ export default async function DevicesPage({ searchParams }: PageProps<"/settings
           ))}
           <div className="flex items-start gap-2.5 rounded-md border border-dashed border-fg/30 px-3.5 py-3 text-[13px] leading-relaxed">
             <InfoIcon size={18} weight="duotone" className="flex-none text-accent" />
-            {gymAccountingOnly() ? (
-              <span>
-                Biometric and door devices connect to FITRON over the network, and FITRON for Windows answers only this computer, so they cannot connect to it. They work with the FITRON Cloud Edition; ask FITRON support about connecting them to this computer. Check-in at the desk works as usual.
-              </span>
+            {net ? (
+              net.listening ? (
+                <span>
+                  On the device open <strong>Menu › Comm › Cloud Server Setting</strong>. Server mode <strong>ADMS</strong>, domain name <strong>off</strong>, server address{" "}
+                  {net.addresses.length ? (
+                    net.addresses.map((a, i) => (
+                      <span key={a.address}>
+                        {i > 0 && " or "}
+                        <strong>{a.address}</strong>
+                        {net.addresses.length > 1 && ` (${a.name})`}
+                      </span>
+                    ))
+                  ) : (
+                    <strong>this computer&apos;s network address</strong>
+                  )}
+                  , port <strong>{net.port}</strong>, HTTPS and proxy <strong>off</strong>. Save and restart; it shows Online within a minute. Members with an active plan are loaded onto it, and anyone the door rules block is taken off.
+                </span>
+              ) : (
+                <span>
+                  Devices connect to this computer over the gym&apos;s network. {superAdmin ? "Turn on Device connection above" : "Ask a Super Admin to turn on Device connection above"}, then set the device to the address and port shown there. Check-in at the desk works without a device.
+                </span>
+              )
             ) : (
               <span>
                 On the device open <strong>Menu › Comm › Cloud Server</strong>. Server <strong>{host}</strong>, port 443, HTTPS on. Save and restart; it shows Online within a minute. Members with an active plan are loaded onto it, and anyone who expires is removed each morning.

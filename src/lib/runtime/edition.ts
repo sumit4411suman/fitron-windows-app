@@ -17,8 +17,9 @@ export const isLocal = () => edition() === "local";
 export const localSignupAllowed = (env: Record<string, string | undefined> = process.env) => env.FITRON_LOCAL_ALLOW_SIGNUP === "1";
 
 /**
- * FITRON Gym Accounting for Windows as shipped: the website, AI Trainer, FITRON's own billing, Gym Partnership, door
- * devices and the members' QR check-in page are closed (NOT_IN_LOCAL in src/lib/public-paths.ts, the same rule as
- * src/proxy.ts). False in the end-to-end suite's Local runs, which run the Cloud specs on SQLite too.
+ * FITRON Gym Accounting for Windows as shipped: the website, AI Trainer, FITRON's own billing, Gym Partnership and the
+ * members' QR check-in page are closed (NOT_IN_LOCAL in src/lib/public-paths.ts, the same rule as src/proxy.ts), and
+ * door devices connect on their own port instead of /iclock (src/lib/integrations/door-devices). False in the
+ * end-to-end suite's Local runs, which run the Cloud specs on SQLite too.
  */
 export const gymAccountingOnly = () => isLocal() && !localSignupAllowed();

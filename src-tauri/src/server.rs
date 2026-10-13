@@ -32,7 +32,8 @@ pub struct Server {
 }
 
 /// A port nobody is using on 127.0.0.1, chosen by Windows. Never another address: FITRON is not reachable from the
-/// network.
+/// network. (Door devices, once a Super Admin turns them on, reach the server on a port of their own that answers only
+/// their calls: src/lib/integrations/door-devices.)
 pub fn free_port() -> io::Result<u16> {
     let l = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?;
     Ok(l.local_addr()?.port())

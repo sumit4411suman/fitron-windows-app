@@ -59,9 +59,10 @@ export function isOnlineOnlyAuthPath(pathname: string): boolean {
 
 /**
  * What is not part of FITRON Gym Accounting for Windows: the fitron.in website and its APIs, the AI Trainer, the FITRON
- * team console, FITRON's own plan billing, the Gym Partnership, webhooks from online services, door devices and the
- * front-desk QR page (both need the gym's network to reach this computer). On the Local Edition these addresses lead to
- * the console instead (src/proxy.ts). Matched by whole segments.
+ * team console, FITRON's own plan billing, the Gym Partnership, webhooks from online services, and the front-desk QR page
+ * (it needs the gym's network to reach this computer). Door devices are not answered here either: they reach FITRON for
+ * Windows on its own device port, once turned on (src/lib/integrations/door-devices). On the Local Edition these
+ * addresses lead to the console instead (src/proxy.ts). Matched by whole segments.
  */
 export const NOT_IN_LOCAL = [
   "site", "contact", "about", "privacy", "terms", "refund", "guides", "tools", "trainer", "c", "plan-ended", "partnership",

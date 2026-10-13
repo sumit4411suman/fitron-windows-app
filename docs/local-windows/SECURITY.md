@@ -20,6 +20,7 @@ the loop. What that means in practice, piece by piece, and what checks it.
 | Concern | Behaviour | Where, checked by |
 | --- | --- | --- |
 | Listening | `127.0.0.1` only, on a port chosen at each start. Never a network address. | `server_variables`; `desktop:smoke` tries every network address |
+| Door devices (opt-in) | Off until a Super Admin turns on Device connection (Settings › Biometric & doors; audited as `device.network`). Then the server also listens on one port of the network addresses (8081 unless changed) for ZKTeco/eSSL devices. That port answers only `GET`/`POST` to `/iclock/cdata`, `/iclock/getrequest` and `/iclock/devicecmd`, only from private, link-local or loopback addresses or the subnet of one of the computer's own adapters (403 otherwise, so never from the internet), with a 16 MB body limit; every other address is 404, so no page, sign-in, API or session is reachable through it. Devices cannot sign requests (the ADMS protocol has no authentication): a serial that calls in is only recorded, and nothing it sends is used until the gym adds that serial. Plain HTTP on the gym's network, as these devices cannot check a certificate. Windows Firewall asks once whether the server may accept connections. | `src/lib/integrations/door-devices` and its tests |
 | Requests from elsewhere on the computer | Any program on the computer could reach 127.0.0.1, so every page and action needs a signed-in FITRON session, as on the website. | `src/proxy.ts`, `requirePermission` |
 | A website pointed at 127.0.0.1 (DNS rebinding) | Refused: the Local Edition answers only requests whose Host is `127.0.0.1` or `localhost` (421 otherwise). | `src/lib/runtime/loopback.ts`, `proxy.test.ts`, `desktop:bundle` |
 | Shell ↔ server | The shell's own requests (a safety backup before an update) carry a 256-bit secret made for that start and handed to the server in its environment; the server compares it in constant time; no page sees it. The health check carries an instance id, so the shell never mistakes another program for its server. | `src/app/api/local/shell/backup/route.ts`, `src-tauri/src/server.rs` |
@@ -105,6 +106,9 @@ the computer (LICENSING.md). `src/lib/integrations/egress.test.ts` fails if any 
 - The desktop program honours `FITRON_DATA_DIR` from its environment (for tests); a person who can set a Windows
   user's environment already has that user's files.
 - Two-step codes depend on the computer's clock (OFFLINE.md).
+- With Device connection on, anything on the gym's network that knows an added device's serial (printed on its label)
+  can send punches as that device. The same holds on fitron.in, from the whole internet; on a computer it is limited to
+  the local network.
 
 ## Tests
 
