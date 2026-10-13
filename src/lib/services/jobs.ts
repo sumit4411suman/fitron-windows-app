@@ -264,12 +264,13 @@ async function runJobList(list: Job[], kind: string, orgId: string, today: strin
 export const runDailyJobs = (orgId: string, today = todayIso(), now = new Date()) => runJobList(JOBS, "Daily", orgId, today, now);
 
 /**
- * The daily jobs FITRON for Windows runs itself (src/lib/runtime/local-scheduler.ts): all but door devices (they cannot
- * reach a computer), FITRON's branch billing (a licence term there), the server's own backups and their reminder (the
- * computer makes .fitronbackup files on its own schedule), and the demo autopay debits: those book simulated UPI
- * payments, which a gym's real books must never get unasked. On a computer they run only from "Run today's debits".
+ * The daily jobs FITRON for Windows runs itself (src/lib/runtime/local-scheduler.ts): all but FITRON's branch billing (a
+ * licence term there), the server's own backups and their reminder (the computer makes .fitronbackup files on its own
+ * schedule), and the demo autopay debits: those book simulated UPI payments, which a gym's real books must never get
+ * unasked. On a computer they run only from "Run today's debits". Door devices are also kept in step every two minutes
+ * while they can connect (src/lib/integrations/door-devices).
  */
-const NOT_ON_A_COMPUTER = new Set(["autopay", "devices.sync", "billing.branches", "backup.auto", "backup.nudge"]);
+const NOT_ON_A_COMPUTER = new Set(["autopay", "billing.branches", "backup.auto", "backup.nudge"]);
 export const LOCAL_JOBS = JOBS.filter((j) => !NOT_ON_A_COMPUTER.has(j.name));
 /**
  * While the computer is linked to fitron.in, the daily jobs run there, on the same records: running them here too would

@@ -10,6 +10,10 @@ import { db } from "@/lib/db";
 import { UserError } from "@/lib/services/errors";
 import { accessInput } from "@/lib/validation/frontdesk";
 import { putSetting } from "@/lib/services/settings";
+import { audit } from "@/lib/services/audit";
+import { applyDeviceNetwork } from "@/lib/integrations/door-devices";
+import { DEFAULT_DEVICE_PORT, readLocalSettings, writeLocalSettings } from "@/lib/runtime/local-settings";
+import { gymAccountingOnly } from "@/lib/runtime/edition";
 
 const back = (params: Record<string, string>): never => redirect(`/settings/devices?${new URLSearchParams(params)}`);
 
@@ -59,6 +63,30 @@ export async function openDoorAction(id: string) {
   const u = await requirePermission("attendance.manage");
   await requireFeature("biometric");
   await run(() => openDoor(u, id), "Door will open on the device's next call in (within a few seconds).");
+}
+
+/**
+ * FITRON for Windows: let door devices on the gym's network connect to this computer, on one port
+ * (src/lib/integrations/door-devices). A setting of the computer, not of the gym, so only a Super Admin changes it.
+ */
+export async function saveDeviceNetworkAction(fd: FormData) {
+  const u = await requirePermission("settings.manage");
+  await requireFeature("biometric");
+  if (!gymAccountingOnly()) back({ error: "Devices connect to fitron.in directly." });
+  if (u.role !== "Super Admin") back({ error: "Only a Super Admin can let devices connect to this computer." });
+  const on = fd.get("deviceNetwork") === "on";
+  const raw = String(fd.get("devicePort") ?? "").trim();
+  const port = raw === "" ? DEFAULT_DEVICE_PORT : Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) back({ error: "Type a port from 1 to 65535, such as 8081." });
+  const before = readLocalSettings();
+  writeLocalSettings({ deviceNetwork: on, devicePort: port });
+  const r = await applyDeviceNetwork({ on, port });
+  if (before.deviceNetwork !== on || before.devicePort !== port) {
+    await db.$transaction((tx) => audit(tx, { orgId: u.orgId, userId: u.id, action: "device.network", entity: "Device", entityId: "this-computer", before: { on: before.deviceNetwork, port: before.devicePort }, after: { on, port } }));
+  }
+  revalidatePath("/settings/devices");
+  if (r.error) back({ error: r.error });
+  back({ saved: on ? `Devices on this network can now connect to FITRON on port ${r.port}.` : "FITRON no longer listens for devices. Devices keep their members and punches until it does again." });
 }
 
 /** The door rules, edited on this page (the same setting as Settings → Entry rules). */

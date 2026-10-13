@@ -14,10 +14,11 @@ import { todayIso } from "./time";
 afterEach(() => vi.unstubAllEnvs());
 
 describe("the jobs a computer runs", () => {
-  it("are all the daily jobs but door devices, FITRON's branch billing and the server's own backups", () => {
+  it("are all the daily jobs but FITRON's branch billing and the server's own backups", () => {
     // Demo autopay debits book simulated UPI payments: never unasked on a gym's own computer.
-    expect(JOBS.filter((j) => !LOCAL_JOBS.includes(j)).map((j) => j.name)).toEqual(["autopay", "devices.sync", "billing.branches", "backup.auto", "backup.nudge"]);
-    expect(LOCAL_JOBS.map((j) => j.name)).toEqual(expect.arrayContaining(["members.risk", "attendance.close", "reminders.expiry", "leads.followup", "privacy.retention", "whatsapp.dispatch", "reports.monthly"]));
+    expect(JOBS.filter((j) => !LOCAL_JOBS.includes(j)).map((j) => j.name)).toEqual(["autopay", "billing.branches", "backup.auto", "backup.nudge"]);
+    // Door devices connect to the computer on the gym's network (src/lib/integrations/door-devices).
+    expect(LOCAL_JOBS.map((j) => j.name)).toEqual(expect.arrayContaining(["members.risk", "attendance.close", "reminders.expiry", "leads.followup", "devices.sync", "privacy.retention", "whatsapp.dispatch", "reports.monthly"]));
   });
 });
 

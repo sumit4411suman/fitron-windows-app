@@ -91,7 +91,7 @@ Classes:
 | Settings › Branches | `/settings?tab=branches` | NEEDS-ADAPTER (done, Phase 13) | Extra-branch billing to FITRON is removed from the flow; the number of active branches comes from the licence (3 during the trial). |
 | Settings › Privacy & DPDP (officer, member rights export, retention job) | `/settings?tab=privacy`, `/settings/privacy/export` | LOCAL-SAFE | |
 | Settings › Help & support (tickets, system details) | `/settings?tab=help` | ONLINE-REQUIRED (done, Phase 11) | A ticket reaches FITRON only by email. Without email set up there is no form, only the support cards and the copyable System details; offline it says so and saves nothing. See OFFLINE.md. |
-| Biometric & door devices (ZKTeco/eSSL ADMS push) | `/settings/devices`, `/iclock/*` | NEEDS-ADAPTER | Devices push over HTTP to the server. On localhost only they cannot reach it; a LAN opt-in (bind to the LAN address) is a later phase and not in scope for 1.0. Phase 11: the devices page says so instead of the setup steps, and `/iclock/*` answers 404. |
+| Biometric & door devices (ZKTeco/eSSL ADMS push) | `/settings/devices`, device port | NEEDS-ADAPTER (done) | Devices push over HTTP, so they need to reach this computer over the gym's network. A Super Admin turns on **Device connection** on the devices page: FITRON then also listens on one port of the computer's network addresses (8081 unless changed) and answers there only `/iclock/cdata`, `/iclock/getrequest` and `/iclock/devicecmd`, from local-network addresses, with the Cloud Edition's answers (`src/lib/integrations/door-devices`, `src/lib/services/device-calls.ts`). The page shows the address and port to type on the device. `/iclock/*` on FITRON's own 127.0.0.1 port still answers 404. While it listens, devices are kept in step with the door rules every two minutes. |
 | Product tour, theme | client components | LOCAL-SAFE | `localStorage` for preferences only, never data. |
 | Global search | `/api/search` | NEEDS-ADAPTER | Case-insensitive search helper. |
 
@@ -114,7 +114,8 @@ Classes:
 | reminders.*, whatsapp.refresh, whatsapp.dispatch | ONLINE-REQUIRED (done, Phase 11) | "Not linked" (demo) saves the messages. Linked: they wait while WhatsApp cannot take messages, and run when it can. |
 | autopay.sync | ONLINE-REQUIRED (done, Phase 11) | Live mode only; waits for the internet. |
 | reports.monthly (P&L email) | ONLINE-REQUIRED (done, Phase 11) | Needs SMTP; waits for the internet within the first three days. The same statement is a download. |
-| devices.sync, billing.branches, backup.auto, backup.nudge | NOT-SUPPORTED-IN-LOCAL | Door devices cannot reach a computer; branch billing is a licence term; the computer makes `.fitronbackup` files instead. |
+| devices.sync | LOCAL-SAFE (done) | Daily, like the other jobs; while the device port is on, the same sync also runs every two minutes, so a lapsed member is taken off the doors and a renewed one put back quickly. |
+| billing.branches, backup.auto, backup.nudge | NOT-SUPPORTED-IN-LOCAL | Branch billing is a licence term; the computer makes `.fitronbackup` files instead. |
 | backup.test (weekly restore test) | NEEDS-ADAPTER | Re-implemented over the `.fitronbackup` format. |
 
 ## Hosted-only parts (never in Local)

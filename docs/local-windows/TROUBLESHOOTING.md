@@ -51,6 +51,16 @@ Where things are:
 | "Could not save the file: the disk is full, or the FITRON data folder is not writable." | Free space on the drive (old downloads, the recycle bin). FITRON keeps 14 automatic and 10 safety backups and removes older ones by itself; manual backups are kept until someone deletes them. |
 | A member's document shows as "not found" | Its file was removed outside FITRON (or the documents folder was not copied to a new computer). Settings › Backup lists missing files. Restore a backup that has them, or upload the document again. |
 
+## Biometric and door devices
+
+| What you see | What to do |
+| --- | --- |
+| Device connection says "Another program on this computer already uses port …" | Pick another port (for example 8082) in Settings › Biometric & doors, and set the same port on the device. |
+| A device stays **Offline** ("never called in") | On the device, Menu › Comm › Cloud Server Setting must have the address and port shown on the devices page, with domain name, HTTPS and proxy off, and the device must be on the same network as the computer. Then Windows Firewall: Windows Security › Firewall & network protection › Allow an app through firewall › tick Private for **Node.js JavaScript Runtime** (`fitron-node.exe`). If the computer's network is set to Public, make it Private (Settings › Network & internet › the network › Private). |
+| A device worked and went Offline after a restart of the router | The computer got a new address. Give it a fixed one in the router (a DHCP reservation) and type that on the device. |
+| A member whose plan ended still gets in | The device decides from the members loaded on it. FITRON takes a lapsed member off within two minutes while it is open (a minute or so after it opens, if it was closed). Check that FITRON is open and the device shows Online; **Sync** on the device re-sends everyone. |
+| Punches made while FITRON was closed are missing | The device keeps them and sends them when FITRON is open again and the device shows Online. |
+
 ## WhatsApp
 
 | What you see | What to do |
