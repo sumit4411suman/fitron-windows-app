@@ -65,3 +65,9 @@ session/
 /build/local-server/
 /dist/desktop/
 .perf/
+# Code-signing material never goes in the repository (docs/WINDOWS-TEST-CODE-SIGNING.md)
+*.pfx
+*.p12
+*.pvk
+*.snk
+fitron-test-signing.cer

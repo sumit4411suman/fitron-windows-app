@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "windows": {
+      "signCommand": {
+        "cmd": "powershell",
+        "args": ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", "..\\scripts\\sign-fitron-windows.ps1", "-Path", "%1"]
+      }
+    }
+  }
+}

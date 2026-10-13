@@ -115,6 +115,10 @@ first.
 
 ## 3. Building a signed release
 
+For development and internal testing without a purchased certificate, a free self-signed test certificate can sign a
+local build instead (`npm run desktop:build:test-signed`, `docs/WINDOWS-TEST-CODE-SIGNING.md`). It is not publicly
+trusted, does not stop SmartScreen warnings, and is never used by the release workflow.
+
 Raise `version` in `package.json` on `main` (each release needs a new one). Then Actions › **Desktop release (Windows)**
  › Run workflow, on `main`, with the release notes (`.github/workflows/desktop-release.yml`). It:
 

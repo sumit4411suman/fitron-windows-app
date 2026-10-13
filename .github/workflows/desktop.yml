@@ -10,6 +10,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      test_sign:
+        description: "Sign this build with a throwaway self-signed TEST certificate (docs/WINDOWS-TEST-CODE-SIGNING.md). Never for gyms."
+        type: boolean
+        default: false
 
 jobs:
   windows:
@@ -35,18 +40,85 @@ jobs:
           cargo test
       - name: Package the server with this Node.js, and check it
         run: npm run desktop:bundle
+      # A throwaway self-signed test certificate in this runner's own user store (never trusted, never exported with its
+      # key), for the signing checks below. The runner is discarded after the job.
+      - name: Throwaway test signing certificate
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\create-fitron-test-certificate.ps1 -Subject "CN=FITRON Test Signing (CI throwaway)" -ValidityYears 1 -ExportPath "$env:RUNNER_TEMP\fitron-test-signing.cer"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $c = Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Where-Object Subject -eq "CN=FITRON Test Signing (CI throwaway)" | Select-Object -First 1
+          if (-not $c) { Write-Output "::error::The test certificate was not created."; exit 1 }
+          # UTF-8 without a byte-order mark: Windows PowerShell's >> would write UTF-16, which Actions cannot read.
+          [IO.File]::AppendAllText($env:GITHUB_ENV, "FITRON_CI_TEST_THUMBPRINT=$($c.Thumbprint)`n")
       - name: Build the desktop program and its installer
-        run: npx tauri build --config src-tauri/tauri.bundle.conf.json
+        shell: pwsh
+        env:
+          TEST_SIGN: ${{ inputs.test_sign == true }}
+        run: |
+          $configs = @("--config", "src-tauri/tauri.bundle.conf.json")
+          # Opt-in only (Run workflow › test_sign): Tauri signs every file with the throwaway test certificate.
+          if ($env:TEST_SIGN -eq "true") {
+            $env:FITRON_TEST_SIGN_THUMBPRINT = $env:FITRON_CI_TEST_THUMBPRINT
+            $configs += @("--config", "src-tauri/tauri.test-sign.conf.json")
+          }
+          npx tauri build @configs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Name the installer and write its checksum
         run: npm run desktop:installer
       # What Windows will say about the files' signatures. A build here is not signed (no certificate in CI); the signed
       # release is .github/workflows/desktop-release.yml, which requires every file signed by FITRON.
       - name: Signatures (report)
         run: npm run desktop:signature
+      # The test signing scripts, on this build's real files: copies of the installer and the program are signed with the
+      # throwaway certificate and verified (intact, signer not trusted); a changed byte and an unsigned file must fail.
+      - name: Test signing scripts on copies of this build's files
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+          $t = $env:FITRON_CI_TEST_THUMBPRINT
+          $dir = Join-Path $env:RUNNER_TEMP "test-sign"
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $installer = Get-ChildItem dist\desktop\*.exe | Select-Object -First 1
+          $program = Get-ChildItem src-tauri\target\release\*.exe | Where-Object Name -notlike "fitron-node*" | Select-Object -First 1
+          Copy-Item $installer.FullName "$dir\installer.exe"
+          Copy-Item $program.FullName "$dir\program.exe"
+          Copy-Item $installer.FullName "$dir\unsigned.exe"
+          & .\scripts\sign-fitron-windows.ps1 -Path "$dir\installer.exe","$dir\program.exe" -Thumbprint $t
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error::Signing the copies failed."; exit 1 }
+          & .\scripts\verify-fitron-signature.ps1 -Path "$dir\installer.exe","$dir\program.exe" -ExpectedThumbprint $t
+          if ($LASTEXITCODE -ne 0) { Write-Output "::error::A test-signed copy did not verify."; exit 1 }
+          & .\scripts\verify-fitron-signature.ps1 -Path "$dir\installer.exe" -RequireTrusted
+          if ($LASTEXITCODE -eq 0) { Write-Output "::error::-RequireTrusted accepted a self-signed signature."; exit 1 }
+          # One changed byte in the middle of the signed installer: the signature must no longer verify.
+          $bytes = [IO.File]::ReadAllBytes("$dir\installer.exe")
+          $bytes[[int]($bytes.Length / 2)] = $bytes[[int]($bytes.Length / 2)] -bxor 0xFF
+          [IO.File]::WriteAllBytes("$dir\tampered.exe", $bytes)
+          & .\scripts\verify-fitron-signature.ps1 -Path "$dir\tampered.exe"
+          if ($LASTEXITCODE -eq 0) { Write-Output "::error::A changed file passed verification."; exit 1 }
+          & .\scripts\verify-fitron-signature.ps1 -Path "$dir\unsigned.exe"
+          if ($LASTEXITCODE -eq 0) { Write-Output "::error::An unsigned file passed verification."; exit 1 }
+          Write-Output "Test signing scripts: sign, verify, untrusted-but-intact, tampered and unsigned all behaved as expected."
+          exit 0
+      - name: "Test-signed build (opt-in): every file Tauri signed"
+        if: inputs.test_sign == true
+        shell: powershell
+        run: |
+          Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+          $files = @(Get-ChildItem dist\desktop\*.exe) + @(Get-ChildItem src-tauri\target\release\*.exe)
+          & .\scripts\verify-fitron-signature.ps1 -Path @($files.FullName) -ExpectedThumbprint $env:FITRON_CI_TEST_THUMBPRINT
+          exit $LASTEXITCODE
       - name: Start, close and end the desktop program
         run: npm run desktop:smoke
       - name: Install, update and uninstall as a customer does
         run: npm run desktop:installer-test
+      - name: Remove the throwaway test certificate
+        if: always()
+        shell: powershell
+        run: |
+          if ($env:FITRON_CI_TEST_THUMBPRINT) { Remove-Item "Cert:\CurrentUser\My\$env:FITRON_CI_TEST_THUMBPRINT" -DeleteKey -ErrorAction SilentlyContinue }
+          exit 0
       - name: Keep the installer
         uses: actions/upload-artifact@v4
         with:
