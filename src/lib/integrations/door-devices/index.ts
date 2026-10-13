@@ -33,13 +33,38 @@ const state = () => (g.fitronDoorDevices ??= { server: null, port: null, error: 
 /** "::ffff:192.168.1.5" → "192.168.1.5". */
 export const plainAddress = (a: string | undefined | null) => (a ?? "").replace(/^::ffff:/i, "");
 
-/** True for an address a device in the gym can have: 10/8, 172.16/12, 192.168/16, link-local 169.254/16, or this computer. */
-export function onLocalNetwork(ip: string): boolean {
+type Interfaces = NodeJS.Dict<os.NetworkInterfaceInfo[]>;
+
+/** "192.168.1.20" → its 32 bits, or null for anything else. */
+function ipv4(ip: string): number | null {
   const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (!m) return false;
-  const [a, b] = [Number(m[1]), Number(m[2])];
-  if ([a, b, Number(m[3]), Number(m[4])].some((n) => n > 255)) return false;
+  if (!m) return null;
+  const parts = m.slice(1, 5).map(Number);
+  if (parts.some((n) => n > 255)) return null;
+  return parts.reduce((n, p) => n * 256 + p, 0);
+}
+
+/** A private address (10/8, 172.16/12, 192.168/16), link-local (169.254/16) or this computer (127/8). */
+function privateAddress(n: number) {
+  const [a, b] = [n >>> 24, (n >>> 16) & 255];
   return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254);
+}
+
+/**
+ * True for an address a device in the gym can have: a private, link-local or loopback address, or one on the same
+ * subnet as an adapter of this computer (a network that uses other addresses). Never an address on the internet.
+ */
+export function onLocalNetwork(ip: string, interfaces: Interfaces = os.networkInterfaces()): boolean {
+  const n = ipv4(ip);
+  if (n === null) return false;
+  if (privateAddress(n)) return true;
+  for (const a of Object.values(interfaces).flat()) {
+    if (!a || a.internal || a.family !== "IPv4") continue;
+    const [own, mask] = [ipv4(a.address), ipv4(a.netmask)];
+    if (own === null || !mask) continue;
+    if ((own & mask) >>> 0 === (n & mask) >>> 0) return true;
+  }
+  return false;
 }
 
 export type ComputerAddress = { name: string; address: string };
@@ -47,16 +72,17 @@ export type ComputerAddress = { name: string; address: string };
 /** Adapters a device never sits behind: virtual machines, VPNs and Bluetooth. Listed last. */
 const VIRTUAL = /vethernet|virtual|vmware|vbox|hyper-v|wsl|docker|tailscale|zerotier|vpn|bluetooth/i;
 
-/** This computer's addresses on local networks, the one to type on the device first. */
-export function thisComputersAddresses(interfaces: NodeJS.Dict<os.NetworkInterfaceInfo[]> = os.networkInterfaces()): ComputerAddress[] {
-  const out: ComputerAddress[] = [];
+/** This computer's network addresses, the one to type on the device first: real adapters, private addresses first. */
+export function thisComputersAddresses(interfaces: Interfaces = os.networkInterfaces()): ComputerAddress[] {
+  const out: (ComputerAddress & { rank: number })[] = [];
   for (const [name, list] of Object.entries(interfaces)) {
     for (const a of list ?? []) {
-      if (a.internal || a.family !== "IPv4" || !onLocalNetwork(a.address) || a.address.startsWith("169.254.")) continue;
-      out.push({ name, address: a.address });
+      const n = a.family === "IPv4" ? ipv4(a.address) : null;
+      if (a.internal || n === null || a.address.startsWith("169.254.")) continue;
+      out.push({ name, address: a.address, rank: Number(VIRTUAL.test(name)) * 2 + Number(!privateAddress(n)) });
     }
   }
-  return out.sort((x, y) => Number(VIRTUAL.test(x.name)) - Number(VIRTUAL.test(y.name)));
+  return out.sort((x, y) => x.rank - y.rank).map(({ name, address }) => ({ name, address }));
 }
 
 // ── Answering devices ─────────────────────────────────────────────────────

@@ -13,26 +13,38 @@ import { applyDeviceNetwork, onLocalNetwork, plainAddress, stopDeviceNetwork, sy
 
 // FITRON for Windows: door devices on the gym's network reach this computer on the device port, and nothing else does.
 
+const nic = (address: string, o: { internal?: boolean; family?: "IPv4" | "IPv6"; netmask?: string } = {}) =>
+  ({ address, netmask: o.netmask ?? "255.255.255.0", family: o.family ?? "IPv4", mac: "00:00:00:00:00:00", internal: o.internal ?? false, cidr: null }) as never;
+
 describe("which addresses count as the gym's network", () => {
   it("takes private, link-local and this computer's addresses, and nothing on the internet", () => {
-    for (const ip of ["10.0.0.7", "172.16.4.2", "172.31.255.1", "192.168.1.20", "169.254.3.3", "127.0.0.1"]) expect(onLocalNetwork(ip), ip).toBe(true);
-    for (const ip of ["8.8.8.8", "172.32.0.1", "172.15.0.1", "192.169.1.1", "100.64.0.1", "", "::1", "192.168.1", "192.168.1.300"]) expect(onLocalNetwork(ip), ip).toBe(false);
+    const wifi = { "Wi-Fi": [nic("192.168.1.20")] };
+    for (const ip of ["10.0.0.7", "172.16.4.2", "172.31.255.1", "192.168.1.20", "169.254.3.3", "127.0.0.1"]) expect(onLocalNetwork(ip, wifi), ip).toBe(true);
+    for (const ip of ["8.8.8.8", "172.32.0.1", "172.15.0.1", "192.169.1.1", "100.64.0.1", "", "::1", "192.168.1", "192.168.1.300"]) expect(onLocalNetwork(ip, wifi), ip).toBe(false);
     expect(plainAddress("::ffff:192.168.1.5")).toBe("192.168.1.5");
     expect(plainAddress(undefined)).toBe("");
   });
 
-  it("lists this computer's addresses for the device, the real adapters first", () => {
-    const nic = (address: string, o: { internal?: boolean; family?: "IPv4" | "IPv6" } = {}) => ({ address, netmask: "255.255.255.0", family: o.family ?? "IPv4", mac: "00:00:00:00:00:00", internal: o.internal ?? false, cidr: null }) as never;
+  it("takes a network that uses other addresses, but only the subnet this computer is on", () => {
+    const office = { Ethernet: [nic("49.36.1.2", { netmask: "255.255.255.0" })], Odd: [nic("203.0.113.9", { netmask: "0.0.0.0" })] };
+    expect(onLocalNetwork("49.36.1.77", office)).toBe(true);
+    expect(onLocalNetwork("49.36.2.77", office)).toBe(false);
+    // An adapter without a mask never makes the whole internet local.
+    expect(onLocalNetwork("8.8.8.8", office)).toBe(false);
+  });
+
+  it("lists this computer's addresses for the device, the real adapters and private addresses first", () => {
     expect(
       thisComputersAddresses({
         "vEthernet (Default Switch)": [nic("172.20.48.1")],
+        Public: [nic("49.36.1.2")],
         "Wi-Fi": [nic("192.168.1.20"), nic("fe80::1", { family: "IPv6" })],
         "Loopback Pseudo-Interface 1": [nic("127.0.0.1", { internal: true })],
         Ethernet: [nic("169.254.10.10")],
-        Public: [nic("49.36.1.2")],
       }),
     ).toEqual([
       { name: "Wi-Fi", address: "192.168.1.20" },
+      { name: "Public", address: "49.36.1.2" },
       { name: "vEthernet (Default Switch)", address: "172.20.48.1" },
     ]);
   });
