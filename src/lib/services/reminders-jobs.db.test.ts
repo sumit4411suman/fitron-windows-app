@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { db } from "@/lib/db";
-import { hasDb, makeGym, pick } from "@/test/db";
+import { hasDb, makeGym, pick, planEndingOn } from "@/test/db";
 import { addDays } from "@/lib/domain/dates";
 import { createMember } from "./members";
 import { createPlan } from "./plans";
@@ -20,10 +20,11 @@ describe.skipIf(!hasDb)("daily reminder jobs follow Settings › Reminders (data
   beforeAll(async () => {
     gym = await makeGym();
     admin = pick(await gym.user("Super Admin"), gym.a.id);
-    const planId = (await createPlan(admin, { name: "Monthly", kind: "Membership", months: 1, price: 100000, regFee: 0, discount: 0, gstApplicable: false, features: [] })).id;
+    // A plan that ends in exactly 15 days, whatever today's date (a one-month plan does not always fit: planEndingOn).
+    const fit = planEndingOn(addDays(today, 15));
+    const planId = (await createPlan(admin, { name: "Monthly", kind: "Membership", months: fit.months, price: 100000, regFee: 0, discount: 0, gstApplicable: false, features: [] })).id;
     memberId = (await createMember(admin, { name: "Fifteen Days", gender: "Female", phone: "9855600001", source: "Walk-in", tags: [], dob: addDays(today, -365 * 25) })).id;
-    // A one-month plan starting so that it ends in exactly 15 days.
-    const s = await sellMembership(admin, memberId, { planId, startDate: addDays(addDays(today, 15), -29), discount: 0, includeRegFee: false, payAmount: 100000, payMethod: "Cash" });
+    const s = await sellMembership(admin, memberId, { planId, startDate: fit.startDate, discount: 0, includeRegFee: false, payAmount: 100000, payMethod: "Cash" });
     expect(s.membership.endDate.toISOString().slice(0, 10)).toBe(addDays(today, 15));
   });
 
