@@ -27,6 +27,7 @@ export type NavIcon =
   | "staff"
   | "audit"
   | "settings"
+  | "intelligence"
   /** The FITRON team console; added by the layout for FITRON_ADMIN_EMAILS only. */
   | "platform";
 
@@ -88,6 +89,13 @@ export const NAV: NavGroup[] = [
       { href: "/programs", label: "Workouts & diet", icon: "programs", perm: "programs.manage", feature: "programs" },
       { href: "/partnership", label: "Gym Partnership", icon: "partnership", perm: "accounting.view", feature: "partnership" },
       { href: "/notifications", label: "Notifications", icon: "notifications", count: "notifications" },
+    ],
+  },
+  {
+    group: "Grow",
+    items: [
+      // The Business Intelligence suite (docs/BUSINESS-INTELLIGENCE.md): six modules under one entry, with tabs inside.
+      { href: "/intelligence", label: "Business intelligence", icon: "intelligence", perm: "accounting.view", feature: "accounting" },
     ],
   },
   {

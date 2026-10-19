@@ -77,7 +77,7 @@ describe("audit change detail", () => {
 
 describe("audit modules, devices and sentences", () => {
   it("lists the prototype's modules in order", () => {
-    expect(AUDIT_MODULES).toEqual(["Access", "Members", "Invoices", "Payments", "Accounts", "WhatsApp", "POS", "Attendance", "Staff & devices", "Settings", "Other"]);
+    expect(AUDIT_MODULES).toEqual(["Access", "Members", "Invoices", "Payments", "Accounts", "WhatsApp", "POS", "Attendance", "Staff & devices", "Intelligence", "Settings", "Other"]);
     expect(moduleOf("Session", "auth.login")).toBe("Access");
     expect(moduleOf("User", "profile.password")).toBe("Access");
     expect(moduleOf("Setting", "whatsapp.automation.run")).toBe("WhatsApp");

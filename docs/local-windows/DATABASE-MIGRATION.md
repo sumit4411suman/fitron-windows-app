@@ -260,4 +260,5 @@ writes ISO-8601 text with a zone, `CURRENT_TIMESTAMP` writes another form.
 
 | Local migration | Cloud migrations it mirrors | Hand-written part |
 | --- | --- | --- |
+| `0006_business_intelligence` | `20261019120000_business_intelligence` | none: eight new tables (docs/BUSINESS-INTELLIGENCE.md); row-level security dropped |
 | `0002_ai_chats_invoice_seller_stored_files` | `20261008190000_ai_chat_history`, `20261009100000_invoice_seller_member_consent`, `20261009120000_device_command_expiry`, `20261010090000_imported_member_join_date`, `20261010091000_stored_files` | the imported members' join date (`UPDATE … FROM` rewritten as a correlated subquery); row-level security dropped |

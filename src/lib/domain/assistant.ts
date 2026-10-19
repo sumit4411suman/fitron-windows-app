@@ -78,7 +78,7 @@ export const FACTS: readonly Fact[] = [
     about: "Gym Accounting",
     keywords: ["gym accounting", "accounting", "gym software", "gym management", "software", "console", "members", "member", "fees", "dues", "renewals", "payroll", "staff", "attendance", "expenses", "reports", "modules", "gym owner", "my gym", "import"],
     answer: [
-      `Gym Accounting is one console for your gym: members and renewals, fees and dues, GST invoices, expenses, attendance, payroll, reports and profit and loss, with WhatsApp reminders on ${planFor("whatsapp").name} and above. It has 24 modules, and member data can be imported and exported. It runs one gym or every branch you own.`,
+      `Gym Accounting is one console for your gym: members and renewals, fees and dues, GST invoices, expenses, attendance, payroll, reports and profit and loss, with WhatsApp reminders on ${planFor("whatsapp").name} and above. It has 25 modules, and member data can be imported and exported. It runs one gym or every branch you own.`,
       `It's from ${price("starter")} a month with a ${TRIAL_DAYS}-day free trial: /signup?plan=professional. Try the live demo in the Gym Accounting card on this page, or read /gym-accounting.`,
     ].join("\n"),
   },

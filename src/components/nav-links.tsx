@@ -10,6 +10,7 @@ import {
   CalendarCheckIcon,
   CalendarDotsIcon,
   ChartBarIcon,
+  ChartLineUpIcon,
   ClockCountdownIcon,
   FingerprintIcon,
   FunnelIcon,
@@ -59,6 +60,7 @@ const ICONS: Record<NavIcon, Icon> = {
   staff: IdentificationBadgeIcon,
   audit: ListMagnifyingGlassIcon,
   settings: GearSixIcon,
+  intelligence: ChartLineUpIcon,
   platform: BuildingsIcon,
 };
 
