@@ -181,7 +181,16 @@ its data stays.
   match it, is not FITRON's: do not run it.
 - Installing needs no administrator (per-user install, `INSTALLER.md`); the data folder is never in Program Files.
 
-## 6. Files
+## 6. The download link for websites
+
+**https://fitron.in/download/windows** always downloads the newest published installer. Use it for every "Download
+for Windows" button, on fitron.in or any other website. It reads the same `latest.json` every installed FITRON reads
+(`src/app/download/windows/route.ts`, `latestWindowsInstaller` in `src/lib/integrations/updates`), so it moves to a new
+version the moment that release is published, and the button never needs changing. It only ever leads to an `.exe` on
+the feed's own site. If the feed cannot be read, it opens the newest release's page instead. `FITRON_WINDOWS_FEED`
+moves it, if `FITRON_UPDATE_URL` (§2.4) ever does.
+
+## 7. Files
 
 | File | What |
 | --- | --- |
@@ -189,4 +198,5 @@ its data stays.
 | `.github/workflows/desktop-release.yml` | a signed release, as a draft GitHub release |
 | `src-tauri/tauri.sign.conf.json`, `scripts/desktop/fitron-sign.cmd` | Authenticode signing of every file |
 | `scripts/desktop-signature.ts`, `src/lib/domain/authenticode.ts` | what Windows reports for each file, and whether a release may ship with it (`authenticode.test.ts`) |
+| `src/app/download/windows/route.ts` | fitron.in's link to the newest installer (§6) |
 | `scripts/desktop-release.ts`, `scripts/desktop/update-feed.ts` | the customer-named installer, its checksum and the update feed (on GitHub Releases, each installer named in its own release; `update-feed.test.ts`) |

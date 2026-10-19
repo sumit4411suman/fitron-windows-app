@@ -39,3 +39,45 @@ export async function latestRelease(q: UpdateQuery): Promise<ServiceAnswer<Relea
   if (typeof v.version !== "string" || !CODE.test(v.version)) return { ok: false, reason: "refused", message: "The update feed did not name a version." };
   return { ok: true, data: { version: v.version, notes: typeof v.notes === "string" ? v.notes.slice(0, 4000) : "", publishedAt: typeof v.pub_date === "string" ? v.pub_date : null } };
 }
+
+// ── The download link for websites (fitron.in/download/windows) ───────────
+
+/** Where FITRON for Windows is published (docs/local-windows/RELEASE.md §2.4): the feed every installed FITRON reads. */
+export const WINDOWS_FEED = "https://github.com/sumit4411suman/fitron-windows-app/releases/latest/download/latest.json";
+/** The newest release's page, for when the feed cannot be read: the installer is listed there. */
+export const WINDOWS_RELEASES = "https://github.com/sumit4411suman/fitron-windows-app/releases/latest";
+
+/** FITRON_WINDOWS_FEED moves it, the same address as the release workflow's FITRON_UPDATE_URL when that is set. */
+export const windowsFeed = (env: Record<string, string | undefined> = process.env) => serviceUrl(env.FITRON_WINDOWS_FEED) ?? WINDOWS_FEED;
+
+export type Installer = { version: string; url: string };
+
+const INSTALLER_FOR_MS = 5 * 60_000;
+const cache = globalThis as unknown as { fitronWindowsInstaller?: { feed: string; at: number; installer: Installer } };
+
+/**
+ * The newest FITRON for Windows installer, as the update feed names it: an https address of an .exe on the feed's own
+ * site, so the link can only ever lead to FITRON's own download. Kept for five minutes, so a busy download button asks
+ * the feed at most that often. Asks nothing about anyone: the feed is a public file.
+ */
+export async function latestWindowsInstaller(now = Date.now()): Promise<ServiceAnswer<Installer>> {
+  const feed = windowsFeed();
+  const kept = cache.fitronWindowsInstaller;
+  if (kept && kept.feed === feed && now - kept.at < INSTALLER_FOR_MS) return { ok: true, data: kept.installer };
+  const r = await askService<{ version?: unknown; platforms?: Record<string, { url?: unknown } | undefined> }>("Finding the newest FITRON for Windows", feed, { method: "GET", timeoutMs: 8_000 });
+  if (!r.ok) return r;
+  const version = r.data.version;
+  const url = r.data.platforms?.["windows-x86_64"]?.url;
+  const refused = { ok: false as const, reason: "refused" as const, message: "The update feed does not name a FITRON for Windows installer." };
+  if (typeof version !== "string" || !CODE.test(version) || typeof url !== "string") return refused;
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return refused;
+  }
+  if (u.protocol !== "https:" || u.hostname !== new URL(feed).hostname || !u.pathname.toLowerCase().endsWith(".exe")) return refused;
+  const installer = { version, url: u.toString() };
+  cache.fitronWindowsInstaller = { feed, at: now, installer };
+  return { ok: true, data: installer };
+}

@@ -15,8 +15,9 @@ const PUBLIC = [
   "contact", "about", "privacy", "terms", "refund", "c",
   "robots.txt", "sitemap.xml", "favicon.ico", "fitron-mark.png", "fitron-mark-v2.png", "fitron-mark-light-v2.png", "fitron-logo.png", "fitron-logo-v2.png", "site", "_next",
   "trainer", "api/trainer", "api/coach", "api/gym-demo", "api/assistant",
-  // fitron.in: buying a FITRON for Windows licence, and the computer collecting it (src/lib/services/windows-licence.ts).
-  "windows", "api/windows-licence", "api/windows-ai",
+  // fitron.in: buying a FITRON for Windows licence, and the computer collecting it (src/lib/services/windows-licence.ts),
+  // and the link to its newest installer (src/app/download/windows).
+  "windows", "api/windows-licence", "api/windows-ai", "download",
   "api/health", "api/local/shell", "api/sync", "api/analytics-config", "api/client-error", "api/csp-report", "api/webhooks", "api/jobs", "iclock",
   // The pages about Gym Accounting (src/lib/domain/gym-pages.ts) join this list by themselves.
   ...GYM_PAGES.map((p) => p.path.slice(1)),
@@ -66,7 +67,7 @@ export function isOnlineOnlyAuthPath(pathname: string): boolean {
  */
 export const NOT_IN_LOCAL = [
   "site", "contact", "about", "privacy", "terms", "refund", "guides", "tools", "trainer", "c", "plan-ended", "partnership",
-  "fitron-admin", "settings/billing", "windows", "api/windows-licence", "api/windows-ai", "api/trainer", "api/coach", "api/gym-demo", "api/assistant", "api/webhooks", "api/analytics-config", "iclock",
+  "fitron-admin", "settings/billing", "windows", "download", "api/windows-licence", "api/windows-ai", "api/trainer", "api/coach", "api/gym-demo", "api/assistant", "api/webhooks", "api/analytics-config", "iclock",
   // The server scheduler's job addresses: FITRON for Windows runs its own jobs in-process (src/lib/runtime/local-scheduler.ts).
   "api/jobs",
   ...GYM_PAGES.map((p) => p.path.slice(1)), TRAINER_PAGE.path.slice(1), "robots.txt", "sitemap.xml",
