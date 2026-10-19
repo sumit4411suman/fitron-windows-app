@@ -30,9 +30,10 @@ the suite, in the order the brief asked for them.
 | Sync (Windows ↔ fitron.in) | Transactional outbox per synced table, triggers generated per migration | BI tables are **not** synced in this release (see limitations); their inputs are |
 
 Baseline before the work (this branch's parent): `npm run typecheck` clean, `npm run lint` two pre-existing warnings,
-`npm test` 1,646 passed with two pre-existing date-sensitive failures in `reminders*.db.test.ts` (a one-month plan sold on
-19 October ends on 18 November, one day later than the test's `addDays(today, 15)` assumption on this calendar date;
-unrelated to this work).
+`npm test` 1,646 passed with two date-sensitive failures in `reminders*.db.test.ts` (a one-month plan sold on 19 October
+ends on 18 November, one day later than the fixtures' `addDays(today, 15)` assumption on this calendar date). Those
+fixtures now use `planEndingOn` from `src/test/db.ts`, which picks a plan length and start whose end lands on the day
+asked for, on every calendar date.
 
 ## 2. Architecture and data flow
 
