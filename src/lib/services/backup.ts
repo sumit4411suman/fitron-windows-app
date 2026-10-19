@@ -92,6 +92,13 @@ const WHERE: Record<string, (c: Ctx) => Record<string, unknown>> = {
   DeviceUser: (c) => ({ device: { orgId: c.orgId } }),
   BiometricTemplate: (c) => ({ memberId: { in: c.memberIds } }),
   AccessLog: (c) => ({ deviceId: { in: c.deviceIds } }),
+  RecoveryCase: byOrg,
+  RecoveryAttempt: byOrg,
+  Scenario: byOrg,
+  Decision: byOrg,
+  DecisionOption: byOrg,
+  DecisionRevision: byOrg,
+  Recommendation: byOrg,
   AuditLog: byOrg,
 };
 /** Tables with their own orgId column; a restore forces it to the restoring gym. */

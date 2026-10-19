@@ -61,10 +61,10 @@ TEXT = [
     ("<span>AI fitness chat, with monthly usage limits</span>", "<span>AI Coach: 25 messages a day</span>", "AI Pro: chat limit"),
     ('<p class="pc-who">Advanced AI coaching and long-term progress tracking.</p>', '<p class="pc-who">Everything in AI Pro, with a higher daily AI Coach limit.</p>', "AI Premium: tagline"),
     # The number of sections in the sidebar (src/lib/nav.ts); site-links.test.ts keeps them equal.
-    ('<span class="num-3d gold-3d">22</span><p>Gym modules', '<span class="num-3d gold-3d">24</span><p>Gym modules', "module count"),
+    ('<span class="num-3d gold-3d">22</span><p>Gym modules', '<span class="num-3d gold-3d">25</span><p>Gym modules', "module count"),
     # The same count appears twice more; landing-page.test.ts checks every "N modules" on the page against the sidebar.
-    ("</svg>22 modules: members, billing, GST, expenses, P&amp;L", "</svg>24 modules: members, billing, GST, expenses, P&amp;L", "Gym Accounting card: module count"),
-    ("Gym Accounting, all 22 modules", "Gym Accounting, all 24 modules", "partner perks: module count"),
+    ("</svg>22 modules: members, billing, GST, expenses, P&amp;L", "</svg>25 modules: members, billing, GST, expenses, P&amp;L", "Gym Accounting card: module count"),
+    ("Gym Accounting, all 22 modules", "Gym Accounting, all 25 modules", "partner perks: module count"),
     # What search results show: the page leads with what people search for. Kept under about 60 and 160 characters
     # (landing-page.test.ts). The visible headline is the design's and is left alone.
     (

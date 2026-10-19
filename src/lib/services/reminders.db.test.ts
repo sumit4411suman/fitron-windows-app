@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { db } from "@/lib/db";
 import { addDays, daysBetween } from "@/lib/domain/dates";
-import { hasDb, makeGym, pick } from "@/test/db";
+import { hasDb, makeGym, pick, planEndingOn } from "@/test/db";
 import { createMember, summarize } from "./members";
 import { createPlan } from "./plans";
 import { cancelInvoice, sellMembership } from "./billing";
@@ -29,8 +29,10 @@ describe.skipIf(!hasDb)("reminders (database)", () => {
     await db.invoice.update({ where: { id: sale.invoice.id }, data: { dueDate: new Date(`${addDays(today, -10)}T00:00:00Z`) } });
     await sellMembership(admin, ending, { planId: plan.id, startDate: addDays(today, -28), discount: 10000, includeRegFee: false, payAmount: 140000, payMethod: "UPI" });
     fortnight = (await createMember(admin, { name: "Ends In Two Weeks", gender: "Male", phone: "9876522003", source: "Walk-in", tags: [] })).id;
-    // A one-month plan starting so that it ends in exactly 15 days.
-    await sellMembership(admin, fortnight, { planId: plan.id, startDate: addDays(addDays(today, 15), -29), discount: 0, includeRegFee: false, payAmount: 0 });
+    // A plan that ends in exactly 15 days, whatever today's date (a one-month plan does not always fit: planEndingOn).
+    const fit = planEndingOn(addDays(today, 15));
+    const fortnightPlan = fit.months === 1 ? plan : await createPlan(admin, { name: `${fit.months} months`, kind: "Membership", months: fit.months, price: 150000, regFee: 0, discount: 0, gstApplicable: false, features: [] });
+    await sellMembership(admin, fortnight, { planId: fortnightPlan.id, startDate: fit.startDate, discount: 0, includeRegFee: false, payAmount: 0 });
   });
 
   it("picks the expiry template by days left", () => {

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
+import { addDays, addMonths, membershipEndDate } from "@/lib/domain/dates";
 import type { CurrentUser } from "@/lib/auth/current";
 import { DEFAULT_ROLES, type Permission } from "@/lib/auth/permissions";
 import { ensureExpenseCategories, ensureRoles } from "../../prisma/roles";
@@ -52,3 +53,20 @@ export async function makeGym() {
 }
 
 export const pick = (u: CurrentUser, branchId: string): CurrentUser => ({ ...u, branch: branchId, branchIds: [branchId] });
+
+/**
+ * A plan length and start date whose membership ends exactly on `end`. A plan ends the day before the same date
+ * `months` later (membershipEndDate), so from a given end there is not always a one-month start: no one-month plan
+ * ends on 30 March in a non-leap year, for instance. The search tries one, two and three months, each a few days
+ * either side of the obvious start, so a test that needs "ends in exactly N days" works on every calendar date.
+ */
+export function planEndingOn(end: string): { months: number; startDate: string } {
+  for (const months of [1, 2, 3]) {
+    const guess = addMonths(addDays(end, 1), -months);
+    for (const k of [0, -1, 1, -2, 2, -3, 3]) {
+      const startDate = addDays(guess, k);
+      if (membershipEndDate(startDate, months) === end) return { months, startDate };
+    }
+  }
+  throw new Error(`No plan of one to three months ends on ${end}`);
+}

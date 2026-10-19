@@ -161,6 +161,8 @@ export async function eraseMember(u: CurrentUser, memberId: string, reason: stri
     await tx.progressLog.updateMany({ where: { memberId: m.id }, data: { notes: null } });
     await tx.lead.updateMany({ where: { memberId: m.id }, data: { name: "Erased member", phone: "", notes: null } });
     await tx.autopayMandate.updateMany({ where: { memberId: m.id }, data: { vpa: null, shortUrl: null } });
+    // Recovery follow-ups may hold what the member said; the case itself keeps only amounts and dates.
+    await tx.recoveryAttempt.updateMany({ where: { case: { memberId: m.id } }, data: { note: null } });
     await tx.trainerMember.updateMany({ where: { gymMemberId: m.id }, data: { gymMemberId: null, gymLinkedAt: null } });
     await tx.member.update({ where: { id: m.id }, data: anonymisedMember(now, m.deletedAt) });
     await audit(tx, {

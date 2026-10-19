@@ -289,6 +289,7 @@ model Member {
   invoices           Invoice[]
   payments           Payment[]
   trainerMember      TrainerMember?
+  recoveryCases      RecoveryCase[]
   createdById        String
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -402,6 +403,7 @@ model Invoice {
   items         InvoiceItem[]
   payments      Payment[]
   membership    Membership?
+  recoveryCase  RecoveryCase?
 
   @@unique([orgId, number])
   @@index([memberId])
@@ -1894,4 +1896,243 @@ model WindowsAiUsage {
   updatedAt    DateTime @updatedAt
 
   @@unique([licenceId, day])
+}
+
+// ── Business intelligence (docs/BUSINESS-INTELLIGENCE.md) ─────────────────
+// Analysis and planning records. None of them is a financial record: money stays in Invoice, Payment and Expense, and
+// every figure here is either computed from those again or a saved assumption. Case and decision rows are kept per
+// gym (orgId) and scoped to the branches a person may see.
+
+/// Membership Revenue Recovery: one open case per invoice still owed, or per lapsed membership worth following up.
+model RecoveryCase {
+  id              String            @id @default(cuid())
+  orgId           String
+  branchId        String
+  memberId        String
+  member          Member            @relation(fields: [memberId], references: [id])
+  /// DUES: an issued invoice with a balance. RENEWAL: a membership that ended without a newer one (an opportunity, never a debt).
+  kind            String
+  invoiceId       String?           @unique
+  invoice         Invoice?          @relation(fields: [invoiceId], references: [id])
+  /// RENEWAL cases: the membership that ended.
+  membershipId    String?
+  /// OPEN | IN_PROGRESS | RECOVERED | RENEWED | CLOSED
+  status          String            @default("OPEN")
+  /// Balance owed (DUES) or the last plan's net price (RENEWAL) when the case was opened, paise. Never a debt for RENEWAL.
+  openingAmount   Int
+  /// Paise collected on the invoice since the case opened (DUES); set when the case is closed as recovered.
+  recoveredAmount Int               @default(0)
+  /// 0–100 from the rules in src/lib/domain/recovery.ts; recomputed by the queue refresh.
+  priority        Int               @default(0)
+  /// e.g. "Send a WhatsApp reminder", from the rules; staff may override it.
+  nextAction      String
+  nextActionOn    DateTime?
+  assignedToId    String?
+  attempts        Int               @default(0)
+  lastAttemptAt   DateTime?
+  /// A promise to pay recorded on an attempt.
+  promisedOn      DateTime?
+  promisedAmount  Int?
+  openedAt        DateTime          @default(now())
+  closedAt        DateTime?
+  closedById      String?
+  /// Why it was closed when not recovered: written off, member left, disputed…
+  closeReason     String?
+  updatedAt       DateTime          @updatedAt
+  attemptsLog     RecoveryAttempt[]
+
+  @@unique([orgId, kind, membershipId])
+  @@index([orgId, status, priority])
+  @@index([orgId, memberId])
+  @@index([orgId, branchId, status])
+}
+
+/// Every follow-up on a recovery case: a reminder sent, a call, a promise, a payment recorded, a note.
+model RecoveryAttempt {
+  id                String       @id @default(cuid())
+  caseId            String
+  case              RecoveryCase @relation(fields: [caseId], references: [id])
+  orgId             String
+  /// WHATSAPP | CALL | VISIT | NOTE | PAYMENT | CLOSE
+  kind              String
+  /// SENT | QUEUED | LOGGED | FAILED | NO_ANSWER | PROMISED | REFUSED | PAID | NOTED
+  outcome           String
+  note              String?
+  whatsAppMessageId String?
+  /// A payment this attempt recorded (through the normal Collect payment path), so it is counted once.
+  paymentId         String?      @unique
+  promisedOn        DateTime?
+  promisedAmount    Int?
+  byId              String?
+  at                DateTime     @default(now())
+
+  @@index([caseId, at])
+  @@index([orgId, at])
+}
+
+/// Profit Simulator: a saved what-if. `inputs` are the owner's assumptions, `baseline` the figures read from the books
+/// when it was made, `results` the deterministic output of src/lib/domain/simulator.ts at `calcVersion`.
+model Scenario {
+  id           String    @id @default(cuid())
+  orgId        String
+  /// null = all branches the maker could see
+  branchId     String?
+  name         String
+  /// Free text: what this scenario tries.
+  note         String?
+  baseline     Json
+  inputs       Json
+  results      Json
+  calcVersion  Int
+  /// The month the baseline was read for (YYYY-MM), so a later comparison with actual figures knows which months follow.
+  baselineFrom String
+  baselineTo   String
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  archivedAt   DateTime?
+
+  @@index([orgId, archivedAt, updatedAt])
+}
+
+/// Business Decision Simulator: a decision with its objective, constraints, options and outcome.
+model Decision {
+  id            String             @id @default(cuid())
+  orgId         String
+  branchId      String?
+  title         String
+  /// PRICING | PROMOTION | HIRING | EQUIPMENT | HOURS | OTHER
+  category      String
+  objective     String
+  /// Free text constraints (budget, timing, staffing)
+  constraints   String?
+  /// Weighted criteria for subjective scoring: [{ key, label, weight }]
+  criteria      Json
+  /// Figures read from the books when the decision was made: { from, to, revenue, expenses, net, activeMembers, … }
+  baseline      Json
+  /// DRAFT | APPROVED | REJECTED | DEFERRED | IMPLEMENTED | REVIEWED
+  status        String             @default("DRAFT")
+  selectedId    String?
+  rationale     String?
+  decidedById   String?
+  decidedAt     DateTime?
+  deferredUntil DateTime?
+  implementedOn DateTime?
+  /// Days after implementation when projections are compared with actual figures.
+  reviewDays    Int                @default(90)
+  reviewedAt    DateTime?
+  /// What actually happened over the review period: { from, to, revenue, expenses, net, activeMembers, … }
+  actual        Json?
+  lessons       String?
+  version       Int                @default(1)
+  createdById   String
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  options       DecisionOption[]
+  revisions     DecisionRevision[]
+
+  @@index([orgId, status, updatedAt])
+}
+
+/// One option of a decision: its assumptions run through the Profit Simulator, plus the owner's own scores.
+model DecisionOption {
+  id          String   @id @default(cuid())
+  decisionId  String
+  decision    Decision @relation(fields: [decisionId], references: [id])
+  orgId       String
+  name        String
+  description String?
+  /// The Profit Simulator inputs for this option (same shape as Scenario.inputs)
+  inputs      Json
+  /// The deterministic result (same shape as Scenario.results), at calcVersion
+  results     Json
+  calcVersion Int
+  /// Subjective scores per criterion key, 1–5, clearly separate from the calculated figures
+  scores      Json
+  benefits    String?
+  costs       String?
+  risks       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([decisionId])
+}
+
+/// Every saved version of a decision (objective, options, scores, choice), so the reasoning can be revisited.
+model DecisionRevision {
+  id         String   @id @default(cuid())
+  decisionId String
+  decision   Decision @relation(fields: [decisionId], references: [id])
+  orgId      String
+  version    Int
+  /// What changed, in words
+  note       String
+  snapshot   Json
+  byId       String
+  at         DateTime @default(now())
+
+  @@unique([decisionId, version])
+}
+
+/// AI Growth Engine: a recommendation built from verified metrics, with its evidence and what became of it.
+model Recommendation {
+  id            String    @id @default(cuid())
+  orgId         String
+  branchId      String?
+  /// Stable key for the finding and period (e.g. renewals.decline:2026-10), so a refresh never duplicates it
+  key           String
+  /// The rule that raised it
+  rule          String
+  title         String
+  body          String
+  /// What to do next, in words
+  action        String
+  /// Where in FITRON to act
+  link          String?
+  /// [{ metric, label, value, previous?, unit, period, kind: "actual" | "estimate" }]
+  evidence      Json
+  periodFrom    String
+  periodTo      String
+  /// Estimated effect in paise over the period, when one can be stated; null otherwise
+  impactPaise   Int?
+  impactNote    String?
+  /// LOW | MEDIUM | HIGH
+  effort        String
+  urgency       String
+  confidence    String
+  /// Ranking score from impact, urgency, confidence and effort
+  score         Int
+  /// OPEN | ACCEPTED | DISMISSED | DEFERRED | COMPLETED
+  status        String    @default("OPEN")
+  decidedById   String?
+  decidedAt     DateTime?
+  deferredUntil DateTime?
+  completedAt   DateTime?
+  /// The same metrics read again after completion, with the change
+  outcome       Json?
+  outcomeNote   String?
+  /// Set each time the refresh still finds the finding
+  lastSeenAt    DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([orgId, key])
+  @@index([orgId, status, score])
+}
+
+/// External benchmarking: one anonymised, aggregated set of monthly figures per opted-in gym, written by the daily job
+/// only while the gym's consent stands. Read only in aggregate across gyms, never row by row for another gym.
+model BenchmarkSnapshot {
+  id        String   @id @default(cuid())
+  orgId     String
+  /// YYYY-MM
+  month     String
+  /// Cohort attributes a gym is compared within: { sizeBand, state }
+  cohort    Json
+  /// { activeMembers, revenuePerActiveMember, renewalRate, expenseRatio, operatingMargin, … } with nulls where unknown
+  metrics   Json
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, month])
+  @@index([month])
 }

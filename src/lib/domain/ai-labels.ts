@@ -24,4 +24,9 @@ export const TOOL_LABEL: Record<string, string> = {
   draft_expense: "Preparing the expense",
   draft_cancel_invoice: "Preparing the cancellation",
   draft_reverse_payment: "Preparing the reversal",
+  business_metrics: "Reading the business figures",
+  recovery_queue: "Checking the recovery queue",
+  lifetime_value: "Working out member value",
+  simulate_profit: "Running the profit simulator",
+  growth_recommendations: "Reading the recommendations",
 };

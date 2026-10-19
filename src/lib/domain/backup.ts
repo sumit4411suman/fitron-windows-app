@@ -68,6 +68,14 @@ export const BACKUP_TABLES: TableSpec[] = [
   { name: "DeviceUser", refs: { deviceId: "Device" }, order: ["deviceId", "memberId"] },
   { name: "BiometricTemplate", bytes: ["data"] },
   { name: "AccessLog", refs: { deviceId: "Device" } },
+  // Business intelligence (docs/BUSINESS-INTELLIGENCE.md): cases, scenarios, decisions and recommendations, after the records they point at.
+  { name: "RecoveryCase", refs: { memberId: "Member", invoiceId: "Invoice" } },
+  { name: "RecoveryAttempt", refs: { caseId: "RecoveryCase" } },
+  { name: "Scenario", json: ["baseline", "inputs", "results"] },
+  { name: "Decision", json: ["criteria", "baseline", "actual"] },
+  { name: "DecisionOption", refs: { decisionId: "Decision" }, json: ["inputs", "results", "scores"] },
+  { name: "DecisionRevision", refs: { decisionId: "Decision" }, json: ["snapshot"] },
+  { name: "Recommendation", json: ["evidence", "outcome"] },
   { name: "AuditLog", json: ["before", "after"], exportOnly: true },
 ];
 

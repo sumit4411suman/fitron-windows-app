@@ -112,6 +112,14 @@ export async function clearDemoData(u: CurrentUser) {
       await requireResync(tx, orgId);
       const removed: Record<string, number> = {};
       const count = (key: string, r: { count: number }) => (removed[key] = r.count);
+      // Business intelligence records point at members and invoices, so they go first.
+      count("recoveryAttempts", await tx.recoveryAttempt.deleteMany({ where: { orgId } }));
+      count("recoveryCases", await tx.recoveryCase.deleteMany({ where: { orgId } }));
+      count("decisionRevisions", await tx.decisionRevision.deleteMany({ where: { orgId } }));
+      count("decisionOptions", await tx.decisionOption.deleteMany({ where: { orgId } }));
+      count("decisions", await tx.decision.deleteMany({ where: { orgId } }));
+      count("scenarios", await tx.scenario.deleteMany({ where: { orgId } }));
+      count("recommendations", await tx.recommendation.deleteMany({ where: { orgId } }));
       count("autopayEvents", await tx.autopayEvent.deleteMany({ where: { mandate: { orgId } } }));
       count("autopayMandates", await tx.autopayMandate.deleteMany({ where: { orgId } }));
       count("whatsAppMessages", await tx.whatsAppMessage.deleteMany({ where: { orgId } }));
