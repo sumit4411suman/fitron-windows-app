@@ -69,6 +69,8 @@ Classes:
 | Workouts & diet programs, progress logs, personal records | `/programs` and member profile | LOCAL-SAFE | `WorkoutPlan.days` / `DietPlan.meals` JSON, supported. |
 | Gym Partnership (AI Trainer linking, payouts) | `/partnership` | NOT-SUPPORTED-IN-LOCAL | Depends on the hosted AI Trainer service. |
 | Notifications (in-app) | `/notifications` | LOCAL-SAFE | |
+| Business intelligence: Growth Engine, Revenue Recovery, Member Lifetime Value, Profit Simulator, Decision Simulator, internal benchmarking | `/intelligence/*` | LOCAL-SAFE | Computed from the computer's own records (docs/BUSINESS-INTELLIGENCE.md). Recommendations are worded by rules; "Use Claude" words the top three when online. Recovery reminders go through WhatsApp as everywhere else. |
+| External (peer) benchmarking | `/intelligence/benchmarking` | NOT-SUPPORTED-IN-LOCAL | Needs the opted-in pool on fitron.in; the page says so. |
 | Fitron AI chat history and attachments (upstream Oct 2026) | `/ai`, `/api/ai/chat`, `/api/ai/chats` | LOCAL-SAFE | Saved chats live in the gym's own database (`AiChat`, `AiChatMessage`); a chat is one person's own. Files attached to a question are read for that answer and never stored. Without the model (no key, or "Use Claude" off) a question with files is answered with a plain refusal; questions without files are answered from the books. Offline with the model on: answered from the books, and the chat says so. |
 
 ## Admin and settings
@@ -114,6 +116,8 @@ Classes:
 | reminders.*, whatsapp.refresh, whatsapp.dispatch | ONLINE-REQUIRED (done, Phase 11) | "Not linked" (demo) saves the messages. Linked: they wait while WhatsApp cannot take messages, and run when it can. |
 | autopay.sync | ONLINE-REQUIRED (done, Phase 11) | Live mode only; waits for the internet. |
 | reports.monthly (P&L email) | ONLINE-REQUIRED (done, Phase 11) | Needs SMTP; waits for the internet within the first three days. The same statement is a download. |
+| recovery.refresh, growth.refresh | LOCAL-SAFE | Daily, from the computer's own books (docs/BUSINESS-INTELLIGENCE.md). |
+| benchmark.snapshot | NOT-SUPPORTED-IN-LOCAL | Writes an opted-in gym's aggregated month on fitron.in only. |
 | devices.sync | LOCAL-SAFE (done) | Daily, like the other jobs; while the device port is on, the same sync also runs every two minutes, so a lapsed member is taken off the doors and a renewed one put back quickly. |
 | billing.branches, backup.auto, backup.nudge | NOT-SUPPORTED-IN-LOCAL | Branch billing is a licence term; the computer makes `.fitronbackup` files instead. |
 | backup.test (weekly restore test) | NEEDS-ADAPTER | Re-implemented over the `.fitronbackup` format. |

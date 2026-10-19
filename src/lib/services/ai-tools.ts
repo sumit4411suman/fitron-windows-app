@@ -18,6 +18,12 @@ import { REPORTS, reportGroups } from "./reports";
 import { getTax } from "./tax";
 import { isDraftTool, resolveInvoice, runDraftTool } from "./ai-actions";
 import { fromIso, toIso, todayIso } from "./time";
+import { snapshot, snapshotMetrics, previousPeriod } from "./analytics";
+import { listCases, recoveryDashboard } from "./recovery";
+import { ltvReport } from "./ltv";
+import { baselineInputs } from "./simulator";
+import { listRecommendations } from "./growth";
+import { checkInputs, parseInputs, simulate, threeScenarios } from "@/lib/domain/simulator";
 
 // Tools the assistant can call, each limited to what the signed-in staff member may see and do.
 // The read tools only read. The draft_* tools and propose_action never change the books: they store a draft that the
@@ -86,6 +92,30 @@ export const TOOL_DEFS = [
     description: "Run any Report Center report for a period, e.g. pl, rev-plan, gst-invoices, exp-vendor, payables, dep-fy, m-renew, expiring, collections. Call with report \"list\" to see the reports this person may open.",
     input_schema: { type: "object", properties: { report: { type: "string" }, from: { type: "string" }, to: { type: "string" } }, required: ["report"] },
   },
+  // Business Intelligence (docs/BUSINESS-INTELLIGENCE.md): read-only, every figure computed in code, with its definition.
+  {
+    name: "business_metrics",
+    description: "The gym's verified business figures for a period, with the definition of each: revenue, operating expenses and profit, margin, active and new members, renewal and cancellation rates, revenue per active member, acquisition cost; plus the same for the period before. Every figure is an actual from the books unless marked estimate. Dates are YYYY-MM-DD; default last month.",
+    input_schema: { type: "object", properties: { from: { type: "string" }, to: { type: "string" } } },
+  },
+  { name: "recovery_queue", description: "Membership revenue recovery: outstanding dues, what is eligible for recovery, actions pending, recovered in the period and the recovery rate with its denominator, ageing, and the top open cases with their recommended next step.", input_schema: { type: "object", properties: { from: { type: "string" }, to: { type: "string" }, limit: { type: "integer", minimum: 1, maximum: 40 } } } },
+  { name: "lifetime_value", description: "Member lifetime value: historical revenue per member, tenure, renewal and cancellation rates, acquisition cost, the lifetime value ESTIMATE (or why none can be given), cohort retention and member value by plan and source. Aggregates only.", input_schema: { type: "object", properties: { from: { type: "string" }, to: { type: "string" }, plan: { type: "string" }, source: { type: "string" } } } },
+  {
+    name: "simulate_profit",
+    description: "The Profit Simulator: a deterministic FORECAST from the gym's baseline (read from the books) with the changes given. Returns conservative, baseline and optimistic totals, break-even members and the minimum fee for a target. Never a promise of a result; say so. Prices are rupees; percentages are numbers.",
+    input_schema: {
+      type: "object",
+      properties: {
+        months: { type: "integer", minimum: 1, maximum: 36, description: "Forecast period, default 12" },
+        price_change_pct: { type: "number", description: "Change every plan's price by this percent (e.g. 10 or -5)" },
+        new_members_per_month: { type: "integer", minimum: 0 },
+        monthly_churn_pct: { type: "number", minimum: 0, maximum: 100 },
+        extra_fixed_cost_monthly: { type: "number", description: "Rupees added to monthly fixed costs (e.g. a new trainer's pay); negative to cut" },
+        target_profit_monthly: { type: "number", description: "Rupees of operating profit wanted each month, for the minimum fee" },
+      },
+    },
+  },
+  { name: "growth_recommendations", description: "The Growth Engine's open recommendations, ranked, each with its evidence (metric, value, previous, actual or estimate), effort, urgency and confidence. Only evidence-backed findings exist; if none, say there are none.", input_schema: { type: "object", properties: {} } },
   {
     name: "draft_invoice",
     description:
@@ -282,6 +312,95 @@ export async function runTool(u: CurrentUser, name: string, input: Input): Promi
         gstCollected: rupees(pl.gstCollected),
         collectedByMethod: money(pl.collectedByMethod),
       };
+    }
+    case "business_metrics": {
+      const no = lacks(u, "the business figures", "accounting.view");
+      if (no) return no;
+      const r = range(input);
+      if ("error" in r) return r;
+      const period = r.from && r.to ? { from: r.from, to: r.to } : { from: `${addDays(`${today.slice(0, 7)}-01`, -1).slice(0, 7)}-01`, to: addDays(`${today.slice(0, 7)}-01`, -1) };
+      const [now, before] = await Promise.all([snapshot(u, period), snapshot(u, previousPeriod(period))]);
+      const show = (s: typeof now) => Object.fromEntries(snapshotMetrics(s).map((m) => [m.id, { name: m.name, value: m.unit === "paise" && typeof m.value === "number" ? rupees(m.value) : m.value, unit: m.unit, kind: m.kind, definition: m.definition, warnings: m.warnings }]));
+      return { period, metrics: show(now), previousPeriod: before.period, previous: show(before), warnings: now.warnings, note: "Actual figures from the books; cac and anything marked estimate are explained by their definitions." };
+    }
+    case "recovery_queue": {
+      const no = lacks(u, "the recovery queue", "accounting.view", "invoices.view");
+      if (no) return no;
+      const r = range(input);
+      if ("error" in r) return r;
+      const period = r.from && r.to ? { from: r.from, to: r.to } : { from: `${today.slice(0, 7)}-01`, to: today };
+      const d = await recoveryDashboard(u, period, today);
+      const { rows } = await listCases(u, { pageSize: limitOf(input.limit, 10) });
+      return {
+        period,
+        metrics: Object.fromEntries(d.metrics.map((m) => [m.id, { name: m.name, value: m.unit === "paise" && typeof m.value === "number" ? rupees(m.value) : m.value, unit: m.unit, definition: m.definition, warnings: m.warnings }])),
+        recoveryRateDenominator: rupees(d.denominator),
+        aging: d.aging.map((a) => ({ bucket: a.bucket, invoices: a.count, amount: rupees(a.amount) })),
+        renewalOpportunities: d.renewalOpportunities,
+        topCases: rows.map((c) => ({ id: c.id, kind: c.kind, member: c.member.name, invoice: c.invoice?.number ?? null, balance: rupees(c.balance), overdueDays: c.overdueDays, priority: c.priority, nextAction: c.nextAction, nextActionOn: c.nextActionOn ? toIso(c.nextActionOn) : null, attempts: c.attempts, status: c.status })),
+        link: "/intelligence/recovery",
+      };
+    }
+    case "lifetime_value": {
+      const no = lacks(u, "member value analytics", "accounting.view");
+      if (no) return no;
+      const r = range(input);
+      if ("error" in r) return r;
+      const period = r.from && r.to ? { from: r.from, to: r.to } : { from: addDays(today, -365), to: today };
+      const rep = await ltvReport(u, period, { plan: text(input.plan) || undefined, source: text(input.source) || undefined }, today);
+      return {
+        period,
+        members: rep.members,
+        metrics: Object.fromEntries(rep.metrics.map((m) => [m.id, { name: m.name, value: m.unit === "paise" && typeof m.value === "number" ? rupees(m.value) : m.value, unit: m.unit, kind: m.kind, definition: m.definition, warnings: m.warnings }])),
+        estimateBasis: rep.estimate.basis,
+        cohorts: rep.cohorts.map((c) => ({ cohort: c.cohort, members: c.members, retained: c.retained, revenuePerMember: rupees(c.revenuePerMember), avgTenureMonths: c.avgTenure })),
+        byPlan: rep.byPlan.map((s) => ({ plan: s.key, members: s.members, active: s.active, revenuePerMember: rupees(s.revenuePerMember), avgTenureMonths: s.avgTenure })),
+        bySource: rep.bySource.map((s) => ({ source: s.key, members: s.members, active: s.active, revenuePerMember: rupees(s.revenuePerMember), avgTenureMonths: s.avgTenure })),
+        dataNotes: rep.completeness,
+        link: "/intelligence/ltv",
+      };
+    }
+    case "simulate_profit": {
+      const no = lacks(u, "the profit simulator", "accounting.view");
+      if (no) return no;
+      const base = await baselineInputs(u, today);
+      const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+      const pricePct = n(input.price_change_pct) ?? 0;
+      const extra = Math.round((n(input.extra_fixed_cost_monthly) ?? 0) * 100);
+      const inputs = parseInputs({
+        ...base.inputs,
+        months: n(input.months) ?? 12,
+        plans: base.inputs.plans.map((p) => ({ ...p, price: Math.round(p.price * (1 + pricePct / 100)) })),
+        newMembersPerMonth: n(input.new_members_per_month) ?? base.inputs.newMembersPerMonth,
+        monthlyChurnPct: n(input.monthly_churn_pct) ?? base.inputs.monthlyChurnPct,
+        fixed: { ...base.inputs.fixed, other: base.inputs.fixed.other + extra },
+        targetProfitMonthly: Math.round((n(input.target_profit_monthly) ?? 0) * 100),
+      });
+      const check = checkInputs(inputs);
+      if (!check.ok) return { error: check.error };
+      const three = threeScenarios(inputs);
+      const baseline = simulate({ ...base.inputs, months: inputs.months });
+      const totals = (r: ReturnType<typeof simulate>) => ({ revenue: rupees(r.totals.revenue), operatingExpenses: rupees(r.totals.operatingExpenses), operatingProfit: rupees(r.totals.operatingProfit), operatingMarginPct: r.operatingMarginPct, activeMembersAtEnd: r.totals.activeEnd });
+      return {
+        kind: "forecast",
+        months: inputs.months,
+        assumptions: { priceChangePct: pricePct, newMembersPerMonth: inputs.newMembersPerMonth, monthlyChurnPct: inputs.monthlyChurnPct, extraFixedCostMonthly: rupees(extra), avgMonthlyFeeBeforeGst: rupees(three.baseline.avgMonthlyFee) },
+        asIs: totals(baseline),
+        conservative: totals(three.conservative),
+        baseline: totals(three.baseline),
+        optimistic: totals(three.optimistic),
+        breakEvenMembers: three.baseline.breakEvenMembers,
+        contributionPerMember: rupees(three.baseline.contributionPerMember),
+        minMonthlyFeeForTarget: three.baseline.minFeeForTarget === null ? null : rupees(three.baseline.minFeeForTarget),
+        notes: [...three.baseline.notes, ...base.notes, "A forecast under these assumptions, not a result."],
+        link: "/intelligence/simulator",
+      };
+    }
+    case "growth_recommendations": {
+      const no = lacks(u, "the growth recommendations", "accounting.view");
+      if (no) return no;
+      const rows = await listRecommendations(u);
+      return { count: rows.length, recommendations: rows.slice(0, 20).map((r) => ({ id: r.id, title: r.title, action: r.action, status: r.status, effort: r.effort, urgency: r.urgency, confidence: r.confidence, period: `${r.periodFrom} to ${r.periodTo}`, impact: r.impactPaise === null ? null : rupees(r.impactPaise), impactNote: r.impactNote, evidence: r.evidence, link: r.link })), link: "/intelligence" };
     }
     case "class_and_attendance": {
       const days = Math.min(60, Number(input.days) || 14);

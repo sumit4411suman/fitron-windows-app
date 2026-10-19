@@ -28,7 +28,7 @@ const PUBLIC = [
 // public) to the sign-in. Any other address that is not public is not a page at all, so it is left to answer 404 like any
 // wrong address, for a stranger and a search engine as for anyone. proxy.test.ts fails if a console folder is missing here.
 export const CONSOLE_SEGMENTS = [
-  "accounting", "ai", "assets", "attendance", "audit", "autopay", "classes", "dashboard", "expenses", "fitron-admin", "invoices", "leads",
+  "accounting", "ai", "assets", "attendance", "audit", "autopay", "classes", "dashboard", "expenses", "fitron-admin", "intelligence", "invoices", "leads",
   "members", "notifications", "partnership", "payments", "plans", "pos", "products", "profile", "programs", "purchases", "receivables",
   "renewals", "reports", "settings", "staff", "whatsapp",
   "onboarding", "plan-ended", "documents",

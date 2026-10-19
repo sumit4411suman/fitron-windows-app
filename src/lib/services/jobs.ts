@@ -20,6 +20,11 @@ import { fromIso, istInstant, toIso, todayIso } from "./time";
 import { dispatchScheduled, runRules } from "./wa-automation";
 import { getWaSettings, listTemplates, refreshQueued, whySendingFails } from "./whatsapp";
 import { trimChanges } from "@/lib/sync/server";
+import { systemScope } from "./analytics";
+import { refreshQueue } from "./recovery";
+import { refreshRecommendations } from "./growth";
+import { writeBenchmarkSnapshot } from "./benchmark";
+import { addMonths } from "@/lib/domain/dates";
 
 type Result = Record<string, number | string>;
 type Job = { name: string; label: string; run: (orgId: string, today: string, now: Date) => Promise<Result> };
@@ -196,6 +201,29 @@ export const JOBS: Job[] = [
     label: "Last month's profit and loss, emailed to the owner",
     run: (orgId, today, now) => sendMonthlyPl(orgId, today, now),
   },
+  // Business intelligence (docs/BUSINESS-INTELLIGENCE.md): derived from the books, never writing to them.
+  {
+    name: "recovery.refresh",
+    label: "Revenue recovery queue brought up to date with the books",
+    run: async (orgId, today) => refreshQueue(await systemScope(orgId), today),
+  },
+  {
+    name: "growth.refresh",
+    label: "Growth Engine recommendations from last month's figures",
+    async run(orgId, today) {
+      const r = await refreshRecommendations(await systemScope(orgId), today);
+      return { added: r.added, updated: r.updated, resolved: r.resolved, period: r.period.from.slice(0, 7) };
+    },
+  },
+  {
+    name: "benchmark.snapshot",
+    label: "Anonymised monthly figures for benchmarking (opted-in gyms only)",
+    async run(orgId, today): Promise<Result> {
+      const month = addMonths(`${today.slice(0, 7)}-01`, -1).slice(0, 7);
+      const r = await writeBenchmarkSnapshot(orgId, month, today);
+      return r ? { month: r.month, sizeBand: r.cohort.sizeBand } : { note: "not opted in" };
+    },
+  },
 ];
 
 /** The jobs that run once a week, in the quiet hours (the scheduler calls /api/jobs/weekly), not with the morning jobs. */
@@ -270,7 +298,7 @@ export const runDailyJobs = (orgId: string, today = todayIso(), now = new Date()
  * unasked. On a computer they run only from "Run today's debits". Door devices are also kept in step every two minutes
  * while they can connect (src/lib/integrations/door-devices).
  */
-const NOT_ON_A_COMPUTER = new Set(["autopay", "billing.branches", "backup.auto", "backup.nudge"]);
+const NOT_ON_A_COMPUTER = new Set(["autopay", "billing.branches", "backup.auto", "backup.nudge", "benchmark.snapshot"]);
 export const LOCAL_JOBS = JOBS.filter((j) => !NOT_ON_A_COMPUTER.has(j.name));
 /**
  * While the computer is linked to fitron.in, the daily jobs run there, on the same records: running them here too would

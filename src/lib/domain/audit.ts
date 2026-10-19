@@ -33,6 +33,7 @@ export const MODULES: Mod[] = [
   { name: "POS", entities: ["Product"], actionPrefixes: [] },
   { name: "Attendance", entities: ["Attendance", "ClassSlot", "Booking"], actionPrefixes: [] },
   { name: "Staff & devices", entities: ["User", "Role", "Device"], actionPrefixes: [] },
+  { name: "Intelligence", entities: ["RecoveryCase", "RecoveryAttempt", "Scenario", "Decision", "DecisionOption", "Recommendation"], actionPrefixes: ["bi."] },
   { name: "Settings", entities: ["Setting", "Branch", "MembershipPlan", "Offer", "BranchSubscription", "Import", "Backup", "SupportTicket", "Organization"], actionPrefixes: [] },
   { name: "Other", entities: [], actionPrefixes: [] },
 ];
